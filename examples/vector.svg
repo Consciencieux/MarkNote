@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 180" role="img" aria-label="Marknote 矢量图形示例">
+  <rect x="8" y="8" width="384" height="164" rx="24" fill="#E9EFF7" />
+  <circle cx="88" cy="90" r="42" fill="#3679B7" />
+  <rect x="164" y="48" width="74" height="84" rx="14" fill="#4A9A80" />
+  <path d="M 275 132 L 326 48 L 377 132 Z" fill="#9370BA" />
+</svg>

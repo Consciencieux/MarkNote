@@ -1,0 +1,7 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "原生文稿编辑与安全预览" },
+    { "name": "EntryAbility_desc", "value": "离线编辑 Markdown、SVG 和 TeX 数学文稿" },
+    { "name": "EntryAbility_label", "value": "文稿" }
+  ]
+}

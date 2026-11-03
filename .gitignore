@@ -1,0 +1,13 @@
+.idea/
+.gradle/
+.hvigor/
+**/build/
+**/.preview/
+**/oh_modules/
+*.hap
+*.app
+.DS_Store
+local.properties
+renderer/node_modules/
+renderer/dist/
+renderer/.vite/

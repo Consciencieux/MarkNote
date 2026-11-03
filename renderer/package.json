@@ -1,0 +1,26 @@
+{
+  "name": "marknote-renderer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build && node scripts/package-assets.mjs",
+    "dev": "vite --host 127.0.0.1",
+    "check": "tsc --noEmit",
+    "check:licenses": "node scripts/generate-notices.mjs"
+  },
+  "dependencies": {
+    "markdown-it": "15.0.3",
+    "@mdit/plugin-katex": "1.1.4",
+    "katex": "0.19.1",
+    "dompurify": "3.4.17"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vite-plugin-singlefile": "2.3.4"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}
