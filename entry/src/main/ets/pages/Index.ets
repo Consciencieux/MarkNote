@@ -1,5 +1,7 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { ComponentContent, SubHeader, SymbolGlyphModifier } from '@kit.ArkUI';
+import {
+  ComponentContent, SegmentButton, SegmentButtonItemTuple, SegmentButtonOptions, SubHeader, SymbolGlyphModifier
+} from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
 import {
@@ -26,18 +28,24 @@ class MenuBridge {
 
 const menuBridge: MenuBridge = new MenuBridge();
 
+const THEME_VALUES: string[] = ['system', 'light', 'dark'];
+const THEME_LABELS: string[] = ['跟随系统', '浅色', '深色'];
+// 胶囊类单选分段按钮是官方给出的单选切换组件，选中态靠背景板高亮，不使用勾选图标。
+const THEME_SEGMENTS: SegmentButtonOptions = SegmentButtonOptions.capsule({
+  buttons: [
+    { text: THEME_LABELS[0] }, { text: THEME_LABELS[1] }, { text: THEME_LABELS[2] }
+  ] as SegmentButtonItemTuple,
+  multiply: false
+});
+
 @Builder
 function HomeMenuContent() {
   Menu() {
     MenuItemGroup() {
       MenuItem({ content: '设置' })
-        .onChange((selected: boolean) => {
-          if (selected) menuBridge.openSettings();
-        })
+        .onClick(() => menuBridge.openSettings())
       MenuItem({ content: '关于' })
-        .onChange((selected: boolean) => {
-          if (selected) menuBridge.showLegal();
-        })
+        .onClick(() => menuBridge.showLegal())
     }
   }
 }
@@ -48,36 +56,24 @@ function DocumentMenuContent() {
     MenuItemGroup() {
       ForEach(FormatRegistry.all(), (item: DocumentFormat) => {
         MenuItem({ content: item.moreTitle })
-          .onChange((selected: boolean) => {
-            if (selected) menuBridge.confirmNew(item.id);
-          })
+          .onClick(() => menuBridge.confirmNew(item.id))
       }, (item: DocumentFormat) => item.id)
     }
     MenuItemGroup() {
       MenuItem({ content: '打开文件' })
-        .onChange((selected: boolean) => {
-          if (selected) menuBridge.openFile();
-        })
+        .onClick(() => menuBridge.openFile())
       MenuItem({ content: '另存为' })
-        .onChange((selected: boolean) => {
-          if (selected) menuBridge.saveAs();
-        })
+        .onClick(() => menuBridge.saveAs())
     }
     MenuItemGroup() {
       MenuItem({ content: '返回文稿列表' })
-        .onChange((selected: boolean) => {
-          if (selected) menuBridge.closeLibrary();
-        })
+        .onClick(() => menuBridge.closeLibrary())
     }
     MenuItemGroup() {
       MenuItem({ content: '设置' })
-        .onChange((selected: boolean) => {
-          if (selected) menuBridge.openSettings();
-        })
+        .onClick(() => menuBridge.openSettings())
       MenuItem({ content: '关于' })
-        .onChange((selected: boolean) => {
-          if (selected) menuBridge.showLegal();
-        })
+        .onClick(() => menuBridge.showLegal())
     }
   }
 }
@@ -102,6 +98,7 @@ struct Index {
   @State private recents: RecentDocument[] = [];
   @State private recoveryAvailable: boolean = false;
   @State private theme: string = 'system';
+  @State private themeSelected: number[] = [0];
   @State private saving: boolean = false;
   @State private wide: boolean = false;
   @State private searchVisible: boolean = false;
@@ -190,6 +187,7 @@ struct Index {
 
   private changeTheme(choice: string, persist: boolean = true): void {
     this.theme = choice;
+    this.themeSelected = [this.themeIndex()];
     this.schedulePreview();
     if (this.context) {
       let mode = ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
@@ -331,6 +329,14 @@ struct Index {
     if (this.theme === 'dark') return true;
     if (this.theme === 'light') return false;
     return this.context?.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+  }
+
+  /** Index of the current theme in THEME_VALUES, shared by the label table and the segmented control. */
+  private themeIndex(): number {
+    for (let index = 0; index < THEME_VALUES.length; index++) {
+      if (THEME_VALUES[index] === this.theme) return index;
+    }
+    return 0;
   }
 
   private sendPreview(controller: webview.WebviewController): void {
@@ -884,39 +890,23 @@ struct Index {
     .edgeEffect(EdgeEffect.Spring)
   }
 
-  @Builder
-  ThemeChoice(label: string, value: string) {
-    Row() {
-      Text(label)
-        .fontSize($r('sys.float.ohos_id_text_size_body1'))
-        .layoutWeight(1)
-      Radio({ value: value, group: 'marknote-theme' })
-        .checked(this.theme === value)
-        .onChange((checked: boolean) => {
-          if (checked) this.changeTheme(value);
-        })
-    }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-    .onClick(() => this.changeTheme(value))
-  }
-
-  @Builder
-  AppearanceHeader() {
-    SubHeader({ primaryTitle: '外观' })
-  }
-
+  /**
+   * 「外观」是单选设置项，用官方胶囊类单选分段按钮表达选中态。
+   * 分组标题用官方 SubHeader，内容左右边距取系统设计变量，不再手写行高和勾选图标。
+   */
   @Builder
   private SettingsPage() {
-    List() {
-      ListItemGroup({ header: this.AppearanceHeader }) {
-        ListItem() { this.ThemeChoice('跟随系统', 'system') }
-        ListItem() { this.ThemeChoice('浅色', 'light') }
-        ListItem() { this.ThemeChoice('深色', 'dark') }
-      }
+    Column() {
+      SubHeader({ primaryTitle: '外观' })
+      SegmentButton({
+        options: THEME_SEGMENTS,
+        selectedIndexes: $themeSelected,
+        onItemClicked: (index: number) => this.changeTheme(THEME_VALUES[index])
+      })
+        .padding({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
     }
     .width('100%')
-    .height(280)
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -1046,7 +1036,7 @@ struct Index {
     .bindSheet(this.settingsOpen, this.SettingsPage(), {
       title: { title: '设置' },
       showClose: true,
-      height: 360,
+      height: SheetSize.FIT_CONTENT,
       preferType: SheetType.BOTTOM,
       onDisappear: (): void => {
         this.settingsOpen = false;

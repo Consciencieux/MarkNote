@@ -27,7 +27,7 @@
 | 查找与替换 | 精确文本匹配、下一处跳转、单处替换；没有正则或全部替换 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`FindBar`、`findNext`、`replaceMatch`） |
 | Markdown 大纲 | 提取代码围栏以外的 ATX 标题，点击可跳到文本偏移；尚未解析 Setext 标题 | [Document.ets](../entry/src/main/ets/model/Document.ets)（`documentOutline`）、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets) |
 | 编辑／预览／分栏 | 文稿页是 `HdsNavDestination`。`Tabs` 在编辑、预览、大纲之间切换；宽度达到 720vp 时增加编辑与预览分栏。大纲标签只对声明支持大纲的格式出现。打开文件后直接进入编辑 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`WorkspacePage`、`SplitPage`） |
-| 主题设置 | 四宫格里的「设置」打开底部半模态。其中的「外观」用单选切换跟随系统、浅色、深色；本地保存偏好并同步 ArkWeb 预览。设置半模态绑定在外层容器，关于半模态绑定在 `HdsNavigation` 上：同一节点挂两个 `bindSheet` 会互相顶掉 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`changeTheme`、`SettingsPage`）、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[styles.css](../renderer/src/styles.css) |
+| 主题设置 | 四宫格里的「设置」打开底部半模态。其中的「外观」用官方胶囊类单选分段按钮（`SegmentButtonOptions.capsule`）切换跟随系统、浅色、深色，选中态靠背景板高亮而非勾选图标；分组标题用 `SubHeader`。本地保存偏好并同步 ArkWeb 预览。设置半模态绑定在外层容器，关于半模态绑定在 `HdsNavigation` 上：同一节点挂两个 `bindSheet` 会互相顶掉 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`changeTheme`、`SettingsPage`、`themeSelected`）、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[styles.css](../renderer/src/styles.css) |
 
 ## 支持的文稿格式与预览
 
