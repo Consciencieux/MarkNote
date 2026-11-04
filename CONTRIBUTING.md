@@ -30,4 +30,5 @@ entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt
 
 - 预览相关改动先跑 `renderer` 的 `npm run check`，再跑 `npm run build`。
 - ArkTS 改动用 DevEco 或 hvigor 编过 `entry`。
+- 新增、改变或移除用户功能时，在相同改动中更新 [功能目录](docs/FEATURES.md) 对应条目；不把尚未完成的功能登记为现有能力。
 - 不把 `.hap`、`renderer/node_modules/`、`renderer/dist/` 或本机签名材料放进提交。
