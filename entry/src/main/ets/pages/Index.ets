@@ -21,6 +21,16 @@ import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 
+/**
+ * Tab positions on the document page. Preview comes first so a document opens in reading
+ * view, the same way Word, Keynote and the system notes app open a file. Named constants
+ * keep the index arithmetic readable now that editing is not the first tab.
+ */
+const TAB_PREVIEW: number = 0;
+const TAB_EDIT: number = 1;
+const TAB_OUTLINE: number = 2;
+const TAB_SPLIT: number = 3;
+
 class MenuBridge {
   confirmNew: (id: string) => void = (_id: string): void => {};
   openFile: () => void = (): void => {};
@@ -100,7 +110,7 @@ struct Index {
   @State private title: string = '未命名.md';
   @State private source: string = '';
   @State private savedText: string = '';
-  @State private selectedTab: number = 0;
+  @State private selectedTab: number = TAB_PREVIEW;
   @State private headings: Heading[] = [];
   @State private recents: RecentDocument[] = [];
   @State private theme: string = 'system';
@@ -152,7 +162,7 @@ struct Index {
     menuBridge.find = (): void => {
       this.afterMenu(() => {
         this.searchVisible = true;
-        this.selectedTab = 0;
+        this.selectedTab = TAB_EDIT;
       });
     };
     menuBridge.closeLibrary = (): void => {
@@ -186,7 +196,7 @@ struct Index {
     this.wide = this.wideQuery.matches;
     this.wideQuery.on('change', (result: mediaquery.MediaQueryResult) => {
       this.wide = result.matches;
-      if (!result.matches && this.selectedTab === this.splitTab()) this.selectedTab = 0;
+      if (!result.matches && this.selectedTab === this.splitTab()) this.selectedTab = TAB_PREVIEW;
     });
   }
 
@@ -513,7 +523,7 @@ struct Index {
     this.currentMatch = -1;
     this.selectionStart = 0;
     this.selectionEnd = 0;
-    this.selectedTab = 0;
+    this.selectedTab = TAB_PREVIEW;
     this.searchVisible = false;
     this.settingsOpen = false;
     this.legalOpen = false;
@@ -710,7 +720,7 @@ struct Index {
 
   private findNext(): void {
     if (!this.query) return;
-    this.selectedTab = 0;
+    this.selectedTab = TAB_EDIT;
     const hit: SearchHit | null = TextSearch.following(this.source, this.query, this.currentMatch);
     if (hit === null) {
       this.currentMatch = -1;
@@ -747,7 +757,7 @@ struct Index {
   }
 
   private focusHeading(heading: Heading): void {
-    this.selectedTab = 0;
+    this.selectedTab = TAB_EDIT;
     setTimeout(() => this.cursor.caretPosition(heading.offset), 20);
   }
 
@@ -1024,7 +1034,7 @@ struct Index {
   }
 
   private splitTab(): number {
-    return this.currentFormat().outline ? 3 : 2;
+    return this.currentFormat().outline ? TAB_SPLIT : TAB_OUTLINE;
   }
 
   /** 页签图标沿用系统符号，选中态由系统页签样式给出。 */
@@ -1047,16 +1057,25 @@ struct Index {
     .width('100%')
   }
 
-  @Builder
+  /**
+   * @LocalBuilder, not @Builder: this subtree contains an if branch for the outline tab and
+   * the format bar, and a plain nested @Builder does not keep the state parent-child
+   * relationship, so those branches would not rebuild when the state changes.
+   */
+  @LocalBuilder
   private WorkspacePage() {
     Column() {
       HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
-        TabContent() { this.EditPage() }
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
+        // Preview first: opening a document lands in reading view, like the system apps.
         TabContent() { this.PreviewPage() }
           .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
-        TabContent() { this.OutlinePage() }
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
+        TabContent() { this.EditPage() }
+          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
+        // Only formats that declare an outline get the tab; plain text and SVG have none.
+        if (this.currentFormat().outline) {
+          TabContent() { this.OutlinePage() }
+            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
+        }
         if (this.wide) {
           TabContent() { this.SplitPage() }
             .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
@@ -1086,10 +1105,10 @@ struct Index {
     return this.formatBarShown && this.formatBarWanted();
   }
 
-  /** The format bar only applies to the editable tab of a format that has insert actions. */
+  /** The format bar applies to the editable tab, and to the split tab which also edits. */
   private formatBarWanted(): boolean {
     if (this.currentFormat().inserts.length === 0) return false;
-    return this.selectedTab === 0;
+    return this.selectedTab === TAB_EDIT || this.selectedTab === this.splitTab();
   }
 
   /** The four most common inserts stay on the bar; the rest move into the more menu. */
