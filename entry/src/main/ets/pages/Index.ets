@@ -1,6 +1,6 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import {
-  ComposeListItem, ComponentContent, ContentItem, IconType, mediaquery, SegmentButton, SegmentButtonItemTuple,
+  ComponentContent, ComposeListItem, IconType, mediaquery, SegmentButton, SegmentButtonItemTuple,
   SegmentButtonOptions, SubHeader, SymbolGlyphModifier
 } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
@@ -15,6 +15,7 @@ import { DocumentInfo, Heading, RecentDocument, RecoveryData, linesIn } from '..
 import { DocumentService } from '../document/DocumentService';
 import { DocumentFormat, FormatRegistry, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
+import { EditHistory, EditStep } from '../document/EditHistory';
 import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
@@ -25,6 +26,7 @@ class MenuBridge {
   saveAs: () => void = (): void => {};
   openSettings: () => void = (): void => {};
   showLegal: () => void = (): void => {};
+  find: () => void = (): void => {};
   closeLibrary: () => void = (): void => {};
 }
 
@@ -68,6 +70,8 @@ function DocumentMenuContent() {
         .onClick(() => menuBridge.saveAs())
     }
     MenuItemGroup() {
+      MenuItem({ content: '查找' })
+        .onClick(() => menuBridge.find())
       MenuItem({ content: '返回文稿列表' })
         .onClick(() => menuBridge.closeLibrary())
     }
@@ -98,7 +102,6 @@ struct Index {
   @State private selectedTab: number = 0;
   @State private headings: Heading[] = [];
   @State private recents: RecentDocument[] = [];
-  @State private recoveryAvailable: boolean = false;
   @State private theme: string = 'system';
   @State private themeSelected: number[] = [0];
   @State private saving: boolean = false;
@@ -107,9 +110,12 @@ struct Index {
   @State private query: string = '';
   @State private replacement: string = '';
   @State private currentMatch: number = -1;
+  /** Drives the enabled state of the title bar undo and redo icons. */
+  @State private undoAvailable: boolean = false;
+  @State private redoAvailable: boolean = false;
+  private history: EditHistory = new EditHistory();
   private context: common.UIAbilityContext | null = null;
   private info: DocumentInfo = new DocumentInfo();
-  private recovery: RecoveryData | null = null;
   private cursor: TextAreaController = new TextAreaController();
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
@@ -138,6 +144,12 @@ struct Index {
     };
     menuBridge.showLegal = (): void => {
       this.afterMenu(() => this.openLegal());
+    };
+    menuBridge.find = (): void => {
+      this.afterMenu(() => {
+        this.searchVisible = true;
+        this.selectedTab = 0;
+      });
     };
     menuBridge.closeLibrary = (): void => {
       this.afterMenu(() => this.leaveDocument());
@@ -195,11 +207,28 @@ struct Index {
     } catch {
       this.toast('读取设置失败，已使用系统默认值');
     }
-    this.recovery = LocalState.readDraft(this.context);
-    this.recoveryAvailable = this.recovery !== null;
     LaunchRequests.bind((request: OpenRequest) => {
       this.confirmSwitch(() => this.openExternal(request));
     });
+    await this.resumeDraft();
+  }
+
+  /**
+   * 正常离开会清掉草稿，所以启动时还存在的草稿只可能是上次异常退出留下的。
+   * 直接接着编辑，不再让用户去首页找一张恢复卡片。
+   */
+  private async resumeDraft(): Promise<void> {
+    if (!this.context || this.routes.size() > 0) return;
+    const draft = LocalState.readDraft(this.context);
+    if (draft === null) return;
+    try {
+      await DocumentService.restore(draft);
+      this.presentOpened();
+      this.toast('已恢复上次未保存的编辑');
+    } catch {
+      this.clearRecovery();
+      this.toast('上次的编辑无法恢复，已丢弃');
+    }
   }
 
   private toast(message: string): void {
@@ -221,11 +250,12 @@ struct Index {
     }
   }
 
-  private menuIcon(label: string, symbol: Resource, id: string, action: () => void): HdsNavigationMenuItemOptions {
+  private menuIcon(label: string, symbol: Resource, id: string, action: () => void,
+    enabled: boolean = true): HdsNavigationMenuItemOptions {
     const content: HdsNavigationIconOptions = {
       label: label,
       icon: symbol,
-      isEnabled: true,
+      isEnabled: enabled,
       action: action,
       componentId: id,
       type: IconStyleMode.NORMAL
@@ -269,17 +299,18 @@ struct Index {
   private documentTitle(): HdsNavigationTitleBarOptions {
     const heading: HdsNavigationTitle = { mainTitle: this.title, subTitle: this.statusLine() };
     const menu: HdsNavigationMenuContentOptions = {
-      maxCount: 3,
+      maxCount: 4,
       value: [
-        // 系统符号表里没有名为 save 的条目（icon_save 是字符串资源），
-        // square_and_arrow_down 是下载符号，不能当保存用。
-        // 系统「备忘录」编辑页标题栏用圆圈对勾表示确认/完成，这里跟随同一符号。
-        this.menuIcon('保存', $r('sys.symbol.checkmark_circle'), 'marknote-save', (): void => { void this.saveFile(false); }),
-        this.menuIcon('查找', $r('sys.symbol.magnifyingglass'), 'marknote-find', (): void => {
-          this.searchVisible = true;
-          this.selectedTab = 0;
-        }),
-        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more', (): void => this.openDocumentMenu())
+        // 系统「备忘录」编辑态的标题栏右侧依次是撤销、重做、四宫格和纯勾（无圆圈），
+        // 这里跟随同一排列。查找不是高频动作，收进四宫格菜单，把位置让给撤销和重做。
+        this.menuIcon('撤销', $r('sys.symbol.undo'), 'marknote-undo',
+          (): void => this.undo(), this.undoAvailable),
+        this.menuIcon('重做', $r('sys.symbol.redo'), 'marknote-redo',
+          (): void => this.redo(), this.redoAvailable),
+        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
+          (): void => this.openDocumentMenu()),
+        this.menuIcon('保存', $r('sys.symbol.checkmark'), 'marknote-save',
+          (): void => { void this.saveFile(false); })
       ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
@@ -379,38 +410,44 @@ struct Index {
     return this.source !== this.savedText;
   }
 
-  private confirmSwitch(proceed: () => Promise<void>): void {
-    if (!this.editing && this.recoveryAvailable) {
-      this.getUIContext().showAlertDialog({
-        title: '还有未恢复的草稿',
-        message: '新建或打开其他文件会丢弃这份草稿。可以先恢复草稿并保存。',
-        primaryButton: { value: '取消', action: () => {} },
-        secondaryButton: { value: '放弃草稿继续', action: () => { void proceed(); } }
+  /**
+   * 切换文稿前的保存决策，规则参考各平台编辑器的通行做法：
+   * 已保存过且有写权限的文件直接写回，不再询问；只有无法静默写入的情况才让用户选择，
+   * 也就是新建文稿还没有文件名、文件只读，或写回失败。
+   * 草稿副本只用于崩溃兜底，不再作为「未保存」的常驻入口。
+   */
+  private async saveBeforeLeaving(): Promise<boolean> {
+    if (!this.editing || !this.isDirty()) return true;
+    const canWriteInPlace = this.info.uri.length > 0 && this.info.writable;
+    if (canWriteInPlace && await this.saveFile(false)) return true;
+    return await this.askSaveOrDiscard();
+  }
+
+  /** true 表示可以离开；保存过程中取消或失败都留在当前文稿。 */
+  private async askSaveOrDiscard(): Promise<boolean> {
+    let choice = -1;
+    try {
+      const result = await this.getUIContext().getPromptAction().showDialog({
+        title: '未保存的修改',
+        message: '这份文稿还没有写入文件。可以先保存，也可以放弃修改。',
+        buttons: [
+          { text: '保存', color: $r('sys.color.font_primary') },
+          { text: '放弃修改', color: $r('sys.color.font_secondary') },
+          { text: '取消', color: $r('sys.color.font_secondary') }
+        ]
       });
-      return;
+      choice = result.index;
+    } catch {
+      // 关闭对话框按取消处理，留在当前文稿。
     }
-    if (!this.editing || !this.isDirty()) {
-      void proceed();
-      return;
-    }
-    this.getUIContext().getPromptAction().showDialog({
-      title: '未保存的修改',
-      message: '可以保存当前文稿后再打开，也可以放弃修改。取消则留在当前文稿。',
-      buttons: [
-        { text: '保存并打开', color: $r('sys.color.font_primary') },
-        { text: '放弃修改并打开', color: $r('sys.color.font_primary') },
-        { text: '取消', color: $r('sys.color.font_secondary') }
-      ]
-    }).then((result) => {
-      if (result.index === 0) {
-        void this.saveFile(false).then((opened: boolean) => {
-          if (opened) void proceed();
-        });
-      } else if (result.index === 1) {
-        void proceed();
-      }
-    }).catch(() => {
-      // Dismissing the dialog keeps the current document and its draft.
+    if (choice === 0) return await this.saveFile(false);
+    return choice === 1;
+  }
+
+  /** 统一入口：新建、打开和切换文稿都先经过这里。 */
+  private confirmSwitch(proceed: () => Promise<void>): void {
+    void this.saveBeforeLeaving().then((ok: boolean) => {
+      if (ok) void proceed();
     });
   }
 
@@ -434,12 +471,17 @@ struct Index {
   }
 
   private leaveDocument(): void {
-    this.closeToLibrary();
-    if (this.routes.size() > 0) this.routes.pop();
+    void this.closeToLibrary().then((left: boolean) => {
+      if (left && this.routes.size() > 0) this.routes.pop();
+    });
   }
 
   private presentOpened(): void {
     this.syncFromService();
+    // The history belongs to one document. Keeping it across a switch would let undo write
+    // the previous document's text into this one.
+    this.history.reset(this.source, 0);
+    this.refreshHistoryState();
     this.currentMatch = -1;
     this.selectionStart = 0;
     this.selectionEnd = 0;
@@ -538,8 +580,6 @@ struct Index {
       this.recoveryTimer = -1;
     }
     if (this.context) LocalState.clearDraft(this.context);
-    this.recovery = null;
-    this.recoveryAvailable = false;
   }
 
   private scheduleRecovery(): void {
@@ -569,39 +609,72 @@ struct Index {
     draft.persistent = this.info.persistent;
     try {
       LocalState.writeDraft(this.context, draft);
-      this.recovery = draft;
-      this.recoveryAvailable = true;
     } catch {
       this.toast('草稿恢复副本写入失败，请尽快保存文件');
     }
   }
 
-  private async restoreRecovery(): Promise<void> {
-    if (!this.recovery) return;
-    await DocumentService.restore(this.recovery);
-    this.syncFromService();
-    this.currentMatch = -1;
-    this.selectionStart = 0;
-    this.selectionEnd = 0;
-    this.selectedTab = 0;
-    this.searchVisible = false;
-    this.showDocumentRoute();
-  }
-
-  private closeToLibrary(): void {
-    this.flushRecovery();
+  /**
+   * 离开文稿：先按规则处理未保存的改动，再清掉草稿副本。
+   * 返回 false 表示用户取消了离开，调用方不应弹栈。
+   */
+  private async closeToLibrary(): Promise<boolean> {
+    if (!await this.saveBeforeLeaving()) return false;
+    this.clearRecovery();
     DocumentService.close();
     this.editing = false;
     this.settingsOpen = false;
+    return true;
   }
 
-  private updateSource(text: string): void {
+  /**
+   * Every edit to the buffer goes through here, including the toolbar inserts and replace,
+   * so undo covers them as well as typing.
+   */
+  private updateSource(text: string, caret: number = -1): void {
     DocumentService.edit(text);
     this.source = text;
     this.currentMatch = -1;
     this.headings = DocumentService.headingsFor(this.info, text);
+    const position = caret >= 0 ? caret : this.selectionEnd;
+    this.history.record(text, position, Date.now());
+    this.refreshHistoryState();
     this.scheduleRecovery();
     this.schedulePreview();
+  }
+
+  private refreshHistoryState(): void {
+    this.undoAvailable = this.history.canUndo();
+    this.redoAvailable = this.history.canRedo();
+  }
+
+  private undo(): void {
+    const step: EditStep | null = this.history.undo(this.selectionEnd);
+    if (step === null) return;
+    this.applyHistoryStep(step);
+  }
+
+  private redo(): void {
+    const step: EditStep | null = this.history.redo(this.selectionEnd);
+    if (step === null) return;
+    this.applyHistoryStep(step);
+  }
+
+  /**
+   * Restore a snapshot without recording it again, otherwise every undo would push a new step.
+   */
+  private applyHistoryStep(step: EditStep): void {
+    DocumentService.edit(step.text);
+    this.source = step.text;
+    this.currentMatch = -1;
+    this.headings = DocumentService.headingsFor(this.info, step.text);
+    this.refreshHistoryState();
+    this.scheduleRecovery();
+    this.schedulePreview();
+    const caret = Math.min(step.caret, step.text.length);
+    this.selectionStart = caret;
+    this.selectionEnd = caret;
+    setTimeout(() => this.cursor.caretPosition(caret), 20);
   }
 
   private findNext(): void {
@@ -626,7 +699,7 @@ struct Index {
       return;
     }
     const caret = this.currentMatch + this.replacement.length;
-    this.updateSource(changed);
+    this.updateSource(changed, caret);
     this.currentMatch = -1;
     setTimeout(() => this.cursor.caretPosition(caret), 20);
   }
@@ -637,8 +710,8 @@ struct Index {
     const selected = this.source.slice(start, end);
     const changed = this.source.slice(0, start) + action.before + selected + action.after +
       this.source.slice(end);
-    this.updateSource(changed);
     const position = start + action.before.length + selected.length;
+    this.updateSource(changed, position);
     setTimeout(() => this.cursor.caretPosition(position), 20);
   }
 
@@ -676,11 +749,6 @@ struct Index {
     return !(this.wide && this.selectedTab === this.splitTab());
   }
 
-  private recoveryName(): string {
-    if (this.recovery === null) return '';
-    return this.recovery.name;
-  }
-
   private newDocumentMenu(): MenuElement[] {
     const items: MenuElement[] = [];
     const formats = FormatRegistry.all();
@@ -692,11 +760,6 @@ struct Index {
       });
     }
     return items;
-  }
-
-  @Builder
-  RecoveryHeader() {
-    SubHeader({ primaryTitle: '未保存的文稿' })
   }
 
   @Builder
@@ -730,7 +793,9 @@ struct Index {
 
   @Builder
   private LibraryPage() {
-    List({ scroller: this.libraryScroller }) {
+    // 卡片分组之间没有默认间隔：ListItemGroup 的 space 只作用于组内 ListItem，
+    // 组与组的间隔由 List({ space }) 给出。12vp 与卡片自身的左右外边距一致。
+    List({ scroller: this.libraryScroller, space: 12 }) {
       ListItem() {
         Column({ space: 12 }) {
           Text('离线编辑，随时保存到自己的文件。')
@@ -750,15 +815,6 @@ struct Index {
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-      }
-
-      if (this.recoveryAvailable) {
-        ListItemGroup({ header: this.RecoveryHeader, style: ListItemGroupStyle.CARD }) {
-          ListItem() {
-            this.DocumentRow('恢复上次的编辑', this.recoveryName(), $r('sys.symbol.doc_text_badge_clock'))
-          }
-          .onClick(() => { void this.restoreRecovery(); })
-        }
       }
 
       ListItemGroup({ header: this.RecentHeader, style: ListItemGroupStyle.CARD }) {
@@ -843,26 +899,32 @@ struct Index {
     .height('100%')
   }
 
+  /**
+   * 编辑页、预览页和分栏共用同一个本地预览页面，差异只有 Web 控制器和就绪标记。
+   * 合成一个构建器，避免三份重复的 Web 配置发生漂移。
+   */
   @Builder
-  private PreviewPage() {
-    Web({ src: $rawfile('preview/index.html'), controller: this.preview })
+  private PreviewWeb(controller: webview.WebviewController, onReady: () => void) {
+    Web({ src: $rawfile('preview/index.html'), controller: controller })
       .javaScriptAccess(true)
       .domStorageAccess(false)
       .backgroundColor(this.previewIsDark() ? '#000000' : '#FFFFFF')
-      .onPageEnd(() => { this.previewReady = true; this.sendPreview(this.preview); })
+      .onPageEnd(() => {
+        onReady();
+        this.sendPreview(controller);
+      })
       .width('100%')
       .height('100%')
   }
 
   @Builder
+  private PreviewPage() {
+    this.PreviewWeb(this.preview, () => { this.previewReady = true; })
+  }
+
+  @Builder
   private SplitPreviewPage() {
-    Web({ src: $rawfile('preview/index.html'), controller: this.splitPreview })
-      .javaScriptAccess(true)
-      .domStorageAccess(false)
-      .backgroundColor(this.previewIsDark() ? '#000000' : '#FFFFFF')
-      .onPageEnd(() => { this.splitReady = true; this.sendPreview(this.splitPreview); })
-      .width('100%')
-      .height('100%')
+    this.PreviewWeb(this.splitPreview, () => { this.splitReady = true; })
   }
 
   @Builder
@@ -908,6 +970,11 @@ struct Index {
     .alignItems(HorizontalAlign.Start)
   }
 
+  /**
+   * 大纲是只读的扁平标题列表，层级只用于缩进，没有折叠和重命名。
+   * 官方的 TreeView 面向带目录图标、增删改入口的文件树，套在这里会多出用不到的操作，
+   * 因此沿用 List 承载，行内容用系统字号和颜色变量。
+   */
   @Builder
   private OutlinePage() {
     if (this.headings.length === 0) {
@@ -939,6 +1006,7 @@ struct Index {
       }
       .width('100%')
       .height('100%')
+      .edgeEffect(EdgeEffect.Spring)
       .divider({ strokeWidth: 1, startMargin: 16, endMargin: 16 })
     }
   }

@@ -11,7 +11,7 @@
 | 选择文件打开 | 应用内使用系统 `DocumentViewPicker` 取得 URI。文件管理器也可通过 `viewData` / `FileOpen` 打开 `.md`、`.markdown`、`.txt`、`.svg` 和 `.tex`，并直接进入编辑页。格式判断以文件后缀优先，其次使用系统声明的 UTD 或 MIME；两者都无法匹配时拒绝打开，不按 Markdown 渲染 | [module.json5](../entry/src/main/module.json5)、[EntryAbility.ets](../entry/src/main/ets/entryability/EntryAbility.ets)、[LaunchRequests.ets](../entry/src/main/ets/document/LaunchRequests.ets)、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)（`openUri`） |
 | 保存与另存为 | 有写入授权时按原 URI 写回；只有读取授权或写入失败时改为另存为。保存后按字节指纹和正文再读校验。提供方不保证写入是原子操作 | [DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)（`save`）、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)（`prepare`、`write`） |
 | 外部修改检查 | 写入前对比打开时或上次保存成功时的 SHA-256 字节指纹，不一致时拒绝覆盖，可改为另存为 | [DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)（`write`） |
-| 未保存保护与草稿恢复 | 切换文稿时可以选择保存并打开、放弃修改或取消。打开失败时保留当前文稿和草稿。编辑期间延迟写入一份应用私有草稿，可从首页恢复；原授权失效时草稿仍可另存为 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`confirmSwitch`、`scheduleRecovery`、`restoreRecovery`）、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
+| 未保存保护与草稿恢复 | 离开文稿时，已保存过且有写权限的文件直接写回，不打断用户；只有新建未命名、只读或写回失败时才询问保存还是放弃。编辑期间延迟写入的应用私有草稿只用于异常退出兜底，正常离开即清除；下次启动发现草稿就直接接着编辑，首页不再有「未保存的文稿」入口 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`saveBeforeLeaving`、`closeToLibrary`、`resumeDraft`、`scheduleRecovery`）、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
 | 文本编码与换行 | 读取 UTF-8、UTF-16 LE/BE 和 GB18030，记录 BOM 与换行方式并在保存时写回。写回后字符对不上时拒绝保存。混合换行只在行数不变时原样写回；行数变化时原地保存会被拒绝，另存为改用 LF。目前没有手动选择编码的界面 | [TextEncoding.ets](../entry/src/main/ets/document/TextEncoding.ets) |
 | 文件大小 | 超过 8 MiB 的文件拒绝读取。读写目前在 UI 线程同步执行 | [DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
 
@@ -24,7 +24,8 @@
 | 查找与替换 | 文稿页内按字面文本查找，命中处自动选中，可跳到下一处并替换单处。不支持正则和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)（`FindBar`、`findNext`、`replaceMatch`） |
 | Markdown 大纲 | 提取代码围栏以外的 ATX 标题，点击可跳到对应文本位置。尚未解析 Setext 标题 | [Document.ets](../entry/src/main/ets/model/Document.ets)（`documentOutline`）、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)（`headingsFor`） |
 | 编辑、预览与分栏 | 文稿页是 `HdsNavDestination`，用 `Tabs` 在编辑、预览和大纲之间切换；宽度达到 720vp 时增加编辑与预览分栏。大纲标签只对声明支持大纲的格式出现。打开文件后直接进入编辑 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`WorkspacePage`、`SplitPage`） |
-| 文稿页标题栏菜单 | 标题栏显示保存和查找两个图标。四宫格菜单依次给出新建 Markdown、新建纯文本、新建 SVG、新建 LaTeX 公式、打开文件、另存为、返回文稿列表、设置和关于。保存使用 `checkmark_circle`，与系统「备忘录」编辑页一致 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`documentTitle`、`DocumentMenuContent`、`afterMenu`） |
+| 撤销与重做 | 编辑缓冲的撤销和重做记录在内存里，连续输入在 600 ms 内合并成一步，最多 200 步，切换文稿时清空。标题栏的撤销和重做图标在对应方向没有历史时置为未使能（`isEnabled: false`，由 HDS 组件绘制置灰态） | [EditHistory.ets](../entry/src/main/ets/document/EditHistory.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)（`menuIcon`、`undo`、`redo`、`refreshHistoryState`） |
+| 文稿页标题栏菜单 | 编辑态标题栏依次是撤销、重做、四宫格和保存勾，与系统「备忘录」编辑页一致。查找收进四宫格菜单，菜单里还有新建 Markdown、新建纯文本、新建 SVG、新建 LaTeX 公式、打开文件、另存为、返回文稿列表、设置和关于。保存使用 `checkmark`，不带圆圈 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`documentTitle`、`DocumentMenuContent`、`afterMenu`） |
 | 外观设置 | 四宫格菜单的「设置」打开底部半模态，其中的「外观」用胶囊类单选分段按钮切换跟随系统、浅色和深色，选中态以背景板高亮表示，不使用勾选图标。偏好保存在本机并同步到预览 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`changeTheme`、`SettingsPage`）、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[styles.css](../renderer/src/styles.css) |
 
 ## 预览
