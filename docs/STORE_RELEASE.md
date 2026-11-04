@@ -1,5 +1,17 @@
 # HarmonyOS 应用市场发行准备
 
+## 应用名称与商店文案
+
+中文名称和英文名称都是 MarkNote。
+
+一句话简介：
+
+> 支持多种格式的文本编辑与预览
+
+详细介绍：
+
+> MarkNote 是一款支持多种文本格式的编辑器，可编辑和预览 Markdown 文档、LaTeX 数学公式、SVG 矢量图形及普通文本文件。支持直接打开、修改和保存本地文件。
+
 ## 当前工程中已落实
 
 - 应用导航、文件选取、读写、源码编辑、主题、关于页面均使用 ArkUI / ArkTS。
@@ -7,7 +19,7 @@
 - SVG 和 Markdown 标记经过严格的安全清理，预览页有内容安全策略。
 - 使用许可友好的开源软件。DOMPurify 按 Apache-2.0 分支分发；KaTeX 字体按照 SIL OFL 1.1 单独声明。
 - `renderer/npm run build` 从实际安装的生产依赖收集版权与许可全文，将其打包为应用可阅读的 `THIRD_PARTY_NOTICES.txt`；缺少许可证时中止构建。
-- `EntryAbility` 以 singleton 注册了 Markdown、纯文本、SVG 和 TeX 的 `FileOpen`。文件管理器是否列出 Marknote，以及原地保存是否成功，仍须在目标设备上验收。
+- `EntryAbility` 以 singleton 注册了 Markdown、纯文本、SVG 和 TeX 的 `FileOpen`。文件管理器是否列出 MarkNote，以及原地保存是否成功，仍须在目标设备上验收。
 
 ## 正式上架之前仍必须完成
 
