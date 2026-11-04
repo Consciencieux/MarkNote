@@ -1,18 +1,32 @@
-# Marknote 当前架构
+# 架构
 
-界面仍在 ArkUI。文稿格式不由页面自行判断扩展名，文稿会话也不再散落在页面里。
+界面由 ArkUI 实现。文稿的格式判断、编码处理和文件读写集中在独立模块，页面只负责呈现和调度。各模块的具体行为边界见[功能目录](FEATURES.md)。
 
-- **EntryAbility**：singleton。桌面启动进入首页；`ohos.want.action.viewData` 的文件请求交给 `LaunchRequests`。页面还没创建时先留住这一次请求，准备好后再打开，避免冷启动丢文件。
-- **DocumentService**：当前文稿的身份、正文、格式、来源和修订状态。新建、选择器、最近文稿和系统打开都从这里进入。保存、另存为、草稿恢复和外部冲突也在这里决定。
-- **FormatRegistry**：扩展名、UTD、MIME、默认文件名、大纲和快捷插入。文件名能对上已注册后缀时用文件名；否则用系统声明的类型。对不上的系统类型不会当成 Markdown。
-- **TextEncoding**：把字节还原成编辑器用的 `\n` 文本，保存时写回原来的编码、BOM 和换行。支持 UTF-8、UTF-16 LE/BE 和 GB18030。写回后若字符对不上，拒绝写入。混合换行只在行数不变时按原样写回。
-- **DocumentFiles**：选择、读取、按实际打开结果判断能否写入、持久授权、冲突检查和写回。冲突对比的是打开或上次保存时的 SHA-256 字节指纹。只读授权可以编辑，保存时走另存为。
-- **界面**：首页是 `HdsNavigation`，文稿页是 `HdsNavDestination`。标题栏材质跟随系统。新建和打开留在首页内容里；保存、查找、更多使用系统符号。最近文稿用系统列表。四宫格菜单进入设置和关于：设置半模态里选择外观，关于半模态放隐私说明和许可证。编辑、预览、大纲和分栏仍由 `Tabs` 切换，宽度达到 720vp 才出现分栏。键盘避让是 `RESIZE_WITH_CARET`。标题栏四宫格菜单、设置半模态和关于半模态已在 Mate 70 Pro 上核对；其余组件尚未逐一核对。
-- **半模态**：一个节点只能挂一个 `bindSheet`。设置半模态挂在外层 `Column`，关于半模态挂在 `HdsNavigation`。挂在一起会互相顶掉，两个都不出现。
-- **菜单点击**：`MenuItem` 没有可用的点击回调，点击要靠 `onChange(selected)`；菜单项里打开半模态时，先 `closeMenu`，收起后再显示。
-- **ArkWeb**：`renderer/src/renderers/` 里按格式 ID 分开渲染 `plain`、`markdown`、`svg`、`tex-math`。页面只把格式 ID 和正文交给预览。120ms 合并更新保留。
-- **桥接**：单向 `MarknotePreview.update`。预览页不注册 ArkTS 接口，也没有联网权限。
+## 模块职责
 
-系统文件关联注册在 `module.json5`：`file` scheme、`FileOpen`，类型是 `general.markdown`、`general.plain-text`、`general.svg-image`、`org.tug.tex`。SDK 里的 TeX 统一类型是 `general.tex`，所以一并注册，避免文件管理器对不上。不注册 `general.file` 或 `general.text`。
+| 模块 | 职责 |
+| --- | --- |
+| `EntryAbility` | 以 singleton 启动。桌面启动进入首页，`ohos.want.action.viewData` 的文件请求交给 `LaunchRequests`。页面尚未创建时先保留这次请求，页面就绪后再打开，避免冷启动丢失文件。 |
+| `DocumentService` | 当前文稿的会话状态，包括身份、正文、格式、来源和修订状态。新建、系统选择器、最近文稿和系统打开都从这里进入；保存、另存为、草稿恢复和外部冲突判断也在此决定。 |
+| `FormatRegistry` | 扩展名、UTD、MIME、默认文件名、大纲支持和快捷插入。文件名能匹配已注册后缀时以文件名为准，否则使用系统声明的类型。无法识别的系统类型不会被当成 Markdown。 |
+| `TextEncoding` | 把字节还原成编辑器使用的 `\n` 文本，保存时写回原编码、BOM 和换行，支持 UTF-8、UTF-16 LE/BE 和 GB18030。写回后字符对不上时拒绝写入。 |
+| `DocumentFiles` | 文件选择、读取、写入授权判断、持久授权、冲突检测和写回。冲突检测比对打开时或上次保存成功时的 SHA-256 字节指纹。只有读取授权时，保存改为另存为。 |
+| `LocalState` | 最近文稿列表、未保存草稿和外观偏好的本机存储。 |
 
-SVG 仍去掉脚本、动画、外链和 `foreignObject`。内部 `url(#id)`、片段引用和 `data:` 图片保留。`.txt` 不再按 Markdown 排版。完整 TeX 文档编译还没有做。大文件的读写仍在主线程。分享到其他应用不在这次范围内。
+## 界面
+
+首页是 `HdsNavigation`，文稿页是 `HdsNavDestination`，标题栏材质跟随系统。新建和打开入口留在首页内容区，保存、查找和更多入口位于文稿页标题栏。编辑、预览、大纲和分栏由 `Tabs` 切换，宽度达到 720vp 时出现分栏。键盘避让使用 `RESIZE_WITH_CARET`。
+
+标题栏的四宫格菜单用 `Menu`、`MenuItemGroup` 和 `MenuItem` 实现，通过 `promptAction.openMenu` 锚定到标题栏图标，菜单项用通用的 `.onClick()` 触发动作。
+
+半模态有两个：设置挂在外层 `Column`，关于挂在 `HdsNavigation`。同一个节点只能绑定一个 `bindSheet`，两个挂在一起会互相顶掉，最终都不会显示。菜单项要打开半模态时，先关闭菜单再切换半模态的显示状态。
+
+## 预览
+
+预览资源由 `renderer/` 构建后放入 HAP。`renderer/src/renderers/` 按格式 ID 分为 `plain`、`markdown`、`svg` 和 `tex-math`，页面只把格式 ID 和正文交给预览，连续编辑产生的更新合并为约 120ms 一次。
+
+预览与 ArkUI 之间只有单向的 `MarknotePreview.update` 调用。预览页不注册 ArkTS 接口，也不具备联网能力。
+
+## 系统文件关联
+
+文件关联注册在 `module.json5`：`file` scheme 搭配 `FileOpen`，类型为 `general.markdown`、`general.plain-text`、`general.svg-image`、`org.tug.tex` 和 `general.tex`。SDK 中的 TeX 统一类型是 `general.tex`，因此一并注册，避免文件管理器匹配不到。不注册 `general.file` 和 `general.text`。

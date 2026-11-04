@@ -1,40 +1,30 @@
-# HarmonyOS 应用市场发行准备
+# 上架准备
 
-## 应用名称与商店文案
+## 商店文案
 
-中文名称和英文名称都是 MarkNote。
+应用中文名和英文名均为 MarkNote。
 
-一句话简介：
+一句话简介：支持多种格式的文本编辑与预览
 
-> 支持多种格式的文本编辑与预览
+详细介绍：MarkNote 是一款支持多种文本格式的编辑器，可编辑和预览 Markdown 文档、LaTeX 数学公式、SVG 矢量图形及普通文本文件，支持直接打开、修改和保存本地文件。
 
-详细介绍：
+## 代码中已落实
 
-> MarkNote 是一款支持多种文本格式的编辑器，可编辑和预览 Markdown 文档、LaTeX 数学公式、SVG 矢量图形及普通文本文件。支持直接打开、修改和保存本地文件。
+- 导航、文件选取、读写、源码编辑、主题和关于页面均使用 ArkUI / ArkTS。
+- Markdown、SVG 和 TeX 数学公式由打包进 HAP 的离线 ArkWeb 渲染，没有网络权限，也不发起 CDN 请求。
+- SVG 和 Markdown 标记经过安全清理，预览页配置了内容安全策略。
+- 第三方依赖均采用许可友好的开源许可证。DOMPurify 按 Apache-2.0 分发，KaTeX 字体按 SIL OFL 1.1 单独声明。
+- `renderer` 的构建从实际安装的生产依赖中收集版权与许可全文，缺少许可证时中止构建。
+- `EntryAbility` 以 singleton 注册了 Markdown、纯文本、SVG 和 TeX 的 `FileOpen`。
 
-## 当前工程中已落实
+## 上架前必须完成
 
-- 应用导航、文件选取、读写、源码编辑、主题、关于页面均使用 ArkUI / ArkTS。
-- Markdown、SVG、TeX 数学公式采用打包进 HAP 的离线 ArkWeb 渲染；没有网络权限或 CDN 请求。
-- SVG 和 Markdown 标记经过严格的安全清理，预览页有内容安全策略。
-- 使用许可友好的开源软件。DOMPurify 按 Apache-2.0 分支分发；KaTeX 字体按照 SIL OFL 1.1 单独声明。
-- `renderer/npm run build` 从实际安装的生产依赖收集版权与许可全文，将其打包为应用可阅读的 `THIRD_PARTY_NOTICES.txt`；缺少许可证时中止构建。
-- `EntryAbility` 以 singleton 注册了 Markdown、纯文本、SVG 和 TeX 的 `FileOpen`。文件管理器是否列出 MarkNote，以及原地保存是否成功，仍须在目标设备上验收。
+1. 在 `renderer/` 执行 `npm ci`、`npm run check` 和 `npm run build`，确认 `package-lock.json` 与依赖一致。
+2. 在应用内打开「关于」，确认许可证全文和隐私说明显示完整；复核传递依赖、NOTICE 与数学字体授权。
+3. 用 DevEco Studio 26 和目标 HarmonyOS 7 设备完成真机验收，覆盖 HAP 编译与安装、应用内打开与保存、文件管理器「打开方式」、只读授权下的另存为、外部修改拒绝覆盖、草稿恢复、外观切换和离线预览。
+4. 在应用市场材料中声明 `FileOpen`，以及 `general.markdown`、`general.plain-text`、`general.svg-image`、`org.tug.tex` 和 `general.tex`。审核完成前，不要宣称可以从文件管理器打开。
+5. 配置发行方自己的签名与证书，替换测试用包名，不要使用他人的包名、商标或商店图片。
+6. 根据发行主体和最终数据行为完成线上隐私政策，填入联系邮箱、政策 URL 和生效日期，并与市场声明保持一致。
+7. 完成应用市场要求的开发者实名认证、备案或资质、隐私安全、内容分级和测试截图等发布材料。
 
-## 正式上架之前仍必须完成
-
-1. 在 `renderer/` 执行 `npm install`、`npm run check`、`npm run build`，并将生成的 `package-lock.json` 纳入源码版本控制，后续使用 `npm ci` 重建相同依赖树。
-2. 检查应用内「开源许可证与隐私说明」实际展示完整文本；复核传递依赖、NOTICE 与数学字体授权。
-3. 使用 DevEco Studio 26 和目标 HarmonyOS 7 设备完成 HAP 编译、应用内打开/保存、文件管理器「打开方式」、只读另存为、外部修改拒绝覆盖、草稿恢复、主题与离线预览的真机验收。
-4. 在应用市场材料中声明 `FileOpen`，以及 `general.markdown`、`general.plain-text`、`general.svg-image`、`org.tug.tex` / `general.tex`。完成该项审核后再把「可从文件管理器打开」写成已上架能力。
-5. 替换测试包名、配置发行方拥有的签名与证书；不要使用他人的包名、商标或商店图片。
-6. 根据发行主体及最终数据行为完成线上隐私政策，填入联系邮箱、政策 URL、生效日期，并与市场声明保持一致。
-7. 完成应用市场实际要求的开发者实名认证、备案/资质、隐私安全、内容分级、测试截图及商店发布材料。
-
-## 现阶段不应宣传的能力
-
-- `.tex` 当前支持 TeX **数学排版**；完整 `\\documentclass` 文档/宏包/参考文献/PDF 编译依赖未来另一个正式引擎。
-- SVG 只支持去掉脚本、动画和外链的安全静态子集；不提供 SVG JavaScript 交互或远程图片加载。
-- 文件管理器打开和原地保存尚未在真机上验收，也没有应用市场 FileOpen 审核结论。
-
-这些发行事项不是给项目添加内部兼容层，而是实际商业分发所需的外部边界。
+各功能的实际限制见[功能目录](FEATURES.md)。上述事项属于商业分发的外部要求，不应通过在项目内添加兼容层来规避。
