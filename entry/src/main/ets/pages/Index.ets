@@ -252,7 +252,10 @@ struct Index {
     const menu: HdsNavigationMenuContentOptions = {
       maxCount: 3,
       value: [
-        this.menuIcon('保存', $r('sys.symbol.checkmark'), 'marknote-save', (): void => { void this.saveFile(false); }),
+        // 系统符号表里没有名为 save 的条目（icon_save 是字符串资源），
+        // square_and_arrow_down 是下载符号，不能当保存用。
+        // 系统「备忘录」编辑页标题栏用圆圈对勾表示确认/完成，这里跟随同一符号。
+        this.menuIcon('保存', $r('sys.symbol.checkmark_circle'), 'marknote-save', (): void => { void this.saveFile(false); }),
         this.menuIcon('查找', $r('sys.symbol.magnifyingglass'), 'marknote-find', (): void => {
           this.searchVisible = true;
           this.selectedTab = 0;
