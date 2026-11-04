@@ -6,16 +6,17 @@
 marknote
 ├── AppScope/app.json5                     包名与应用图标
 ├── entry/src/main/ets/
-│   ├── entryability/EntryAbility.ets      启动后加载首页
+│   ├── entryability/EntryAbility.ets      桌面启动与系统打开文件
 │   ├── pages/Index.ets                    首页、编辑、查找、主题
-│   ├── document/FormatRegistry.ets        扩展名、默认名、大纲、快捷插入
-│   ├── document/DocumentService.ets       按文件名取格式和大纲
+│   ├── document/LaunchRequests.ets        冷启动时暂存外部文件请求
+│   ├── document/FormatRegistry.ets        扩展名、UTD、MIME、大纲
+│   ├── document/DocumentService.ets       文稿会话、打开、保存、冲突
 │   ├── document/TextEncoding.ets          编码、BOM、换行
 │   ├── model/Document.ets                 文稿字段与标题偏移
 │   └── storage/
 │       ├── DocumentFiles.ets              选择、读写、持久授权
 │       └── LocalState.ets                 最近文稿、草稿、主题偏好
-├── entry/src/main/module.json5            入口 Ability 与权限
+├── entry/src/main/module.json5            Ability、FileOpen 与权限
 ├── entry/src/main/resources/rawfile/      打进 HAP 的预览页和声明
 ├── renderer/
 │   ├── src/main.ts                        按格式 ID 调用渲染器
@@ -27,15 +28,16 @@ marknote
 ├── third_party/README.md                  直接依赖和许可证选择
 ├── README.md                              产品概览
 ├── CONTRIBUTING.md                        构建、签名和提交
+├── build-profile.example.json5            公共构建配置模板
 ├── hvigorfile.ts                          应用构建入口
 └── oh-package.json5                       OHPM 工程描述
 ```
 
 ## 源码从这里改
 
-首页、编辑、查找和主题都在 `entry/src/main/ets/pages/Index.ets`。新增格式时，把扩展名和能力登记进 `document/FormatRegistry.ets`，不要在页面里再写一套判断。
+首页、编辑、查找和主题都在 `entry/src/main/ets/pages/Index.ets`。新增格式时，把扩展名、UTD 和 MIME 登记进 `document/FormatRegistry.ets`，并在 `module.json5` 的 `FileOpen` 里增加同一条类型。
 
-打开、保存、最近文稿和草稿都在 `entry/src/main/ets/storage/`。编码、BOM 和换行单独放在编码模块里。
+打开、保存和切换文稿进入 `document/DocumentService.ets`。文件授权和字节指纹在 `storage/DocumentFiles.ets`。编码、BOM 和换行仍单独放在编码模块里。
 
 预览页只接收格式 ID 和正文，分发入口是 `renderer/src/main.ts`。
 
@@ -43,10 +45,11 @@ marknote
 entry/src/main/ets/
 ├── pages/Index.ets                        菜单、编辑页、预览调度
 ├── document/FormatRegistry.ets            新格式先登记在这里
-├── document/DocumentService.ets           决定要不要生成大纲
+├── document/LaunchRequests.ets            系统文件请求
+├── document/DocumentService.ets           打开、保存、草稿恢复
 ├── document/TextEncoding.ets              字节、BOM、换行
 ├── model/Document.ets                     大纲标题和文稿字段
-├── storage/DocumentFiles.ets              选择器过滤来自格式表
+├── storage/DocumentFiles.ets              授权、指纹、读写
 └── storage/LocalState.ets                 草稿保留编码和换行
 renderer/src/main.ts                       按格式 ID 分发
 renderer/src/renderers/                    每种格式一个渲染文件

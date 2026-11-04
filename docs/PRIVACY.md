@@ -2,8 +2,8 @@
 
 ## 当前实现
 
-Marknote 在本机编辑 Markdown、SVG 和 TeX 数学表达式文稿。用户通过 HarmonyOS
-系统文件选择器授权访问文稿。最近文稿的 URI 与未保存草稿保存在应用私有空间；
+Marknote 在本机编辑 Markdown、纯文本、SVG 和 TeX 数学表达式文稿。用户通过 HarmonyOS
+系统文件选择器或文件管理器的打开授权访问文稿。最近文稿的 URI 与未保存草稿保存在应用私有空间；
 选择系统设置项保存在本机 Preferences 中。
 
 应用不需要 `ohos.permission.INTERNET`，不接入账号、广告、分析 SDK、云同步或远程字体/CDN。

@@ -56,6 +56,10 @@ export class LocalState {
       if (typeof parsed.encoding !== 'string' || parsed.encoding.length === 0) parsed.encoding = 'utf-8';
       if (typeof parsed.lineEndings !== 'string') parsed.lineEndings = '';
       if (parsed.newline !== '\n' && parsed.newline !== '\r\n' && parsed.newline !== 'mixed') parsed.newline = '\n';
+      if (typeof parsed.fingerprint !== 'string') parsed.fingerprint = '';
+      if (typeof parsed.formatId !== 'string') parsed.formatId = '';
+      parsed.writable = parsed.writable === true;
+      parsed.persistent = parsed.persistent === true;
       if (parsed.text === parsed.savedText) return null;
       return parsed;
     } catch {

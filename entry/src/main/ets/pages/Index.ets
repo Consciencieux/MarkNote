@@ -4,8 +4,9 @@ import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
 import { DocumentInfo, Heading, RecentDocument, RecoveryData, linesIn } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
-import { FormatRegistry } from '../document/FormatRegistry';
-import { DocumentFiles, FileContents } from '../storage/DocumentFiles';
+import { DocumentFormat, FormatRegistry } from '../document/FormatRegistry';
+import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
+import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 
 interface ActionChoice {
@@ -52,6 +53,7 @@ struct Index {
   }
 
   aboutToDisappear(): void {
+    LaunchRequests.unbind();
     this.flushRecovery();
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     if (this.previewTimer >= 0) clearTimeout(this.previewTimer);
@@ -79,6 +81,9 @@ struct Index {
     }
     this.recovery = LocalState.readDraft(this.context);
     this.recoveryAvailable = this.recovery !== null;
+    LaunchRequests.bind((request: OpenRequest) => {
+      this.confirmSwitch(() => this.openExternal(request));
+    });
   }
 
   private toast(message: string): void {
@@ -119,7 +124,7 @@ struct Index {
       const id = item.id;
       choices.push({
         title: moreMenu ? item.moreTitle : item.sheetTitle,
-        action: () => this.guardChanges(() => this.startNew(id))
+        action: () => this.confirmSwitch(() => this.startNew(id))
       });
     }
     return choices;
@@ -127,7 +132,7 @@ struct Index {
 
   private showMoreMenu(): void {
     const sheets = this.creationChoices(true);
-    sheets.push({ title: '打开文件', action: () => this.guardChanges(() => { void this.pickOpen(); }) });
+    sheets.push({ title: '打开文件', action: () => this.confirmSwitch(() => this.pickOpen()) });
     sheets.push({ title: '另存为', action: () => { void this.saveFile(true); } });
     sheets.push({ title: '外观', action: () => this.showThemeMenu() });
     sheets.push({ title: '开源许可证与隐私说明', action: () => this.openLegal() });
@@ -194,8 +199,12 @@ struct Index {
     }, 120);
   }
 
+  private currentFormat(): DocumentFormat {
+    return DocumentService.formatFor(this.info);
+  }
+
   private sendPreview(controller: webview.WebviewController): void {
-    const kind = DocumentService.formatOf(this.title).id;
+    const kind = this.currentFormat().id;
     const command = 'window.MarknotePreview.update(' + JSON.stringify({
       kind: kind,
       source: this.source,
@@ -212,70 +221,66 @@ struct Index {
     return this.source !== this.savedText;
   }
 
-  private guardChanges(action: () => void): void {
+  private confirmSwitch(proceed: () => Promise<void>): void {
     if (!this.editing && this.recoveryAvailable) {
       AlertDialog.show({
         title: '还有未恢复的草稿',
         message: '新建或打开其他文件会丢弃这份草稿。可以先恢复草稿并保存。',
         primaryButton: { value: '取消', action: () => {} },
-        secondaryButton: { value: '放弃草稿继续', action: () => {
-          // Keep the draft until the next document actually opens or is created.
-          action();
-        } }
+        secondaryButton: { value: '放弃草稿继续', action: () => { void proceed(); } }
       });
       return;
     }
     if (!this.editing || !this.isDirty()) {
-      action();
+      void proceed();
       return;
     }
-    AlertDialog.show({
+    this.getUIContext().getPromptAction().showDialog({
       title: '未保存的修改',
-      message: '当前文稿有未保存的修改。可以先取消并保存，再继续操作。',
-      primaryButton: { value: '取消', action: () => {} },
-      secondaryButton: {
-        value: '放弃并继续',
-        action: () => {
-          // Picker cancellation/read failure must retain the current recovery.
-          action();
-        }
+      message: '可以保存当前文稿后再打开，也可以放弃修改。取消则留在当前文稿。',
+      buttons: [
+        { text: '保存并打开', color: $r('sys.color.font_primary') },
+        { text: '放弃修改并打开', color: $r('sys.color.font_primary') },
+        { text: '取消', color: $r('sys.color.font_secondary') }
+      ]
+    }).then((result) => {
+      if (result.index === 0) {
+        void this.saveFile(false).then((opened: boolean) => {
+          if (opened) void proceed();
+        });
+      } else if (result.index === 1) {
+        void proceed();
       }
+    }).catch(() => {
+      // Dismissing the dialog keeps the current document and its draft.
     });
   }
 
-  private startNew(kind: string = 'markdown'): void {
-    const format = FormatRegistry.byId(kind);
-    this.clearRecovery();
-    this.info = new DocumentInfo();
-    this.info.name = format.defaultFilename;
-    this.title = this.info.name;
-    this.source = format.starter;
-    this.savedText = '';
-    this.headings = [];
+  private syncFromService(): void {
+    const session = DocumentService.current();
+    this.info = session.info;
+    this.title = session.info.name;
+    this.source = session.source;
+    this.savedText = session.savedText;
+    this.editing = session.editing;
+    this.headings = DocumentService.headingsFor(this.info, this.source);
     this.schedulePreview();
-    this.selectedTab = 0;
-    this.searchVisible = false;
-    this.currentMatch = -1;
-    this.selectionStart = 0;
-    this.selectionEnd = 0;
-    this.editing = true;
   }
 
-  private openDocument(opened: FileContents): void {
-    this.info = opened.info;
-    this.title = opened.info.name;
-    this.source = opened.text;
-    this.savedText = opened.text;
-    this.headings = DocumentService.headings(this.title, opened.text);
+  private presentOpened(): void {
+    this.syncFromService();
     this.currentMatch = -1;
     this.selectionStart = 0;
     this.selectionEnd = 0;
     this.selectedTab = 0;
     this.searchVisible = false;
-    this.editing = true;
     this.clearRecovery();
-    this.schedulePreview();
-    if (this.info.uri) void this.rememberRecent(this.info.uri, this.info.name);
+    if (this.info.uri.length > 0) void this.rememberRecent(this.info.uri, this.info.name);
+  }
+
+  private async startNew(kind: string): Promise<void> {
+    DocumentService.startNew(kind);
+    this.presentOpened();
   }
 
   private async pickOpen(): Promise<void> {
@@ -283,26 +288,33 @@ struct Index {
     try {
       const uri = await DocumentFiles.chooseOpen(this.context);
       if (uri.length === 0) return;
-      await DocumentFiles.prepare(uri);
-      const loaded = DocumentFiles.read(uri);
-      this.openDocument(loaded);
+      await DocumentService.openUri(uri, '', true, false);
+      this.presentOpened();
     } catch (error) {
       this.toast('打开失败：' + String(error));
     }
   }
 
   private openRecent(item: RecentDocument): void {
-    this.guardChanges(() => {
-      void this.openStored(item);
-    });
+    this.confirmSwitch(() => this.openStored(item));
   }
 
   private async openStored(item: RecentDocument): Promise<void> {
     try {
-      await DocumentFiles.prepare(item.uri);
-      this.openDocument(DocumentFiles.read(item.uri));
+      await DocumentService.openUri(item.uri, '', true, false);
+      this.presentOpened();
     } catch {
       this.toast('原文件授权可能已经失效，请使用“打开”重新选取');
+    }
+  }
+
+  private async openExternal(request: OpenRequest): Promise<void> {
+    const writeRequested = request.writeGranted || !request.readGranted;
+    try {
+      await DocumentService.openUri(request.uri, request.declaredType, writeRequested, true);
+      this.presentOpened();
+    } catch (error) {
+      this.toast('打开失败：' + String(error));
     }
   }
 
@@ -325,46 +337,22 @@ struct Index {
     }
   }
 
-  private async saveFile(asNewFile: boolean): Promise<void> {
-    if (!this.context || !this.editing || this.saving) return;
-    const snapshot = this.source;
-    const oldUri = this.info.uri;
-    const oldTitle = this.title;
-    const oldSaved = this.savedText;
-    let uri = asNewFile ? '' : this.info.uri;
+  private async saveFile(asNewFile: boolean): Promise<boolean> {
+    if (!this.context || !this.editing || this.saving) return false;
     this.saving = true;
     try {
-      if (!uri) {
-        uri = await DocumentFiles.chooseSave(this.context, this.title);
-        if (!uri) return;
-      }
-      await DocumentFiles.prepare(uri);
-      const target = new DocumentInfo();
-      target.uri = uri;
-      target.name = this.title;
-      target.newline = this.info.newline;
-      target.hasBom = this.info.hasBom;
-      target.encoding = this.info.encoding;
-      target.lineEndings = this.info.lineEndings;
-      // A Save picker creates the destination. Existing documents must remain unchanged
-      // since the last successful read/save, otherwise overwriting is refused.
-      DocumentFiles.write(target, snapshot, !asNewFile && oldUri.length > 0 ? oldSaved : null);
-      this.info = target;
-      this.savedText = snapshot;
-      // Pickers can rename the target; keep the name the user has already chosen
-      // when provided, and update metadata from the resulting file if available.
-      if (uri !== oldUri || asNewFile) {
-        const reopened = DocumentFiles.read(uri);
-        this.info.name = reopened.info.name || oldTitle;
-        this.title = this.info.name;
-      }
-      this.toast(this.source === snapshot ? '已保存' : '已保存操作开始时的版本，仍有未保存修改');
+      const result = await DocumentService.save(this.context, asNewFile);
+      this.syncFromService();
+      if (!result.saved) return false;
+      this.toast(result.message);
       if (!this.isDirty()) this.clearRecovery();
       else this.scheduleRecovery();
-      await this.rememberRecent(uri, this.title);
+      await this.rememberRecent(this.info.uri, this.title);
+      return !result.stillDirty;
     } catch (error) {
       this.scheduleRecovery();
       this.toast('保存失败：' + String(error));
+      return false;
     } finally {
       this.saving = false;
     }
@@ -401,6 +389,10 @@ struct Index {
     draft.lineEndings = this.info.lineEndings;
     draft.encoding = this.info.encoding;
     draft.hasBom = this.info.hasBom;
+    draft.fingerprint = this.info.fingerprint;
+    draft.formatId = this.info.formatId;
+    draft.writable = this.info.writable;
+    draft.persistent = this.info.persistent;
     try {
       LocalState.writeDraft(this.context, draft);
       this.recovery = draft;
@@ -412,36 +404,26 @@ struct Index {
 
   private async restoreRecovery(): Promise<void> {
     if (!this.recovery) return;
-    const draft = this.recovery;
-    if (draft.uri.length > 0) await DocumentFiles.prepare(draft.uri);
-    this.info = new DocumentInfo();
-    this.info.name = draft.name;
-    this.info.uri = draft.uri;
-    this.info.newline = draft.newline;
-    this.info.lineEndings = draft.lineEndings;
-    this.info.encoding = draft.encoding;
-    this.info.hasBom = draft.hasBom;
-    this.title = draft.name;
-    this.source = draft.text;
-    this.savedText = draft.savedText;
-    this.headings = DocumentService.headings(this.title, draft.text);
+    await DocumentService.restore(this.recovery);
+    this.syncFromService();
     this.currentMatch = -1;
     this.selectionStart = 0;
     this.selectionEnd = 0;
-    this.editing = true;
     this.selectedTab = 0;
-    this.schedulePreview();
+    this.searchVisible = false;
   }
 
   private closeToLibrary(): void {
     this.flushRecovery();
+    DocumentService.close();
     this.editing = false;
   }
 
   private updateSource(text: string): void {
+    DocumentService.edit(text);
     this.source = text;
     this.currentMatch = -1;
-    this.headings = DocumentService.headings(this.title, text);
+    this.headings = DocumentService.headingsFor(this.info, text);
     this.scheduleRecovery();
     this.schedulePreview();
   }
@@ -508,7 +490,7 @@ struct Index {
             Button('打开文件', { type: ButtonType.Capsule })
               .buttonStyle(ButtonStyleMode.NORMAL)
               .layoutWeight(1)
-              .onClick(() => this.guardChanges(() => { void this.pickOpen(); }))
+              .onClick(() => this.confirmSwitch(() => this.pickOpen()))
           }
           .width('100%')
           Button('外观与说明', { type: ButtonType.Normal })
@@ -602,7 +584,7 @@ struct Index {
   private QuickKeys() {
     Scroll() {
       Row({ space: 8 }) {
-        ForEach(DocumentService.formatOf(this.title).inserts, (token: string) => {
+        ForEach(this.currentFormat().inserts, (token: string) => {
           Button(token, { type: ButtonType.Normal })
             .buttonStyle(ButtonStyleMode.NORMAL)
             .onClick(() => this.insertToken(token))
@@ -631,7 +613,7 @@ struct Index {
           this.selectionStart = start;
           this.selectionEnd = end;
         })
-      if (DocumentService.formatOf(this.title).inserts.length > 0) {
+      if (this.currentFormat().inserts.length > 0) {
         this.QuickKeys()
       }
       Row({ space: 12 }) {
@@ -643,6 +625,8 @@ struct Index {
           Text('正在保存…').fontSize(12)
         } else if (this.isDirty() || !this.info.uri) {
           Text('未保存').fontSize(12)
+        } else if (!this.info.writable) {
+          Text('只读').fontSize(12)
         } else {
           Text('已保存').fontSize(12)
         }
@@ -729,7 +713,7 @@ struct Index {
   }
 
   private splitTab(): number {
-    return DocumentService.formatOf(this.title).outline ? 3 : 2;
+    return this.currentFormat().outline ? 3 : 2;
   }
 
   private adjustLayout(width: number): void {
@@ -764,7 +748,7 @@ struct Index {
       TabContent() {
         this.PreviewPage()
       }.tabBar('预览')
-      if (DocumentService.formatOf(this.title).outline) {
+      if (this.currentFormat().outline) {
         TabContent() {
           this.OutlinePage()
         }.tabBar('大纲')

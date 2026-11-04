@@ -1,61 +1,108 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo, fileShare } from '@kit.CoreFileKit';
+import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { DocumentInfo } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
 import { TextEncoding } from '../document/TextEncoding';
 
 const MAX_BYTES: number = 8 * 1024 * 1024;
+const READ_WRITE: number = fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE;
 
 export class FileContents {
   info: DocumentInfo = new DocumentInfo();
   text: string = '';
 }
 
-function accessPolicy(uri: string): fileShare.PolicyInfo {
-  return {
-    uri: uri,
-    operationMode: fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE
-  };
+/** What the system actually granted for one URI. Writable is the result of opening, not of the URI string. */
+export class FileAccess {
+  writable: boolean = false;
+  persistent: boolean = false;
+}
+
+function fingerprintOf(bytes: Uint8Array): string {
+  const md = cryptoFramework.createMd('SHA256');
+  const blob: cryptoFramework.DataBlob = { data: bytes };
+  md.updateSync(blob);
+  const digest = md.digestSync();
+  const data = digest.data;
+  let hex = '';
+  for (let index = 0; index < data.length; index++) {
+    const value = data[index];
+    hex += (value < 16 ? '0' : '') + value.toString(16);
+  }
+  return hex;
+}
+
+function policy(uri: string, mode: number): fileShare.PolicyInfo {
+  return { uri: uri, operationMode: mode };
+}
+
+function canOpen(uri: string, mode: number): boolean {
+  try {
+    const file = fileIo.openSync(uri, mode);
+    fileIo.closeSync(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function retain(uri: string, mode: number): Promise<boolean> {
+  const item = policy(uri, mode);
+  try {
+    const states = await fileShare.checkPersistentPermission([item]);
+    if (states.length > 0 && states[0]) {
+      try {
+        await fileShare.activatePermission([item]);
+      } catch {
+        // The grant is already persistent. This process may still hold a temporary open.
+      }
+      return true;
+    }
+  } catch {
+    // Fall through and try to persist the current grant.
+  }
+  try {
+    await fileShare.persistPermission([item]);
+  } catch {
+    return false;
+  }
+  try {
+    await fileShare.activatePermission([item]);
+  } catch {
+    // Persisted for the next launch even if activation is unnecessary in this process.
+  }
+  return true;
 }
 
 export class DocumentFiles {
   /**
-   * Picker grants last only for the current process. Recent files and drafts need the
-   * grant persisted, then activated again on the next launch before the URI can be read.
+   * Try the requested mode, then keep whichever grant the provider allows.
+   * A failed persist leaves a temporary grant when the file can still be opened.
    */
-  static async prepare(uri: string): Promise<void> {
-    if (uri.length === 0) return;
-    const policy = accessPolicy(uri);
-    let persisted = false;
-    try {
-      const states = await fileShare.checkPersistentPermission([policy]);
-      persisted = states.length > 0 && states[0];
-    } catch {
-      persisted = false;
-    }
-    if (!persisted) {
-      try {
-        await fileShare.persistPermission([policy]);
-        persisted = true;
-      } catch {
-        persisted = false;
-      }
-    }
-    if (persisted) {
-      try {
-        await fileShare.activatePermission([policy]);
-      } catch {
-        // A picker grant from this process can still read before it is persisted.
-      }
-    }
+  static async prepare(uri: string, writeRequested: boolean): Promise<FileAccess> {
+    const access = new FileAccess();
+    if (uri.length === 0) return access;
+    const writable = writeRequested && canOpen(uri, fileIo.OpenMode.READ_WRITE);
+    const readable = writable || canOpen(uri, fileIo.OpenMode.READ_ONLY);
+    if (!readable) throw new Error('原文件授权可能已经失效，请使用“打开”重新选取');
+    const mode = writable ? READ_WRITE : fileShare.OperationMode.READ_MODE;
+    let persistent = await retain(uri, mode);
+    if (!persistent && writable) persistent = await retain(uri, fileShare.OperationMode.READ_MODE);
+    access.writable = writable;
+    access.persistent = persistent;
+    return access;
   }
 
   static async release(uri: string): Promise<void> {
     if (uri.length === 0) return;
-    try {
-      await fileShare.revokePermission([accessPolicy(uri)]);
-    } catch {
-      // The persisted grant may already have been removed.
+    const modes: number[] = [READ_WRITE, fileShare.OperationMode.READ_MODE];
+    for (let index = 0; index < modes.length; index++) {
+      try {
+        await fileShare.revokePermission([policy(uri, modes[index])]);
+      } catch {
+        // The persisted grant may already have been removed.
+      }
     }
   }
 
@@ -75,7 +122,7 @@ export class DocumentFiles {
     return uris.length === 0 ? '' : uris[0];
   }
 
-  static read(uri: string): FileContents {
+  static readBytes(uri: string): Uint8Array {
     const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
     try {
       const size = Number(fileIo.statSync(file.fd).size);
@@ -89,32 +136,56 @@ export class DocumentFiles {
         original.set(new Uint8Array(chunk, 0, length), readPosition);
         readPosition += length;
       }
-      const decoded = TextEncoding.decode(original);
-      const result = new FileContents();
-      result.text = decoded.text;
-      result.info.uri = uri;
-      result.info.name = file.name || FormatRegistry.byFilename('').defaultFilename;
-      result.info.newline = decoded.newline;
-      result.info.lineEndings = decoded.lineEndings;
-      result.info.hasBom = decoded.hasBom;
-      result.info.encoding = decoded.encoding;
-      return result;
+      return original;
     } finally {
       fileIo.closeSync(file);
     }
   }
 
+  static read(uri: string): FileContents {
+    let name = '';
+    const named = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+    try {
+      name = named.name;
+    } catch {
+      name = '';
+    } finally {
+      fileIo.closeSync(named);
+    }
+    const original = DocumentFiles.readBytes(uri);
+    const decoded = TextEncoding.decode(original);
+    const result = new FileContents();
+    result.text = decoded.text;
+    result.info.uri = uri;
+    result.info.name = name.length > 0 ? name : FormatRegistry.byId('plain').defaultFilename;
+    result.info.newline = decoded.newline;
+    result.info.lineEndings = decoded.lineEndings;
+    result.info.hasBom = decoded.hasBom;
+    result.info.encoding = decoded.encoding;
+    result.info.fingerprint = fingerprintOf(original);
+    return result;
+  }
+
   /**
-   * Outside providers cannot guarantee atomic replacement. Check the last known bytes
-   * before writing; verify afterwards. The page keeps its recovery draft on any failure.
+   * Outside providers cannot guarantee atomic replacement. Compare the byte fingerprint
+   * taken at open or the last successful save, then verify the bytes written back.
    */
-  static write(info: DocumentInfo, text: string, expectedSource: string | null): void {
-    if (expectedSource !== null) {
-      const disk = DocumentFiles.read(info.uri);
-      if (disk.text !== expectedSource || disk.info.hasBom !== info.hasBom ||
-          disk.info.newline !== info.newline || disk.info.lineEndings !== info.lineEndings ||
-          disk.info.encoding !== info.encoding) {
+  static write(info: DocumentInfo, text: string, checkConflict: boolean): void {
+    if (info.uri.length === 0) throw new Error('没有可写入的文件');
+    if (!info.writable) throw new Error('当前文件没有写入权限，请使用“另存为”');
+    if (checkConflict) {
+      if (info.fingerprint.length === 0) {
+        throw new Error('缺少原文件指纹，请使用“另存为”，避免覆盖其他修改。');
+      }
+      const current = DocumentFiles.readBytes(info.uri);
+      if (fingerprintOf(current) !== info.fingerprint) {
         throw new Error('原文件已在其他应用中改变。请选择“另存为”，避免覆盖其他修改。');
+      }
+    }
+    if (info.newline === 'mixed') {
+      const parts = text.split('\n');
+      if (parts.length !== info.lineEndings.length + 1) {
+        throw new Error('混合换行在行数变化后无法无损写回。请使用“另存为”。');
       }
     }
     const encoded = TextEncoding.encode(text, info);
@@ -135,10 +206,14 @@ export class DocumentFiles {
     } finally {
       fileIo.closeSync(file);
     }
-    const verified = DocumentFiles.read(info.uri);
-    if (verified.text !== text || verified.info.hasBom !== info.hasBom ||
-        verified.info.encoding !== info.encoding) {
+    const verified = DocumentFiles.readBytes(info.uri);
+    if (fingerprintOf(verified) !== fingerprintOf(bytes)) {
       throw new Error('保存后校验失败，已保留草稿');
     }
+    const decoded = TextEncoding.decode(verified);
+    if (decoded.text !== text) throw new Error('保存后校验失败，已保留草稿');
+    info.fingerprint = fingerprintOf(verified);
+    info.hasBom = decoded.hasBom;
+    info.encoding = decoded.encoding;
   }
 }

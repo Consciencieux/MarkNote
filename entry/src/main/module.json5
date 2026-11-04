@@ -24,10 +24,29 @@
       "startWindowIcon": "$media:app_icon",
       "startWindowBackground": "$color:start_window_background",
       "exported": true,
-      "skills": [{
-        "entities": ["entity.system.home"],
-        "actions": ["ohos.want.action.home"]
-      }]
+      "launchType": "singleton",
+      "skills": [
+        {
+          "entities": ["entity.system.home"],
+          "actions": ["ohos.want.action.home"]
+        },
+        {
+          "actions": ["ohos.want.action.viewData"],
+          "uris": [
+            { "scheme": "file", "utd": "general.markdown", "maxFileSupported": 1, "linkFeature": "FileOpen" },
+            { "scheme": "file", "utd": "general.plain-text", "maxFileSupported": 1, "linkFeature": "FileOpen" },
+            { "scheme": "file", "utd": "general.svg-image", "maxFileSupported": 1, "linkFeature": "FileOpen" },
+            { "scheme": "file", "utd": "org.tug.tex", "maxFileSupported": 1, "linkFeature": "FileOpen" },
+            { "scheme": "file", "utd": "general.tex", "maxFileSupported": 1, "linkFeature": "FileOpen" },
+            { "scheme": "file", "type": "text/markdown", "maxFileSupported": 1, "linkFeature": "FileOpen" },
+            { "scheme": "file", "type": "text/x-markdown", "maxFileSupported": 1, "linkFeature": "FileOpen" },
+            { "scheme": "file", "type": "text/plain", "maxFileSupported": 1, "linkFeature": "FileOpen" },
+            { "scheme": "file", "type": "image/svg+xml", "maxFileSupported": 1, "linkFeature": "FileOpen" },
+            { "scheme": "file", "type": "application/x-tex", "maxFileSupported": 1, "linkFeature": "FileOpen" },
+            { "scheme": "file", "type": "text/x-tex", "maxFileSupported": 1, "linkFeature": "FileOpen" }
+          ]
+        }
+      ]
     }]
   }
 }

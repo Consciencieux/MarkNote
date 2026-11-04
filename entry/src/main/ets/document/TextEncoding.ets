@@ -117,6 +117,14 @@ function bomPrefix(encoding: string): Uint8Array {
   return new Uint8Array(0);
 }
 
+function startsWithBytes(bytes: Uint8Array, prefix: Uint8Array): boolean {
+  if (prefix.length === 0 || bytes.length < prefix.length) return false;
+  for (let index = 0; index < prefix.length; index++) {
+    if (bytes[index] !== prefix[index]) return false;
+  }
+  return true;
+}
+
 export class TextEncoding {
   static decode(bytes: Uint8Array): DecodedText {
     if (bytes.length === 0) return new DecodedText();
@@ -158,13 +166,19 @@ export class TextEncoding {
   static encode(text: string, info: DocumentInfo): EncodedText {
     const encoding = info.encoding.length === 0 ? 'utf-8' : info.encoding;
     const applied = serialize(text, info.newline, info.lineEndings, encoding);
-    if (!info.hasBom) return applied;
-    const prefix = bomPrefix(encoding);
-    if (prefix.length === 0) return applied;
-    const bytes = new Uint8Array(prefix.length + applied.bytes.length);
-    bytes.set(prefix, 0);
-    bytes.set(applied.bytes, prefix.length);
-    applied.bytes = bytes;
+    if (info.hasBom) {
+      const prefix = bomPrefix(encoding);
+      if (prefix.length > 0 && !startsWithBytes(applied.bytes, prefix)) {
+        const bytes = new Uint8Array(prefix.length + applied.bytes.length);
+        bytes.set(prefix, 0);
+        bytes.set(applied.bytes, prefix.length);
+        applied.bytes = bytes;
+      }
+    }
+    const decoded = TextEncoding.decode(applied.bytes);
+    if (decoded.text !== text) {
+      throw new Error('当前编码无法无损保存这些内容，已保留草稿');
+    }
     return applied;
   }
 }
