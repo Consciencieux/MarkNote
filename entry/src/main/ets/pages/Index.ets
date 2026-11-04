@@ -22,31 +22,52 @@ class MenuBridge {
   showTheme: () => void = (): void => {};
   showLegal: () => void = (): void => {};
   closeLibrary: () => void = (): void => {};
+  colorMode: ThemeColorMode = ThemeColorMode.SYSTEM;
 }
 
 const menuBridge: MenuBridge = new MenuBridge();
 
 @Builder
 function HomeMoreMenu() {
-  Menu() {
-    MenuItem({ content: '外观' }).onClick(() => menuBridge.showTheme())
-    MenuItem({ content: '开源许可证与隐私说明' }).onClick(() => menuBridge.showLegal())
+  WithTheme({ colorMode: menuBridge.colorMode }) {
+    Menu() {
+      MenuItem({ content: '外观' })
+        .contentFontColor($r('sys.color.font_primary'))
+        .onChange(() => menuBridge.showTheme())
+      MenuItem({ content: '开源许可证与隐私说明' })
+        .contentFontColor($r('sys.color.font_primary'))
+        .onChange(() => menuBridge.showLegal())
+    }
   }
 }
 
 @Builder
 function DocumentMoreMenu() {
-  Menu() {
-    MenuItemGroup({ header: '新建' }) {
-      ForEach(FormatRegistry.all(), (item: DocumentFormat) => {
-        MenuItem({ content: item.moreTitle }).onClick(() => menuBridge.confirmNew(item.id))
-      }, (item: DocumentFormat) => item.id)
+  WithTheme({ colorMode: menuBridge.colorMode }) {
+    Menu() {
+      MenuItemGroup({ header: '新建' }) {
+        ForEach(FormatRegistry.all(), (item: DocumentFormat) => {
+          MenuItem({ content: item.moreTitle })
+            .contentFontColor($r('sys.color.font_primary'))
+            .onChange(() => menuBridge.confirmNew(item.id))
+        }, (item: DocumentFormat) => item.id)
+      }
+      MenuItem({ content: '打开文件' })
+        .contentFontColor($r('sys.color.font_primary'))
+        .onChange(() => menuBridge.openFile())
+      MenuItem({ content: '另存为' })
+        .contentFontColor($r('sys.color.font_primary'))
+        .onChange(() => menuBridge.saveAs())
+      MenuItem({ content: '外观' })
+        .contentFontColor($r('sys.color.font_primary'))
+        .onChange(() => menuBridge.showTheme())
+      MenuItem({ content: '开源许可证与隐私说明' })
+        .contentFontColor($r('sys.color.font_primary'))
+        .onChange(() => menuBridge.showLegal())
+      MenuItem({ content: '返回文稿列表' })
+        .contentFontColor($r('sys.color.font_primary'))
+        .onChange(() => menuBridge.closeLibrary())
     }
-    MenuItem({ content: '打开文件' }).onClick(() => menuBridge.openFile())
-    MenuItem({ content: '另存为' }).onClick(() => menuBridge.saveAs())
-    MenuItem({ content: '外观' }).onClick(() => menuBridge.showTheme())
-    MenuItem({ content: '开源许可证与隐私说明' }).onClick(() => menuBridge.showLegal())
-    MenuItem({ content: '返回文稿列表' }).onClick(() => menuBridge.closeLibrary())
   }
 }
 
@@ -99,11 +120,13 @@ struct Index {
       void this.saveFile(true);
     };
     menuBridge.showTheme = (): void => {
-      this.legalOpen = false;
-      this.themeOpen = true;
+      this.afterMenu(() => {
+        this.legalOpen = false;
+        this.themeOpen = true;
+      });
     };
     menuBridge.showLegal = (): void => {
-      this.openLegal();
+      this.afterMenu(() => this.openLegal());
     };
     menuBridge.closeLibrary = (): void => {
       this.leaveDocument();
@@ -150,12 +173,25 @@ struct Index {
     });
   }
 
+  private afterMenu(action: () => void): void {
+    setTimeout(action, 200);
+  }
+
   private toast(message: string): void {
     this.getUIContext().getPromptAction().showToast({ message });
   }
 
   private changeTheme(choice: string, persist: boolean = true): void {
     this.theme = choice;
+    if (choice === 'light') {
+      menuBridge.colorMode = ThemeColorMode.LIGHT;
+    } else if (choice === 'dark') {
+      menuBridge.colorMode = ThemeColorMode.DARK;
+    } else {
+      menuBridge.colorMode = ThemeColorMode.SYSTEM;
+    }
+    this.homeMenu = null;
+    this.documentMenu = null;
     this.schedulePreview();
     if (this.context) {
       let mode = ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
@@ -201,7 +237,7 @@ struct Index {
     const heading: HdsNavigationTitle = { mainTitle: '文稿' };
     const menu: HdsNavigationMenuContentOptions = {
       maxCount: 1,
-      value: [this.menuIcon('更多', $r('sys.symbol.more'), 'marknote-home-more', () => this.openHomeMenu())]
+      value: [this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more', () => this.openHomeMenu())]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
     const options: HdsNavigationTitleBarOptions = {
@@ -222,7 +258,7 @@ struct Index {
           this.searchVisible = true;
           this.selectedTab = 0;
         }),
-        this.menuIcon('更多', $r('sys.symbol.more'), 'marknote-doc-more', () => this.openDocumentMenu())
+        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more', () => this.openDocumentMenu())
       ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
@@ -235,19 +271,19 @@ struct Index {
   }
 
   private openHomeMenu(): void {
-    if (this.homeMenu === null) {
-      this.homeMenu = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(HomeMoreMenu));
-    }
-    this.getUIContext().getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }).catch(() => {
+    this.homeMenu = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(HomeMoreMenu));
+    this.getUIContext().getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }, {
+      showInSubWindow: false
+    }).catch(() => {
       // The menu stays closed when its anchor is not on screen.
     });
   }
 
   private openDocumentMenu(): void {
-    if (this.documentMenu === null) {
-      this.documentMenu = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(DocumentMoreMenu));
-    }
-    this.getUIContext().getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }).catch(() => {
+    this.documentMenu = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(DocumentMoreMenu));
+    this.getUIContext().getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }, {
+      showInSubWindow: false
+    }).catch(() => {
       // The menu stays closed when its anchor is not on screen.
     });
   }
@@ -629,10 +665,14 @@ struct Index {
 
   @Builder
   NewDocumentMenu() {
-    Menu() {
-      ForEach(FormatRegistry.all(), (item: DocumentFormat) => {
-        MenuItem({ content: item.sheetTitle }).onClick(() => this.confirmSwitch(() => this.startNew(item.id)))
-      }, (item: DocumentFormat) => item.id)
+    WithTheme({ colorMode: menuBridge.colorMode }) {
+      Menu() {
+        ForEach(FormatRegistry.all(), (item: DocumentFormat) => {
+          MenuItem({ content: item.sheetTitle })
+            .contentFontColor($r('sys.color.font_primary'))
+            .onChange(() => this.confirmSwitch(() => this.startNew(item.id)))
+        }, (item: DocumentFormat) => item.id)
+      }
     }
   }
 
@@ -951,19 +991,23 @@ struct Index {
   }
 
   build() {
-    HdsNavigation(this.routes) {
-      this.LibraryPage()
+    Column() {
+      HdsNavigation(this.routes) {
+        this.LibraryPage()
+      }
+      .navDestination(this.Destination)
+      .titleBar(this.homeTitle())
+      .titleMode(HdsNavigationTitleMode.FULL)
+      .mode(NavigationMode.Stack)
+      .hideBackButton(true)
+      .bindToScrollable([this.libraryScroller])
+      .width('100%')
+      .height('100%')
     }
-    .navDestination(this.Destination)
-    .titleBar(this.homeTitle())
-    .titleMode(HdsNavigationTitleMode.FULL)
-    .mode(NavigationMode.Stack)
-    .hideBackButton(true)
-    .bindToScrollable([this.libraryScroller])
     .bindSheet($$this.themeOpen, this.ThemePage(), {
       title: { title: '外观' },
       showClose: true,
-      height: SheetSize.FIT_CONTENT,
+      height: 320,
       preferType: SheetType.BOTTOM
     })
     .bindSheet($$this.legalOpen, this.LegalPage(), {
