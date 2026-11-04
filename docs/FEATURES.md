@@ -8,9 +8,9 @@
 
 | 功能 | 当前行为与边界 | 负责代码 |
 | --- | --- | --- |
-| 首页与文稿创建 | 首页可新建 Markdown、纯文本、SVG、TeX 数学公式文稿；默认名称与初始内容按格式确定 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`LibraryPage`、`startNew`）、[FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets) |
+| 首页与文稿创建 | 首页是 `HdsNavigation`，大标题为「文稿」。新建和打开留在页面内，不放进标题栏；新建由菜单选择 Markdown、纯文本、SVG、TeX。外观和许可证从标题栏「更多」进入。默认名称与初始内容按格式确定 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`LibraryPage`、`startNew`）、[FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets) |
 | 选择文件打开 | 应用内用系统 `DocumentViewPicker` 取得 URI。文件管理器可通过 `viewData` / `FileOpen` 打开 `.md`、`.markdown`、`.txt`、`.svg`、`.tex`，直接进入编辑页。文件名后缀优先，否则采用系统声明的 UTD 或 MIME；两者都不匹配时拒绝打开，不按 Markdown 渲染 | [module.json5](../entry/src/main/module.json5)、[EntryAbility.ets](../entry/src/main/ets/entryability/EntryAbility.ets)、[LaunchRequests.ets](../entry/src/main/ets/document/LaunchRequests.ets)、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)（`openUri`） |
-| 最近文稿 | 本地保留最多 12 个最近 URI；再次打开时尝试激活持久化授权，授权无效时需重新选择文件 | [LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)（`prepare`、`release`） |
+| 最近文稿 | 本地保留最多 12 个最近 URI。首页列表行显示文件名和格式名。再次打开时尝试激活持久化授权，授权无效时需重新选择文件 | [LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)（`prepare`、`release`）、[Index.ets](../entry/src/main/ets/pages/Index.ets)（`RecentRow`） |
 | 原位置保存与另存为 | 写入授权允许时按原 URI 写回；只读授权或写入失败时改为另存为。保存后按字节指纹和正文再读校验。提供方不保证写入原子性 | [DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)（`save`）、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)（`prepare`、`write`） |
 | 未保存内容保护与草稿恢复 | 切换文稿时可保存并打开、放弃修改或取消。打开失败时保留当前文稿和草稿。延迟保存**一份**应用私有草稿，可从首页恢复；原授权失效时草稿仍可另存为 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`confirmSwitch`、`scheduleRecovery`、`restoreRecovery`）、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
 | 外部修改检查 | 保存前对比打开或上次成功保存时的 SHA-256 字节指纹，不一致则拒绝覆盖，可另存为 | [DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)（`write`） |
@@ -21,12 +21,12 @@
 
 | 功能 | 当前行为与边界 | 负责代码 |
 | --- | --- | --- |
-| 源码编辑 | ArkUI `TextArea` 支持基础文本输入、光标和选区；无多光标、语法折叠、行级语法高亮 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`EditPage`、`updateSource`） |
-| 快捷插入 | Markdown 提供标题、强调、链接、任务、代码围栏等快捷输入；其他格式目前没有专用快捷键 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)（`inserts`）、[Index.ets](../entry/src/main/ets/pages/Index.ets)（`insertToken`） |
+| 源码编辑 | ArkUI `TextArea` 支持基础文本输入、光标和选区。行数、字符数和保存状态显示在文稿页标题的副标题。无多光标、语法折叠、行级语法高亮 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`EditPage`、`updateSource`、`statusLine`） |
+| 快捷插入 | Markdown 的标题、强调、链接、任务、代码围栏等从编辑页工具栏插入，图标使用系统符号；放不下的项由工具栏收进更多。其他格式目前没有快捷插入 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)（`inserts`）、[Index.ets](../entry/src/main/ets/pages/Index.ets)（`insertToken`、`editorTools`） |
 | 查找与替换 | 精确文本匹配、下一处跳转、单处替换；没有正则或全部替换 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`FindBar`、`findNext`、`replaceMatch`） |
 | Markdown 大纲 | 提取代码围栏以外的 ATX 标题，点击可跳到文本偏移；尚未解析 Setext 标题 | [Document.ets](../entry/src/main/ets/model/Document.ets)（`documentOutline`）、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets) |
-| 编辑／预览／分栏 | 原生 Tabs 切换内容；宽度达到 720 时提供编辑与预览分栏；大纲标签只对声明支持大纲的格式出现 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`WorkspacePage`、`SplitPage`） |
-| 主题设置 | 跟随系统、浅色、深色；本地保存偏好并同步 ArkWeb 预览 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`changeTheme`）、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[styles.css](../renderer/src/styles.css) |
+| 编辑／预览／分栏 | 文稿页是 `HdsNavDestination`。`Tabs` 在编辑、预览、大纲之间切换；宽度达到 720vp 时增加编辑与预览分栏。大纲标签只对声明支持大纲的格式出现。打开文件后直接进入编辑 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`WorkspacePage`、`SplitPage`） |
+| 主题设置 | 跟随系统、浅色、深色，在半模态中用单选切换；本地保存偏好并同步 ArkWeb 预览 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`changeTheme`、`ThemePage`）、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[styles.css](../renderer/src/styles.css) |
 
 ## 支持的文稿格式与预览
 
@@ -45,9 +45,9 @@
 
 | 功能 | 当前行为与边界 | 负责代码 |
 | --- | --- | --- |
-| 应用启动与原生导航 | `EntryAbility` 为 singleton，加载 ArkUI 主页面。冷启动和热启动的文件请求共用 `LaunchRequests`。界面、菜单、编辑、主题由 ArkUI 绘制，ArkWeb 只负责内容预览。不包含其他应用的分享入口 | [EntryAbility.ets](../entry/src/main/ets/entryability/EntryAbility.ets)、[LaunchRequests.ets](../entry/src/main/ets/document/LaunchRequests.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
+| 应用启动与原生导航 | `EntryAbility` 为 singleton，加载 ArkUI 主页面，键盘避让跟随光标。首页是 `HdsNavigation`，文稿页是 `HdsNavDestination`。冷启动和热启动的文件请求共用 `LaunchRequests`。菜单、编辑、主题由 ArkUI 绘制，ArkWeb 只负责内容预览。不包含其他应用的分享入口 | [EntryAbility.ets](../entry/src/main/ets/entryability/EntryAbility.ets)、[LaunchRequests.ets](../entry/src/main/ets/document/LaunchRequests.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
 | 离线预览 | 预览 JavaScript、CSS、KaTeX 字体通过 Vite 打包在本地；当前模块没有声明网络权限，预览页通过 CSP 禁止网络连接 | [index.html](../renderer/index.html)、[vite.config.ts](../renderer/vite.config.ts)、[module.json5](../entry/src/main/module.json5) |
-| 第三方许可说明 | 应用内页面尝试读取构建生成的许可证全文；缺少生成资源时显示提示，尚不能据此认定可发行 HAP 已包含完整声明 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`openLegal`、`LegalPage`）、[generate-notices.mjs](../renderer/scripts/generate-notices.mjs) |
+| 第三方许可说明 | 标题栏菜单打开半模态，读取构建生成的许可证全文；缺少生成资源时显示提示，尚不能据此认定可发行 HAP 已包含完整声明 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`openLegal`、`LegalPage`）、[generate-notices.mjs](../renderer/scripts/generate-notices.mjs) |
 
 ## 更新原则
 
