@@ -1,4 +1,5 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
 import { DocumentInfo, Heading, RecentDocument, RecoveryData, documentOutline, linesIn } from '../model/Document';
@@ -122,20 +123,24 @@ struct Index {
     });
   }
 
+  private menuItem(label: string, symbol: Resource, action: () => void): NavigationMenuItem {
+    const icon: SymbolGlyphModifier = new SymbolGlyphModifier(symbol);
+    icon.fontColor([$r('sys.color.font_primary')]);
+    return { value: label, symbolIcon: icon, action: action };
+  }
+
   private navigationMenus(): NavigationMenuItem[] {
-    if (this.showLegal) return [{ value: '返回', action: () => { this.showLegal = false; } }];
+    if (this.showLegal) {
+      return [this.menuItem('返回', $r('sys.symbol.chevron_left'), () => { this.showLegal = false; })];
+    }
     if (this.editing) {
       return [
-        { value: '保存', action: () => { void this.saveFile(false); } },
-        { value: '查找', action: () => { this.searchVisible = true; this.selectedTab = 0; } },
-        { value: '更多', action: () => this.showMoreMenu() }
+        this.menuItem('保存', $r('sys.symbol.square_and_arrow_down'), () => { void this.saveFile(false); }),
+        this.menuItem('查找', $r('sys.symbol.magnifyingglass'), () => { this.searchVisible = true; this.selectedTab = 0; }),
+        this.menuItem('更多', $r('sys.symbol.more'), () => this.showMoreMenu())
       ];
     }
-    return [
-      { value: '新建', action: () => this.showNewMenu() },
-      { value: '打开', action: () => this.guardChanges(() => { void this.pickOpen(); }) },
-      { value: '更多', action: () => this.showHomeMenu() }
-    ];
+    return [];
   }
 
   private showNewMenu(): void {
@@ -265,11 +270,7 @@ struct Index {
     this.editing = true;
     this.clearRecovery();
     this.schedulePreview();
-    if (this.context && this.info.uri) {
-      void LocalState.addRecent(this.context, this.info.uri, this.info.name).then((items: RecentDocument[]) => {
-        this.recents = items;
-      }).catch(() => this.toast('最近文稿列表未能更新'));
-    }
+    if (this.info.uri) void this.rememberRecent(this.info.uri, this.info.name);
   }
 
   private async pickOpen(): Promise<void> {
@@ -277,6 +278,7 @@ struct Index {
     try {
       const uri = await DocumentFiles.chooseOpen(this.context);
       if (uri.length === 0) return;
+      await DocumentFiles.prepare(uri);
       const loaded = DocumentFiles.read(uri);
       this.openDocument(loaded);
     } catch (error) {
@@ -286,12 +288,36 @@ struct Index {
 
   private openRecent(item: RecentDocument): void {
     this.guardChanges(() => {
-      try {
-        this.openDocument(DocumentFiles.read(item.uri));
-      } catch {
-        this.toast('原文件授权可能已经失效，请使用“打开”重新选取');
-      }
+      void this.openStored(item);
     });
+  }
+
+  private async openStored(item: RecentDocument): Promise<void> {
+    try {
+      await DocumentFiles.prepare(item.uri);
+      this.openDocument(DocumentFiles.read(item.uri));
+    } catch {
+      this.toast('原文件授权可能已经失效，请使用“打开”重新选取');
+    }
+  }
+
+  private async rememberRecent(uri: string, name: string): Promise<void> {
+    if (!this.context || uri.length === 0) return;
+    const previous = this.recents;
+    try {
+      const items = await LocalState.addRecent(this.context, uri, name);
+      this.recents = items;
+      for (let index = 0; index < previous.length; index++) {
+        const oldUri = previous[index].uri;
+        let stillListed = false;
+        for (let next = 0; next < items.length; next++) {
+          if (items[next].uri === oldUri) stillListed = true;
+        }
+        if (!stillListed) void DocumentFiles.release(oldUri);
+      }
+    } catch {
+      this.toast('最近文稿列表未能更新');
+    }
   }
 
   private async saveFile(asNewFile: boolean): Promise<void> {
@@ -307,6 +333,7 @@ struct Index {
         uri = await DocumentFiles.chooseSave(this.context, this.title);
         if (!uri) return;
       }
+      await DocumentFiles.prepare(uri);
       const target = new DocumentInfo();
       target.uri = uri;
       target.name = this.title;
@@ -327,7 +354,7 @@ struct Index {
       this.toast(this.source === snapshot ? '已保存' : '已保存操作开始时的版本，仍有未保存修改');
       if (!this.isDirty()) this.clearRecovery();
       else this.scheduleRecovery();
-      this.recents = await LocalState.addRecent(this.context, uri, this.title);
+      await this.rememberRecent(uri, this.title);
     } catch (error) {
       this.scheduleRecovery();
       this.toast('保存失败：' + String(error));
@@ -374,9 +401,10 @@ struct Index {
     }
   }
 
-  private restoreRecovery(): void {
+  private async restoreRecovery(): Promise<void> {
     if (!this.recovery) return;
     const draft = this.recovery;
+    if (draft.uri.length > 0) await DocumentFiles.prepare(draft.uri);
     this.info = new DocumentInfo();
     this.info.name = draft.name;
     this.info.uri = draft.uri;
@@ -472,6 +500,10 @@ struct Index {
               .onClick(() => this.guardChanges(() => { void this.pickOpen(); }))
           }
           .width('100%')
+          Button('外观与说明', { type: ButtonType.Normal })
+            .buttonStyle(ButtonStyleMode.TEXTUAL)
+            .fontColor($r('sys.color.font_secondary'))
+            .onClick(() => this.showHomeMenu())
         }
         .width('100%')
 
@@ -483,7 +515,7 @@ struct Index {
               .width('100%')
             Button('恢复上次的编辑', { type: ButtonType.Normal })
               .width('100%')
-              .onClick(() => this.restoreRecovery())
+              .onClick(() => { void this.restoreRecovery(); })
           }
           .width('100%')
         }

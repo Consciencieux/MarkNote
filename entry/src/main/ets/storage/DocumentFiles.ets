@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { picker, fileIo } from '@kit.CoreFileKit';
+import { picker, fileIo, fileShare } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { DocumentInfo } from '../model/Document';
 
@@ -21,7 +21,54 @@ function decode(bytes: Uint8Array): string {
   return value;
 }
 
+function accessPolicy(uri: string): fileShare.PolicyInfo {
+  return {
+    uri: uri,
+    operationMode: fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE
+  };
+}
+
 export class DocumentFiles {
+  /**
+   * Picker grants last only for the current process. Recent files and drafts need the
+   * grant persisted, then activated again on the next launch before the URI can be read.
+   */
+  static async prepare(uri: string): Promise<void> {
+    if (uri.length === 0) return;
+    const policy = accessPolicy(uri);
+    let persisted = false;
+    try {
+      const states = await fileShare.checkPersistentPermission([policy]);
+      persisted = states.length > 0 && states[0];
+    } catch {
+      persisted = false;
+    }
+    if (!persisted) {
+      try {
+        await fileShare.persistPermission([policy]);
+        persisted = true;
+      } catch {
+        persisted = false;
+      }
+    }
+    if (persisted) {
+      try {
+        await fileShare.activatePermission([policy]);
+      } catch {
+        // A picker grant from this process can still read before it is persisted.
+      }
+    }
+  }
+
+  static async release(uri: string): Promise<void> {
+    if (uri.length === 0) return;
+    try {
+      await fileShare.revokePermission([accessPolicy(uri)]);
+    } catch {
+      // The persisted grant may already have been removed.
+    }
+  }
+
   static async chooseOpen(context: common.UIAbilityContext): Promise<string> {
     const options = new picker.DocumentSelectOptions();
     options.maxSelectNumber = 1;
