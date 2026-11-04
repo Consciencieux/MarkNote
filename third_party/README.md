@@ -7,7 +7,7 @@ Marknote does not claim ownership of their code, fonts, or trademarks.
 Build the renderer with `npm install && npm run build` in `renderer/`.
 That command reads the actual installed production dependency graph, collects every
 LICENSE and NOTICE it finds, and writes `entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt`.
-The app exposes that full text under **更多 → 开源许可证与隐私说明**.
+The app exposes that full text under **外观与说明 → 开源许可证与隐私说明**.
 Unknown license types or missing license files stop the build. KaTeX fonts are
 separately licensed: `OFL.txt` is required and appended in full; the build
 fails if it is missing or is not the SIL Open Font License.

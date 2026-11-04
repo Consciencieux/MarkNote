@@ -53,6 +53,9 @@ export class LocalState {
       const parsed = JSON.parse(text) as RecoveryData;
       if (typeof parsed.text !== 'string' || typeof parsed.savedText !== 'string' ||
           typeof parsed.name !== 'string' || typeof parsed.uri !== 'string') return null;
+      if (typeof parsed.encoding !== 'string' || parsed.encoding.length === 0) parsed.encoding = 'utf-8';
+      if (typeof parsed.lineEndings !== 'string') parsed.lineEndings = '';
+      if (parsed.newline !== '\n' && parsed.newline !== '\r\n' && parsed.newline !== 'mixed') parsed.newline = '\n';
       if (parsed.text === parsed.savedText) return null;
       return parsed;
     } catch {

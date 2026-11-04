@@ -1,24 +1,14 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo, fileShare } from '@kit.CoreFileKit';
-import { util } from '@kit.ArkTS';
 import { DocumentInfo } from '../model/Document';
+import { FormatRegistry } from '../document/FormatRegistry';
+import { TextEncoding } from '../document/TextEncoding';
 
 const MAX_BYTES: number = 8 * 1024 * 1024;
 
 export class FileContents {
   info: DocumentInfo = new DocumentInfo();
   text: string = '';
-}
-
-function decode(bytes: Uint8Array): string {
-  const value = util.TextDecoder.create('utf-8').decodeToString(bytes);
-  // Decoder replacement characters are unacceptable for source-code editing.
-  const roundtrip = new util.TextEncoder().encodeInto(value);
-  if (roundtrip.length !== bytes.length) throw new Error('文件不是有效的 UTF-8 编码');
-  for (let i = 0; i < bytes.length; i++) {
-    if (roundtrip[i] !== bytes[i]) throw new Error('文件不是有效的 UTF-8 编码');
-  }
-  return value;
 }
 
 function accessPolicy(uri: string): fileShare.PolicyInfo {
@@ -72,7 +62,7 @@ export class DocumentFiles {
   static async chooseOpen(context: common.UIAbilityContext): Promise<string> {
     const options = new picker.DocumentSelectOptions();
     options.maxSelectNumber = 1;
-    options.fileSuffixFilters = ['Markdown|.md,.markdown', 'SVG|.svg', 'LaTeX|.tex', '文本|.txt'];
+    options.fileSuffixFilters = FormatRegistry.openFilters();
     const uris = await new picker.DocumentViewPicker(context).select(options);
     return uris.length === 0 ? '' : uris[0];
   }
@@ -80,12 +70,7 @@ export class DocumentFiles {
   static async chooseSave(context: common.UIAbilityContext, filename: string): Promise<string> {
     const options = new picker.DocumentSaveOptions();
     options.newFileNames = [filename];
-    const choices = ['Markdown|.md', 'SVG|.svg', 'LaTeX|.tex', '文本|.txt'];
-    const extension = filename.toLowerCase();
-    const preferred = extension.endsWith('.svg') ? 'SVG|.svg' :
-      extension.endsWith('.tex') ? 'LaTeX|.tex' :
-      extension.endsWith('.txt') ? '文本|.txt' : 'Markdown|.md';
-    options.fileSuffixChoices = [preferred, ...choices.filter((choice: string) => choice !== preferred)];
+    options.fileSuffixChoices = FormatRegistry.saveChoices(filename);
     const uris = await new picker.DocumentViewPicker(context).save(options);
     return uris.length === 0 ? '' : uris[0];
   }
@@ -104,14 +89,15 @@ export class DocumentFiles {
         original.set(new Uint8Array(chunk, 0, length), readPosition);
         readPosition += length;
       }
-      const bom = size >= 3 && original[0] === 239 && original[1] === 187 && original[2] === 191;
-      const raw = decode(bom ? original.slice(3) : original);
+      const decoded = TextEncoding.decode(original);
       const result = new FileContents();
-      result.text = raw.replace(/\r\n/g, '\n');
+      result.text = decoded.text;
       result.info.uri = uri;
-      result.info.name = file.name || '未命名.md';
-      result.info.newline = raw.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
-      result.info.hasBom = bom;
+      result.info.name = file.name || FormatRegistry.byFilename('').defaultFilename;
+      result.info.newline = decoded.newline;
+      result.info.lineEndings = decoded.lineEndings;
+      result.info.hasBom = decoded.hasBom;
+      result.info.encoding = decoded.encoding;
       return result;
     } finally {
       fileIo.closeSync(file);
@@ -126,15 +112,15 @@ export class DocumentFiles {
     if (expectedSource !== null) {
       const disk = DocumentFiles.read(info.uri);
       if (disk.text !== expectedSource || disk.info.hasBom !== info.hasBom ||
-          disk.info.newline !== info.newline) {
+          disk.info.newline !== info.newline || disk.info.lineEndings !== info.lineEndings ||
+          disk.info.encoding !== info.encoding) {
         throw new Error('原文件已在其他应用中改变。请选择“另存为”，避免覆盖其他修改。');
       }
     }
-    const serialized = info.newline === '\r\n' ? text.replace(/\n/g, '\r\n') : text;
-    const source = new util.TextEncoder().encodeInto(serialized);
-    const bytes = new Uint8Array(source.length + (info.hasBom ? 3 : 0));
-    if (info.hasBom) bytes.set([239, 187, 191], 0);
-    bytes.set(source, info.hasBom ? 3 : 0);
+    const encoded = TextEncoding.encode(text, info);
+    info.newline = encoded.newline;
+    info.lineEndings = encoded.lineEndings;
+    const bytes = encoded.bytes;
     const file = fileIo.openSync(info.uri, fileIo.OpenMode.READ_WRITE);
     try {
       let offset = 0;
@@ -150,7 +136,8 @@ export class DocumentFiles {
       fileIo.closeSync(file);
     }
     const verified = DocumentFiles.read(info.uri);
-    if (verified.text !== text || verified.info.hasBom !== info.hasBom) {
+    if (verified.text !== text || verified.info.hasBom !== info.hasBom ||
+        verified.info.encoding !== info.encoding) {
       throw new Error('保存后校验失败，已保留草稿');
     }
   }

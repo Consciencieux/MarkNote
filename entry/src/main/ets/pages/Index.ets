@@ -2,11 +2,16 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
-import { DocumentInfo, Heading, RecentDocument, RecoveryData, documentOutline, linesIn } from '../model/Document';
+import { DocumentInfo, Heading, RecentDocument, RecoveryData, linesIn } from '../model/Document';
+import { DocumentService } from '../document/DocumentService';
+import { FormatRegistry } from '../document/FormatRegistry';
 import { DocumentFiles, FileContents } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 
-const QUICK_INSERTS: string[] = ['# ', '**', '*', '`', '[]()', '- ', '- [ ] ', '$', '```'];
+interface ActionChoice {
+  title: string;
+  action: () => void;
+}
 
 @Entry
 @Component
@@ -106,21 +111,28 @@ struct Index {
     });
   }
 
+  private creationChoices(moreMenu: boolean): ActionChoice[] {
+    const formats = FormatRegistry.all();
+    const choices: ActionChoice[] = [];
+    for (let index = 0; index < formats.length; index++) {
+      const item = formats[index];
+      const id = item.id;
+      choices.push({
+        title: moreMenu ? item.moreTitle : item.sheetTitle,
+        action: () => this.guardChanges(() => this.startNew(id))
+      });
+    }
+    return choices;
+  }
+
   private showMoreMenu(): void {
-    ActionSheet.show({
-      title: '更多操作',
-      message: '文稿与应用设置',
-      sheets: [
-        { title: '新建 Markdown', action: () => this.guardChanges(() => this.startNew('markdown')) },
-        { title: '新建 SVG', action: () => this.guardChanges(() => this.startNew('svg')) },
-        { title: '新建 LaTeX 公式', action: () => this.guardChanges(() => this.startNew('latex')) },
-        { title: '打开文件', action: () => this.guardChanges(() => { void this.pickOpen(); }) },
-        { title: '另存为', action: () => { void this.saveFile(true); } },
-        { title: '外观', action: () => this.showThemeMenu() },
-        { title: '开源许可证与隐私说明', action: () => this.openLegal() },
-        { title: '返回文稿列表', action: () => this.closeToLibrary() }
-      ]
-    });
+    const sheets = this.creationChoices(true);
+    sheets.push({ title: '打开文件', action: () => this.guardChanges(() => { void this.pickOpen(); }) });
+    sheets.push({ title: '另存为', action: () => { void this.saveFile(true); } });
+    sheets.push({ title: '外观', action: () => this.showThemeMenu() });
+    sheets.push({ title: '开源许可证与隐私说明', action: () => this.openLegal() });
+    sheets.push({ title: '返回文稿列表', action: () => this.closeToLibrary() });
+    ActionSheet.show({ title: '更多操作', message: '文稿与应用设置', sheets: sheets });
   }
 
   private menuItem(label: string, symbol: Resource, action: () => void): NavigationMenuItem {
@@ -147,11 +159,7 @@ struct Index {
     ActionSheet.show({
       title: '新建文稿',
       message: '选择要创建的文稿类型',
-      sheets: [
-        { title: 'Markdown 文稿', action: () => this.guardChanges(() => this.startNew('markdown')) },
-        { title: 'SVG 图形', action: () => this.guardChanges(() => this.startNew('svg')) },
-        { title: 'LaTeX 数学公式', action: () => this.guardChanges(() => this.startNew('latex')) }
-      ]
+      sheets: this.creationChoices(false)
     });
   }
 
@@ -187,10 +195,7 @@ struct Index {
   }
 
   private sendPreview(controller: webview.WebviewController): void {
-    const filename = this.title.toLowerCase();
-    let kind: string = 'markdown';
-    if (filename.endsWith('.svg')) kind = 'svg';
-    if (filename.endsWith('.tex')) kind = 'latex';
+    const kind = DocumentService.formatOf(this.title).id;
     const command = 'window.MarknotePreview.update(' + JSON.stringify({
       kind: kind,
       source: this.source,
@@ -239,12 +244,12 @@ struct Index {
   }
 
   private startNew(kind: string = 'markdown'): void {
+    const format = FormatRegistry.byId(kind);
     this.clearRecovery();
     this.info = new DocumentInfo();
-    this.info.name = kind === 'svg' ? '未命名.svg' : kind === 'latex' ? '未命名.tex' : '未命名.md';
+    this.info.name = format.defaultFilename;
     this.title = this.info.name;
-    this.source = kind === 'svg' ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 160">\n  <circle cx="160" cy="80" r="52" fill="#628ac7"/>\n</svg>' :
-      kind === 'latex' ? '\\frac{a}{b} + \\sqrt{x^2 + y^2}' : '';
+    this.source = format.starter;
     this.savedText = '';
     this.headings = [];
     this.schedulePreview();
@@ -261,7 +266,7 @@ struct Index {
     this.title = opened.info.name;
     this.source = opened.text;
     this.savedText = opened.text;
-    this.headings = this.title.toLowerCase().endsWith('.md') || this.title.toLowerCase().endsWith('.markdown') ? documentOutline(opened.text) : [];
+    this.headings = DocumentService.headings(this.title, opened.text);
     this.currentMatch = -1;
     this.selectionStart = 0;
     this.selectionEnd = 0;
@@ -339,6 +344,8 @@ struct Index {
       target.name = this.title;
       target.newline = this.info.newline;
       target.hasBom = this.info.hasBom;
+      target.encoding = this.info.encoding;
+      target.lineEndings = this.info.lineEndings;
       // A Save picker creates the destination. Existing documents must remain unchanged
       // since the last successful read/save, otherwise overwriting is refused.
       DocumentFiles.write(target, snapshot, !asNewFile && oldUri.length > 0 ? oldSaved : null);
@@ -391,6 +398,8 @@ struct Index {
     draft.text = this.source;
     draft.savedText = this.savedText;
     draft.newline = this.info.newline;
+    draft.lineEndings = this.info.lineEndings;
+    draft.encoding = this.info.encoding;
     draft.hasBom = this.info.hasBom;
     try {
       LocalState.writeDraft(this.context, draft);
@@ -409,11 +418,13 @@ struct Index {
     this.info.name = draft.name;
     this.info.uri = draft.uri;
     this.info.newline = draft.newline;
+    this.info.lineEndings = draft.lineEndings;
+    this.info.encoding = draft.encoding;
     this.info.hasBom = draft.hasBom;
     this.title = draft.name;
     this.source = draft.text;
     this.savedText = draft.savedText;
-    this.headings = this.title.toLowerCase().endsWith('.md') || this.title.toLowerCase().endsWith('.markdown') ? documentOutline(draft.text) : [];
+    this.headings = DocumentService.headings(this.title, draft.text);
     this.currentMatch = -1;
     this.selectionStart = 0;
     this.selectionEnd = 0;
@@ -430,7 +441,7 @@ struct Index {
   private updateSource(text: string): void {
     this.source = text;
     this.currentMatch = -1;
-    this.headings = this.title.toLowerCase().endsWith('.md') || this.title.toLowerCase().endsWith('.markdown') ? documentOutline(text) : [];
+    this.headings = DocumentService.headings(this.title, text);
     this.scheduleRecovery();
     this.schedulePreview();
   }
@@ -591,7 +602,7 @@ struct Index {
   private QuickKeys() {
     Scroll() {
       Row({ space: 8 }) {
-        ForEach(QUICK_INSERTS, (token: string) => {
+        ForEach(DocumentService.formatOf(this.title).inserts, (token: string) => {
           Button(token, { type: ButtonType.Normal })
             .buttonStyle(ButtonStyleMode.NORMAL)
             .onClick(() => this.insertToken(token))
@@ -620,7 +631,9 @@ struct Index {
           this.selectionStart = start;
           this.selectionEnd = end;
         })
-      this.QuickKeys()
+      if (DocumentService.formatOf(this.title).inserts.length > 0) {
+        this.QuickKeys()
+      }
       Row({ space: 12 }) {
         Text(`${linesIn(this.source)} 行 · ${this.source.length} 字符`)
           .fontSize(12)
@@ -715,11 +728,15 @@ struct Index {
     }
   }
 
+  private splitTab(): number {
+    return DocumentService.formatOf(this.title).outline ? 3 : 2;
+  }
+
   private adjustLayout(width: number): void {
     const next = width >= 720;
     if (this.wide !== next) {
       this.wide = next;
-      if (!next && this.selectedTab === 3) this.selectedTab = 0;
+      if (!next && this.selectedTab === this.splitTab()) this.selectedTab = 0;
     }
   }
 
@@ -747,9 +764,11 @@ struct Index {
       TabContent() {
         this.PreviewPage()
       }.tabBar('预览')
-      TabContent() {
-        this.OutlinePage()
-      }.tabBar('大纲')
+      if (DocumentService.formatOf(this.title).outline) {
+        TabContent() {
+          this.OutlinePage()
+        }.tabBar('大纲')
+      }
       if (this.wide) {
         TabContent() {
           this.SplitPage()
