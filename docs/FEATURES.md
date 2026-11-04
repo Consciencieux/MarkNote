@@ -20,8 +20,8 @@
 | 功能 | 当前行为与边界 | 负责代码 |
 | --- | --- | --- |
 | 源码编辑 | 使用 ArkUI `TextArea`，支持基础文本输入、光标和选区。行数、字符数和保存状态显示在文稿页标题的副标题。没有多光标和语法折叠，也没有行级语法高亮 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`EditPage`、`updateSource`、`statusLine`） |
-| 快捷插入 | Markdown 的标题、强调、链接、任务、代码围栏和公式从文稿页工具栏插入，图标使用系统符号，放不下的项由工具栏收进更多菜单。其他格式目前没有快捷插入 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)（`inserts`）、[Index.ets](../entry/src/main/ets/pages/Index.ets)（`insertToken`、`editorTools`） |
-| 查找与替换 | 精确文本匹配，支持跳到下一处和单处替换。不支持正则和全部替换 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`FindBar`、`findNext`、`replaceMatch`） |
+| 快捷插入 | Markdown 的标题、强调、链接、任务、代码围栏和公式从文稿页工具栏插入，图标使用系统符号，放不下的项由工具栏收进更多菜单。其他格式目前没有快捷插入 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)（`InsertAction`、`inserts`）、[Index.ets](../entry/src/main/ets/pages/Index.ets)（`insertToken`、`editorTools`） |
+| 查找与替换 | 文稿页内按字面文本查找，命中处自动选中，可跳到下一处并替换单处。不支持正则和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)（`FindBar`、`findNext`、`replaceMatch`） |
 | Markdown 大纲 | 提取代码围栏以外的 ATX 标题，点击可跳到对应文本位置。尚未解析 Setext 标题 | [Document.ets](../entry/src/main/ets/model/Document.ets)（`documentOutline`）、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)（`headingsFor`） |
 | 编辑、预览与分栏 | 文稿页是 `HdsNavDestination`，用 `Tabs` 在编辑、预览和大纲之间切换；宽度达到 720vp 时增加编辑与预览分栏。大纲标签只对声明支持大纲的格式出现。打开文件后直接进入编辑 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`WorkspacePage`、`SplitPage`） |
 | 文稿页标题栏菜单 | 标题栏显示保存和查找两个图标。四宫格菜单依次给出新建 Markdown、新建纯文本、新建 SVG、新建 LaTeX 公式、打开文件、另存为、返回文稿列表、设置和关于。保存使用 `checkmark_circle`，与系统「备忘录」编辑页一致 | [Index.ets](../entry/src/main/ets/pages/Index.ets)（`documentTitle`、`DocumentMenuContent`、`afterMenu`） |

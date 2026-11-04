@@ -1,6 +1,7 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import {
-  ComponentContent, SegmentButton, SegmentButtonItemTuple, SegmentButtonOptions, SubHeader, SymbolGlyphModifier
+  ComposeListItem, ComponentContent, ContentItem, IconType, mediaquery, SegmentButton, SegmentButtonItemTuple,
+  SegmentButtonOptions, SubHeader, SymbolGlyphModifier
 } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
@@ -12,7 +13,8 @@ import {
 } from '@kit.UIDesignKit';
 import { DocumentInfo, Heading, RecentDocument, RecoveryData, linesIn } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
-import { DocumentFormat, FormatRegistry } from '../document/FormatRegistry';
+import { DocumentFormat, FormatRegistry, InsertAction } from '../document/FormatRegistry';
+import { SearchHit, TextSearch } from '../document/TextSearch';
 import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
@@ -114,6 +116,7 @@ struct Index {
   private recoveryTimer: number = -1;
   private routes: NavPathStack = new NavPathStack();
   private libraryScroller: Scroller = new Scroller();
+  private wideQuery: mediaquery.MediaQueryListener | null = null;
   private homeMenu: ComponentContent<Object> | null = null;
   private documentMenu: ComponentContent<Object> | null = null;
 
@@ -140,11 +143,29 @@ struct Index {
       this.afterMenu(() => this.leaveDocument());
     };
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    this.bindWideBreakpoint();
     void this.initialize();
+  }
+
+  /**
+   * 分栏阈值用官方媒体查询监听窗口宽度，不再在 Tabs 的 onAreaChange 里自己算宽度。
+   * 720vp 与系统推荐的横向断点一致。
+   */
+  private bindWideBreakpoint(): void {
+    this.wideQuery = this.getUIContext().getMediaQuery().matchMediaSync('(width >= 720vp)');
+    this.wide = this.wideQuery.matches;
+    this.wideQuery.on('change', (result: mediaquery.MediaQueryResult) => {
+      this.wide = result.matches;
+      if (!result.matches && this.selectedTab === this.splitTab()) this.selectedTab = 0;
+    });
   }
 
   aboutToDisappear(): void {
     LaunchRequests.unbind();
+    if (this.wideQuery !== null) {
+      this.wideQuery.off('change');
+      this.wideQuery = null;
+    }
     this.flushRecovery();
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     if (this.previewTimer >= 0) clearTimeout(this.previewTimer);
@@ -360,7 +381,7 @@ struct Index {
 
   private confirmSwitch(proceed: () => Promise<void>): void {
     if (!this.editing && this.recoveryAvailable) {
-      AlertDialog.show({
+      this.getUIContext().showAlertDialog({
         title: '还有未恢复的草稿',
         message: '新建或打开其他文件会丢弃这份草稿。可以先恢复草稿并保存。',
         primaryButton: { value: '取消', action: () => {} },
@@ -586,41 +607,38 @@ struct Index {
   private findNext(): void {
     if (!this.query) return;
     this.selectedTab = 0;
-    const from = this.currentMatch >= 0 ? this.currentMatch + this.query.length : 0;
-    let pos = this.source.indexOf(this.query, from);
-    if (pos < 0) pos = this.source.indexOf(this.query);
-    this.currentMatch = pos;
-    if (pos < 0) {
+    const hit: SearchHit | null = TextSearch.following(this.source, this.query, this.currentMatch);
+    if (hit === null) {
+      this.currentMatch = -1;
       this.toast('没有找到匹配内容');
-    } else {
-      setTimeout(() => this.cursor.setTextSelection(pos, pos + this.query.length), 20);
+      return;
     }
+    this.currentMatch = hit.start;
+    setTimeout(() => this.cursor.setTextSelection(hit.start, hit.start + hit.length), 20);
   }
 
   private replaceMatch(): void {
     if (!this.query) return;
-    const start = this.currentMatch;
-    if (start < 0 || this.source.slice(start, start + this.query.length) !== this.query) {
+    const changed: string | null =
+      TextSearch.replaceAt(this.source, this.currentMatch, this.query, this.replacement);
+    if (changed === null) {
       this.findNext();
       return;
     }
-    const changed = this.source.slice(0, start) + this.replacement + this.source.slice(start + this.query.length);
+    const caret = this.currentMatch + this.replacement.length;
     this.updateSource(changed);
     this.currentMatch = -1;
-    setTimeout(() => this.cursor.caretPosition(start + this.replacement.length), 20);
+    setTimeout(() => this.cursor.caretPosition(caret), 20);
   }
 
-  private insertToken(token: string): void {
+  private insertToken(action: InsertAction): void {
     const start = Math.min(this.selectionStart, this.selectionEnd);
     const end = Math.max(this.selectionStart, this.selectionEnd);
     const selected = this.source.slice(start, end);
-    let prefix = token;
-    let suffix = '';
-    if (token === '**' || token === '*' || token === '`' || token === '$') suffix = token;
-    if (token === '[]()') { prefix = '['; suffix = '](url)'; }
-    if (token === '```') { prefix = '```\n'; suffix = '\n```'; }
-    this.updateSource(this.source.slice(0, start) + prefix + selected + suffix + this.source.slice(end));
-    const position = start + prefix.length + selected.length;
+    const changed = this.source.slice(0, start) + action.before + selected + action.after +
+      this.source.slice(end);
+    this.updateSource(changed);
+    const position = start + action.before.length + selected.length;
     setTimeout(() => this.cursor.caretPosition(position), 20);
   }
 
@@ -637,42 +655,15 @@ struct Index {
     return `${count} · 已保存`;
   }
 
-  private insertLabel(token: string): string {
-    if (token === '# ') return '标题';
-    if (token === '**') return '加粗';
-    if (token === '*') return '斜体';
-    if (token === '`') return '代码';
-    if (token === '[]()') return '链接';
-    if (token === '- ') return '列表';
-    if (token === '- [ ] ') return '待办';
-    if (token === '$') return '公式';
-    if (token === '```') return '代码块';
-    return token;
-  }
-
-  private insertSymbol(token: string): Resource {
-    if (token === '# ') return $r('sys.symbol.textformat');
-    if (token === '**') return $r('sys.symbol.bold');
-    if (token === '*') return $r('sys.symbol.italic');
-    if (token === '`') return $r('sys.symbol.code');
-    if (token === '[]()') return $r('sys.symbol.link');
-    if (token === '- ') return $r('sys.symbol.list_bullet');
-    if (token === '- [ ] ') return $r('sys.symbol.checkmark_square');
-    if (token === '$') return $r('sys.symbol.sum_rectangle_fill');
-    if (token === '```') return $r('sys.symbol.code_square');
-    return $r('sys.symbol.plus');
-  }
-
   private editorTools(): ToolbarItem[] {
-    const tokens = this.currentFormat().inserts;
+    const actions = this.currentFormat().inserts;
     const items: ToolbarItem[] = [];
-    for (let index = 0; index < tokens.length; index++) {
-      const token = tokens[index];
-      const icon = new SymbolGlyphModifier(this.insertSymbol(token));
+    for (let index = 0; index < actions.length; index++) {
+      const action = actions[index];
       const item: ToolbarItem = {
-        value: this.insertLabel(token),
-        symbolIcon: icon,
-        action: (): void => this.insertToken(token)
+        value: action.label,
+        symbolIcon: new SymbolGlyphModifier(action.symbol),
+        action: (): void => this.insertToken(action)
       };
       items.push(item);
     }
@@ -713,30 +704,20 @@ struct Index {
     SubHeader({ primaryTitle: '最近文稿' })
   }
 
+  /**
+   * 列表行使用官方 ComposeListItem：图标尺寸、主副标题字号和行高都由组件按系统规范给出，
+   * 不再手写 Row + SymbolGlyph + 两行 Text 和自行计算的 padding。
+   */
   @Builder
   DocumentRow(title: string, detail: string, symbol: Resource) {
-    Row({ space: 12 }) {
-      SymbolGlyph(symbol)
-        .fontSize(24)
-        .fontColor([$r('sys.color.font_primary')])
-      Column({ space: 2 }) {
-        Text(title)
-          .fontSize($r('sys.float.ohos_id_text_size_body1'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-        Text(detail)
-          .fontSize($r('sys.float.ohos_id_text_size_body2'))
-          .fontColor($r('sys.color.font_secondary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
+    ComposeListItem({
+      contentItem: {
+        iconStyle: IconType.SYSTEM_ICON,
+        symbolStyle: new SymbolGlyphModifier(symbol),
+        primaryText: title,
+        secondaryText: detail
       }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
-    }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+    })
   }
 
   @Builder
@@ -800,26 +781,44 @@ struct Index {
     .edgeEffect(EdgeEffect.Spring)
   }
 
+  /**
+   * 查找栏用官方 Search 的 searchButton 承载「下一处」，onSubmit 与按钮点击共用同一入口，
+   * 不再在 Search 旁边另放一个文字按钮。关闭用系统符号的文本按钮。
+   */
   @Builder
   private FindBar() {
     Column({ space: 8 }) {
       Row({ space: 8 }) {
         Search({ value: this.query, placeholder: '查找文稿内容' })
+          .searchButton('下一处')
+          .onSubmit(() => this.findNext())
           .onChange((value: string) => { this.query = value; this.currentMatch = -1; })
           .layoutWeight(1)
-        Button('下一处').onClick(() => this.findNext())
-        Button('关闭')
-          .buttonStyle(ButtonStyleMode.NORMAL)
-          .onClick(() => this.searchVisible = false)
+        Button({ type: ButtonType.Circle }) {
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize($r('sys.float.ohos_id_text_size_body1'))
+            .fontColor([$r('sys.color.font_primary')])
+        }
+        .buttonStyle(ButtonStyleMode.TEXTUAL)
+        .accessibilityText('关闭查找')
+        .onClick(() => this.searchVisible = false)
       }
+      .width('100%')
       Row({ space: 8 }) {
         TextInput({ text: this.replacement, placeholder: '替换为' })
           .onChange((value: string) => { this.replacement = value; })
           .layoutWeight(1)
-        Button('替换').onClick(() => this.replaceMatch())
+        Button('替换')
+          .onClick(() => this.replaceMatch())
       }
+      .width('100%')
     }
-    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+    .padding({
+      left: $r('sys.float.margin_left'),
+      right: $r('sys.float.margin_right'),
+      top: 8,
+      bottom: 8
+    })
     .width('100%')
   }
 
@@ -948,12 +947,9 @@ struct Index {
     return this.currentFormat().outline ? 3 : 2;
   }
 
-  private adjustLayout(width: number): void {
-    const next = width >= 720;
-    if (this.wide !== next) {
-      this.wide = next;
-      if (!next && this.selectedTab === this.splitTab()) this.selectedTab = 0;
-    }
+  /** 页签图标沿用系统符号，选中态由系统页签样式给出。 */
+  private tabSymbol(symbol: Resource): TabBarSymbol {
+    return { normal: new SymbolGlyphModifier(symbol) };
   }
 
   @Builder
@@ -974,23 +970,23 @@ struct Index {
   @Builder
   private WorkspacePage() {
     Tabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
-      TabContent() { this.EditPage() }.tabBar('编辑')
-      TabContent() { this.PreviewPage() }.tabBar('预览')
+      TabContent() { this.EditPage() }
+        .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
+      TabContent() { this.PreviewPage() }
+        .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
       if (this.currentFormat().outline) {
-        TabContent() { this.OutlinePage() }.tabBar('大纲')
+        TabContent() { this.OutlinePage() }
+          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
       }
       if (this.wide) {
-        TabContent() { this.SplitPage() }.tabBar('分栏')
+        TabContent() { this.SplitPage() }
+          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
       }
     }
     .onChange((index: number) => { this.selectedTab = index; this.schedulePreview(); })
     .barMode(BarMode.Fixed)
     .width('100%')
     .height('100%')
-    .onAreaChange((_oldValue: Area, value: Area) => {
-      const width = parseFloat(value.width.toString());
-      if (!isNaN(width)) this.adjustLayout(width);
-    })
   }
 
   @Builder
