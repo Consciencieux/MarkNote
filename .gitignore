@@ -1,14 +1,40 @@
-.idea/
-.gradle/
-.hvigor/
-**/build/
-**/.preview/
-**/oh_modules/
-*.hap
-*.app
+# Operating systems
 .DS_Store
-local.properties
-/build-profile.json5
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# IDE
+.idea/
+
+# HarmonyOS build artifacts
+.hvigor/
+.gradle/
+build/
+.preview/
+oh_modules/
+*.hap
+*.hsp
+*.app
+
+# Web renderer
 renderer/node_modules/
 renderer/dist/
 renderer/.vite/
+
+# Local configuration
+/local.properties
+/build-profile.json5
+
+# Signing credentials
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.p8

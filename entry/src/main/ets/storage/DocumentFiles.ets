@@ -47,21 +47,25 @@ function canOpen(uri: string, mode: number): boolean {
   }
 }
 
-async function retain(uri: string, mode: number): Promise<boolean> {
+async function persisted(uri: string, mode: number): Promise<boolean> {
   const item = policy(uri, mode);
   try {
     const states = await fileShare.checkPersistentPermission([item]);
-    if (states.length > 0 && states[0]) {
-      try {
-        await fileShare.activatePermission([item]);
-      } catch {
-        // The grant is already persistent. This process may still hold a temporary open.
-      }
-      return true;
+    if (states.length === 0 || !states[0]) return false;
+    try {
+      await fileShare.activatePermission([item]);
+    } catch {
+      // A grant can already be active in this process.
     }
+    return true;
   } catch {
-    // Fall through and try to persist the current grant.
+    return false;
   }
+}
+
+async function retain(uri: string, mode: number): Promise<boolean> {
+  if (await persisted(uri, mode)) return true;
+  const item = policy(uri, mode);
   try {
     await fileShare.persistPermission([item]);
   } catch {
@@ -70,24 +74,29 @@ async function retain(uri: string, mode: number): Promise<boolean> {
   try {
     await fileShare.activatePermission([item]);
   } catch {
-    // Persisted for the next launch even if activation is unnecessary in this process.
+    // Persisted for the next launch even if this process can already open the file.
   }
   return true;
 }
 
 export class DocumentFiles {
   /**
-   * Try the requested mode, then keep whichever grant the provider allows.
-   * A failed persist leaves a temporary grant when the file can still be opened.
+   * A persisted picker grant stays inactive across launches until activatePermission.
+   * Activate both stored modes before canOpen. Opening first makes a still-valid
+   * recent file look expired, and the grant is never activated.
    */
   static async prepare(uri: string, writeRequested: boolean): Promise<FileAccess> {
     const access = new FileAccess();
     if (uri.length === 0) return access;
+    // Must run before canOpen. A restart leaves the persisted grant inactive.
+    const persistedWrite = await persisted(uri, READ_WRITE);
+    const persistedRead = persistedWrite || await persisted(uri, fileShare.OperationMode.READ_MODE);
     const writable = writeRequested && canOpen(uri, fileIo.OpenMode.READ_WRITE);
     const readable = writable || canOpen(uri, fileIo.OpenMode.READ_ONLY);
     if (!readable) throw new Error('原文件授权可能已经失效，请使用“打开”重新选取');
     const mode = writable ? READ_WRITE : fileShare.OperationMode.READ_MODE;
-    let persistent = await retain(uri, mode);
+    let persistent = writable ? persistedWrite : persistedRead;
+    if (!persistent) persistent = await retain(uri, mode);
     if (!persistent && writable) persistent = await retain(uri, fileShare.OperationMode.READ_MODE);
     access.writable = writable;
     access.persistent = persistent;
