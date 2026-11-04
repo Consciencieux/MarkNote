@@ -2,6 +2,8 @@
 
 先读 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，通过 [docs/FEATURES.md](docs/FEATURES.md) 查找已接入的功能、边界与负责代码。构建命令和提交范围在 [CONTRIBUTING.md](CONTRIBUTING.md)，产品概览在 [README.md](README.md)。避免重复维护同一信息。
 
+拿不准、反复改还是错的地方，不要凭感觉继续改。先怀疑没有按官方做法做，优先查官方文档和接口说明，确认做法后再改代码。
+
 新增、改变或删除用户可用功能时，**在同一次代码改动中更新** `docs/FEATURES.md` 对应条目。登记真实的用户操作及实现位置；尚未接通用户入口的功能留在 Issue 等任务渠道。格式能力要同时反映在 `FormatRegistry`、相应预览渲染器和功能目录中。
 
 改动时守住这些边界：

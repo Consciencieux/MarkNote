@@ -19,54 +19,65 @@ class MenuBridge {
   confirmNew: (id: string) => void = (_id: string): void => {};
   openFile: () => void = (): void => {};
   saveAs: () => void = (): void => {};
-  showTheme: () => void = (): void => {};
+  openSettings: () => void = (): void => {};
   showLegal: () => void = (): void => {};
   closeLibrary: () => void = (): void => {};
-  colorMode: ThemeColorMode = ThemeColorMode.SYSTEM;
 }
 
 const menuBridge: MenuBridge = new MenuBridge();
 
 @Builder
-function HomeMoreMenu() {
-  WithTheme({ colorMode: menuBridge.colorMode }) {
-    Menu() {
-      MenuItem({ content: '外观' })
-        .contentFontColor($r('sys.color.font_primary'))
-        .onChange(() => menuBridge.showTheme())
-      MenuItem({ content: '开源许可证与隐私说明' })
-        .contentFontColor($r('sys.color.font_primary'))
-        .onChange(() => menuBridge.showLegal())
+function HomeMenuContent() {
+  Menu() {
+    MenuItemGroup() {
+      MenuItem({ content: '设置' })
+        .onChange((selected: boolean) => {
+          if (selected) menuBridge.openSettings();
+        })
+      MenuItem({ content: '关于' })
+        .onChange((selected: boolean) => {
+          if (selected) menuBridge.showLegal();
+        })
     }
   }
 }
 
 @Builder
-function DocumentMoreMenu() {
-  WithTheme({ colorMode: menuBridge.colorMode }) {
-    Menu() {
-      MenuItemGroup({ header: '新建' }) {
-        ForEach(FormatRegistry.all(), (item: DocumentFormat) => {
-          MenuItem({ content: item.moreTitle })
-            .contentFontColor($r('sys.color.font_primary'))
-            .onChange(() => menuBridge.confirmNew(item.id))
-        }, (item: DocumentFormat) => item.id)
-      }
+function DocumentMenuContent() {
+  Menu() {
+    MenuItemGroup() {
+      ForEach(FormatRegistry.all(), (item: DocumentFormat) => {
+        MenuItem({ content: item.moreTitle })
+          .onChange((selected: boolean) => {
+            if (selected) menuBridge.confirmNew(item.id);
+          })
+      }, (item: DocumentFormat) => item.id)
+    }
+    MenuItemGroup() {
       MenuItem({ content: '打开文件' })
-        .contentFontColor($r('sys.color.font_primary'))
-        .onChange(() => menuBridge.openFile())
+        .onChange((selected: boolean) => {
+          if (selected) menuBridge.openFile();
+        })
       MenuItem({ content: '另存为' })
-        .contentFontColor($r('sys.color.font_primary'))
-        .onChange(() => menuBridge.saveAs())
-      MenuItem({ content: '外观' })
-        .contentFontColor($r('sys.color.font_primary'))
-        .onChange(() => menuBridge.showTheme())
-      MenuItem({ content: '开源许可证与隐私说明' })
-        .contentFontColor($r('sys.color.font_primary'))
-        .onChange(() => menuBridge.showLegal())
+        .onChange((selected: boolean) => {
+          if (selected) menuBridge.saveAs();
+        })
+    }
+    MenuItemGroup() {
       MenuItem({ content: '返回文稿列表' })
-        .contentFontColor($r('sys.color.font_primary'))
-        .onChange(() => menuBridge.closeLibrary())
+        .onChange((selected: boolean) => {
+          if (selected) menuBridge.closeLibrary();
+        })
+    }
+    MenuItemGroup() {
+      MenuItem({ content: '设置' })
+        .onChange((selected: boolean) => {
+          if (selected) menuBridge.openSettings();
+        })
+      MenuItem({ content: '关于' })
+        .onChange((selected: boolean) => {
+          if (selected) menuBridge.showLegal();
+        })
     }
   }
 }
@@ -75,7 +86,7 @@ function DocumentMoreMenu() {
 @Component
 struct Index {
   @State private editing: boolean = false;
-  @State private themeOpen: boolean = false;
+  @State private settingsOpen: boolean = false;
   @State private legalOpen: boolean = false;
   @State private legalText: string = '';
   private preview: webview.WebviewController = new webview.WebviewController();
@@ -111,25 +122,25 @@ struct Index {
 
   aboutToAppear(): void {
     menuBridge.confirmNew = (id: string): void => {
-      this.confirmSwitch(() => this.startNew(id));
+      this.afterMenu(() => this.confirmSwitch(() => this.startNew(id)));
     };
     menuBridge.openFile = (): void => {
-      this.confirmSwitch(() => this.pickOpen());
+      this.afterMenu(() => this.confirmSwitch(() => this.pickOpen()));
     };
     menuBridge.saveAs = (): void => {
-      void this.saveFile(true);
+      this.afterMenu(() => { void this.saveFile(true); });
     };
-    menuBridge.showTheme = (): void => {
+    menuBridge.openSettings = (): void => {
       this.afterMenu(() => {
         this.legalOpen = false;
-        this.themeOpen = true;
+        this.settingsOpen = true;
       });
     };
     menuBridge.showLegal = (): void => {
       this.afterMenu(() => this.openLegal());
     };
     menuBridge.closeLibrary = (): void => {
-      this.leaveDocument();
+      this.afterMenu(() => this.leaveDocument());
     };
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     void this.initialize();
@@ -143,8 +154,8 @@ struct Index {
   }
 
   onBackPress(): boolean {
-    if (this.themeOpen) {
-      this.themeOpen = false;
+    if (this.settingsOpen) {
+      this.settingsOpen = false;
       return true;
     }
     if (this.legalOpen) {
@@ -173,25 +184,12 @@ struct Index {
     });
   }
 
-  private afterMenu(action: () => void): void {
-    setTimeout(action, 200);
-  }
-
   private toast(message: string): void {
     this.getUIContext().getPromptAction().showToast({ message });
   }
 
   private changeTheme(choice: string, persist: boolean = true): void {
     this.theme = choice;
-    if (choice === 'light') {
-      menuBridge.colorMode = ThemeColorMode.LIGHT;
-    } else if (choice === 'dark') {
-      menuBridge.colorMode = ThemeColorMode.DARK;
-    } else {
-      menuBridge.colorMode = ThemeColorMode.SYSTEM;
-    }
-    this.homeMenu = null;
-    this.documentMenu = null;
     this.schedulePreview();
     if (this.context) {
       let mode = ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
@@ -236,8 +234,9 @@ struct Index {
   private homeTitle(): HdsNavigationTitleBarOptions {
     const heading: HdsNavigationTitle = { mainTitle: '文稿' };
     const menu: HdsNavigationMenuContentOptions = {
-      maxCount: 1,
-      value: [this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more', () => this.openHomeMenu())]
+      value: [
+        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more', (): void => this.openHomeMenu())
+      ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
     const options: HdsNavigationTitleBarOptions = {
@@ -253,12 +252,12 @@ struct Index {
     const menu: HdsNavigationMenuContentOptions = {
       maxCount: 3,
       value: [
-        this.menuIcon('保存', $r('sys.symbol.square_and_arrow_down'), 'marknote-save', () => { void this.saveFile(false); }),
-        this.menuIcon('查找', $r('sys.symbol.magnifyingglass'), 'marknote-find', () => {
+        this.menuIcon('保存', $r('sys.symbol.checkmark'), 'marknote-save', (): void => { void this.saveFile(false); }),
+        this.menuIcon('查找', $r('sys.symbol.magnifyingglass'), 'marknote-find', (): void => {
           this.searchVisible = true;
           this.selectedTab = 0;
         }),
-        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more', () => this.openDocumentMenu())
+        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more', (): void => this.openDocumentMenu())
       ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
@@ -271,20 +270,32 @@ struct Index {
   }
 
   private openHomeMenu(): void {
-    this.homeMenu = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(HomeMoreMenu));
-    this.getUIContext().getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }, {
-      showInSubWindow: false
-    }).catch(() => {
+    const uiContext = this.getUIContext();
+    this.homeMenu = new ComponentContent<Object>(uiContext, wrapBuilder(HomeMenuContent));
+    uiContext.getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }).catch(() => {
       // The menu stays closed when its anchor is not on screen.
     });
   }
 
   private openDocumentMenu(): void {
-    this.documentMenu = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(DocumentMoreMenu));
-    this.getUIContext().getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }, {
-      showInSubWindow: false
-    }).catch(() => {
+    const uiContext = this.getUIContext();
+    this.documentMenu = new ComponentContent<Object>(uiContext, wrapBuilder(DocumentMenuContent));
+    uiContext.getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }).catch(() => {
       // The menu stays closed when its anchor is not on screen.
+    });
+  }
+
+  private afterMenu(next: () => void): void {
+    const prompt = this.getUIContext().getPromptAction();
+    const closeOne = (menu: ComponentContent<Object> | null, done: () => void): void => {
+      if (menu === null) {
+        done();
+        return;
+      }
+      prompt.closeMenu(menu).then(() => done()).catch(() => done());
+    };
+    closeOne(this.homeMenu, () => {
+      closeOne(this.documentMenu, next);
     });
   }
 
@@ -296,7 +307,7 @@ struct Index {
     } catch {
       this.legalText = '未能读取第三方许可证，请确保已运行 renderer 的构建命令。';
     }
-    this.themeOpen = false;
+    this.settingsOpen = false;
     this.legalOpen = true;
   }
 
@@ -313,12 +324,19 @@ struct Index {
     return DocumentService.formatFor(this.info);
   }
 
+  private previewIsDark(): boolean {
+    if (this.theme === 'dark') return true;
+    if (this.theme === 'light') return false;
+    return this.context?.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+  }
+
   private sendPreview(controller: webview.WebviewController): void {
     const kind = this.currentFormat().id;
+    const theme = this.previewIsDark() ? 'dark' : (this.theme === 'light' ? 'light' : 'system');
     const command = 'window.MarknotePreview.update(' + JSON.stringify({
       kind: kind,
       source: this.source,
-      theme: this.theme
+      theme: theme
     }) + ')';
     try {
       controller.runJavaScript(command);
@@ -397,7 +415,7 @@ struct Index {
     this.selectionEnd = 0;
     this.selectedTab = 0;
     this.searchVisible = false;
-    this.themeOpen = false;
+    this.settingsOpen = false;
     this.legalOpen = false;
     this.clearRecovery();
     this.showDocumentRoute();
@@ -544,7 +562,7 @@ struct Index {
     this.flushRecovery();
     DocumentService.close();
     this.editing = false;
-    this.themeOpen = false;
+    this.settingsOpen = false;
   }
 
   private updateSource(text: string): void {
@@ -663,17 +681,17 @@ struct Index {
     return this.recovery.name;
   }
 
-  @Builder
-  NewDocumentMenu() {
-    WithTheme({ colorMode: menuBridge.colorMode }) {
-      Menu() {
-        ForEach(FormatRegistry.all(), (item: DocumentFormat) => {
-          MenuItem({ content: item.sheetTitle })
-            .contentFontColor($r('sys.color.font_primary'))
-            .onChange(() => this.confirmSwitch(() => this.startNew(item.id)))
-        }, (item: DocumentFormat) => item.id)
-      }
+  private newDocumentMenu(): MenuElement[] {
+    const items: MenuElement[] = [];
+    const formats = FormatRegistry.all();
+    for (let index = 0; index < formats.length; index++) {
+      const format = formats[index];
+      items.push({
+        value: format.sheetTitle,
+        action: (): void => { this.confirmSwitch(() => this.startNew(format.id)); }
+      });
     }
+    return items;
   }
 
   @Builder
@@ -731,7 +749,7 @@ struct Index {
             .width('100%')
           Row({ space: 12 }) {
             Button('新建文稿')
-              .bindMenu(this.NewDocumentMenu)
+              .bindMenu(this.newDocumentMenu())
               .layoutWeight(1)
             Button('打开文件')
               .buttonStyle(ButtonStyleMode.NORMAL)
@@ -822,6 +840,7 @@ struct Index {
     Web({ src: $rawfile('preview/index.html'), controller: this.preview })
       .javaScriptAccess(true)
       .domStorageAccess(false)
+      .backgroundColor(this.previewIsDark() ? '#000000' : '#FFFFFF')
       .onPageEnd(() => { this.previewReady = true; this.sendPreview(this.preview); })
       .width('100%')
       .height('100%')
@@ -832,6 +851,7 @@ struct Index {
     Web({ src: $rawfile('preview/index.html'), controller: this.splitPreview })
       .javaScriptAccess(true)
       .domStorageAccess(false)
+      .backgroundColor(this.previewIsDark() ? '#000000' : '#FFFFFF')
       .onPageEnd(() => { this.splitReady = true; this.sendPreview(this.splitPreview); })
       .width('100%')
       .height('100%')
@@ -879,14 +899,21 @@ struct Index {
   }
 
   @Builder
-  private ThemePage() {
-    Column() {
-      this.ThemeChoice('跟随系统', 'system')
-      this.ThemeChoice('浅色', 'light')
-      this.ThemeChoice('深色', 'dark')
+  AppearanceHeader() {
+    SubHeader({ primaryTitle: '外观' })
+  }
+
+  @Builder
+  private SettingsPage() {
+    List() {
+      ListItemGroup({ header: this.AppearanceHeader }) {
+        ListItem() { this.ThemeChoice('跟随系统', 'system') }
+        ListItem() { this.ThemeChoice('浅色', 'light') }
+        ListItem() { this.ThemeChoice('深色', 'dark') }
+      }
     }
     .width('100%')
-    .padding({ top: 8, bottom: 16 })
+    .height(280)
   }
 
   @Builder
@@ -1001,20 +1028,26 @@ struct Index {
       .mode(NavigationMode.Stack)
       .hideBackButton(true)
       .bindToScrollable([this.libraryScroller])
+      .bindSheet(this.legalOpen, this.LegalPage(), {
+        title: { title: '关于' },
+        showClose: true,
+        height: SheetSize.LARGE,
+        preferType: SheetType.BOTTOM,
+        onDisappear: (): void => {
+          this.legalOpen = false;
+        }
+      })
       .width('100%')
       .height('100%')
     }
-    .bindSheet($$this.themeOpen, this.ThemePage(), {
-      title: { title: '外观' },
+    .bindSheet(this.settingsOpen, this.SettingsPage(), {
+      title: { title: '设置' },
       showClose: true,
-      height: 320,
-      preferType: SheetType.BOTTOM
-    })
-    .bindSheet($$this.legalOpen, this.LegalPage(), {
-      title: { title: '开源许可证与隐私' },
-      showClose: true,
-      height: SheetSize.LARGE,
-      preferType: SheetType.BOTTOM
+      height: 360,
+      preferType: SheetType.BOTTOM,
+      onDisappear: (): void => {
+        this.settingsOpen = false;
+      }
     })
     .width('100%')
     .height('100%')
