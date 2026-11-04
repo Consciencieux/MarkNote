@@ -9,7 +9,8 @@ import {
   HdsNavigation, HdsNavDestination, HdsNavigationTitleMode, HdsNavDestinationTitleMode,
   ScrollEffectType, IconStyleMode, hdsMaterial, HdsNavigationTitle, HdsNavigationIconOptions,
   HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions, TitleBarContentOptions,
-  TitleBarStyleOptions, HdsNavigationTitleBarOptions, ScrollEffectOptions, SystemMaterialParams
+  TitleBarStyleOptions, HdsNavigationTitleBarOptions, ScrollEffectOptions, SystemMaterialParams,
+  HdsTabs, HdsTabsController, HdsTabsFloatingStyle
 } from '@kit.UIDesignKit';
 import { DocumentInfo, Heading, RecentDocument, RecoveryData, linesIn } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
@@ -113,6 +114,8 @@ struct Index {
   /** Drives the enabled state of the title bar undo and redo icons. */
   @State private undoAvailable: boolean = false;
   @State private redoAvailable: boolean = false;
+  /** True while the editor has focus, so the format bar can replace the tab bar. */
+  @State private formatBarShown: boolean = false;
   private history: EditHistory = new EditHistory();
   private context: common.UIAbilityContext | null = null;
   private info: DocumentInfo = new DocumentInfo();
@@ -123,6 +126,7 @@ struct Index {
   private routes: NavPathStack = new NavPathStack();
   private libraryScroller: Scroller = new Scroller();
   private wideQuery: mediaquery.MediaQueryListener | null = null;
+  private materialLevel: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.EXQUISITE;
   private homeMenu: ComponentContent<Object> | null = null;
   private documentMenu: ComponentContent<Object> | null = null;
 
@@ -156,7 +160,21 @@ struct Index {
     };
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.bindWideBreakpoint();
+    this.pickMaterialLevel();
     void this.initialize();
+  }
+
+  /**
+   * 设备不支持 IMMERSIVE 材质类型时降级到 SMOOTH，避免底部页签的沉浸光感拖慢低算力设备。
+   * 判断方式取自官方沉浸光感示例。
+   */
+  private pickMaterialLevel(): void {
+    let level = hdsMaterial.MaterialLevel.EXQUISITE;
+    const types: Array<hdsMaterial.MaterialType> = hdsMaterial.getSystemMaterialTypes();
+    if (types.indexOf(hdsMaterial.MaterialType.IMMERSIVE) < 0) {
+      level = hdsMaterial.MaterialLevel.SMOOTH;
+    }
+    this.materialLevel = level;
   }
 
   /**
@@ -223,7 +241,7 @@ struct Index {
     if (draft === null) return;
     try {
       await DocumentService.restore(draft);
-      this.presentOpened();
+      this.presentOpened(true);
       this.toast('已恢复上次未保存的编辑');
     } catch {
       this.clearRecovery();
@@ -425,13 +443,23 @@ struct Index {
 
   /** true 表示可以离开；保存过程中取消或失败都留在当前文稿。 */
   private async askSaveOrDiscard(): Promise<boolean> {
+    // The reason matters: an unnamed document needs a name, a read-only one needs another
+    // location, and a failed write may be an external modification.
+    let message = '这份文稿没能写回原文件。可以先另存为，也可以放弃修改。';
+    let saveLabel = '另存为';
+    if (this.info.uri.length === 0) {
+      message = '这份文稿还没有保存到文件。可以先保存，也可以放弃修改。';
+      saveLabel = '保存';
+    } else if (!this.info.writable) {
+      message = '这个文件没有写入权限。可以另存为新文件，也可以放弃修改。';
+    }
     let choice = -1;
     try {
       const result = await this.getUIContext().getPromptAction().showDialog({
         title: '未保存的修改',
-        message: '这份文稿还没有写入文件。可以先保存，也可以放弃修改。',
+        message: message,
         buttons: [
-          { text: '保存', color: $r('sys.color.font_primary') },
+          { text: saveLabel, color: $r('sys.color.font_primary') },
           { text: '放弃修改', color: $r('sys.color.font_secondary') },
           { text: '取消', color: $r('sys.color.font_secondary') }
         ]
@@ -440,7 +468,7 @@ struct Index {
     } catch {
       // 关闭对话框按取消处理，留在当前文稿。
     }
-    if (choice === 0) return await this.saveFile(false);
+    if (choice === 0) return await this.saveFile(this.info.uri.length > 0 && !this.info.writable);
     return choice === 1;
   }
 
@@ -476,7 +504,7 @@ struct Index {
     });
   }
 
-  private presentOpened(): void {
+  private presentOpened(keepDraft: boolean = false): void {
     this.syncFromService();
     // The history belongs to one document. Keeping it across a switch would let undo write
     // the previous document's text into this one.
@@ -489,7 +517,10 @@ struct Index {
     this.searchVisible = false;
     this.settingsOpen = false;
     this.legalOpen = false;
-    this.clearRecovery();
+    // A recovered draft must stay on disk until it is saved or the user leaves normally.
+    // Clearing it here would lose the restored text if the app dies again before an edit.
+    if (keepDraft) this.flushRecovery();
+    else this.clearRecovery();
     this.showDocumentRoute();
     if (this.info.uri.length > 0) void this.rememberRecent(this.info.uri, this.info.name);
   }
@@ -728,27 +759,6 @@ struct Index {
     return `${count} · 已保存`;
   }
 
-  private editorTools(): ToolbarItem[] {
-    const actions = this.currentFormat().inserts;
-    const items: ToolbarItem[] = [];
-    for (let index = 0; index < actions.length; index++) {
-      const action = actions[index];
-      const item: ToolbarItem = {
-        value: action.label,
-        symbolIcon: new SymbolGlyphModifier(action.symbol),
-        action: (): void => this.insertToken(action)
-      };
-      items.push(item);
-    }
-    return items;
-  }
-
-  private hideEditorTools(): boolean {
-    if (this.currentFormat().inserts.length === 0) return true;
-    if (this.selectedTab === 0) return false;
-    return !(this.wide && this.selectedTab === this.splitTab());
-  }
-
   private newDocumentMenu(): MenuElement[] {
     const items: MenuElement[] = [];
     const formats = FormatRegistry.all();
@@ -889,6 +899,8 @@ struct Index {
         .fontFamily('monospace')
         .width('100%')
         .layoutWeight(1)
+        .onFocus(() => { this.formatBarShown = true; })
+        .onBlur(() => { this.formatBarShown = false; })
         .onChange((value: string) => this.updateSource(value))
         .onTextSelectionChange((start: number, end: number) => {
           this.selectionStart = start;
@@ -1037,24 +1049,122 @@ struct Index {
 
   @Builder
   private WorkspacePage() {
-    Tabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
-      TabContent() { this.EditPage() }
-        .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
-      TabContent() { this.PreviewPage() }
-        .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
-      if (this.currentFormat().outline) {
+    Column() {
+      HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
+        TabContent() { this.EditPage() }
+          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
+        TabContent() { this.PreviewPage() }
+          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
         TabContent() { this.OutlinePage() }
           .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
+        if (this.wide) {
+          TabContent() { this.SplitPage() }
+            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
+        }
       }
-      if (this.wide) {
-        TabContent() { this.SplitPage() }
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
-      }
+      .onChange((index: number) => { this.selectedTab = index; this.schedulePreview(); })
+      .barMode(BarMode.Fixed)
+      // barOverlap keeps the bar above the content, so swapping it out for the format bar
+      // does not move the text, and the system material gives the translucent look.
+      .barOverlap(true)
+      .barFloatingStyle(this.floatingBar())
+      // While typing, the format bar takes the place of the tab bar. Only one bar is ever
+      // visible, which is what keeps the bottom of the screen from carrying two rows.
+      .barHeight(this.formatBarActive() ? 0 : 56)
+      .layoutWeight(1)
+      .width('100%')
+
+      // The bar is always built and only toggles visibility: an if branch inside a @Builder
+      // does not rebuild when the state changes, while a property update does.
+      this.FormatBar()
     }
-    .onChange((index: number) => { this.selectedTab = index; this.schedulePreview(); })
-    .barMode(BarMode.Fixed)
     .width('100%')
     .height('100%')
+  }
+
+  private formatBarActive(): boolean {
+    return this.formatBarShown && this.formatBarWanted();
+  }
+
+  /** The format bar only applies to the editable tab of a format that has insert actions. */
+  private formatBarWanted(): boolean {
+    if (this.currentFormat().inserts.length === 0) return false;
+    return this.selectedTab === 0;
+  }
+
+  /** The four most common inserts stay on the bar; the rest move into the more menu. */
+  private barInserts(): InsertAction[] {
+    return this.currentFormat().inserts.slice(0, 4);
+  }
+
+  private moreInserts(): MenuElement[] {
+    const rest = this.currentFormat().inserts.slice(4);
+    const items: MenuElement[] = [];
+    for (let index = 0; index < rest.length; index++) {
+      const action = rest[index];
+      items.push({
+        value: action.label,
+        symbolIcon: new SymbolGlyphModifier(action.symbol),
+        action: (): void => this.insertToken(action)
+      });
+    }
+    return items;
+  }
+
+  /**
+   * @LocalBuilder, not @Builder: a plain nested @Builder does not keep the state parent-child
+   * relationship, so its attributes stop following @State changes. The official guide on
+   * @LocalBuilder describes exactly this case.
+   */
+  @LocalBuilder
+  private FormatBar() {
+    Row() {
+      ForEach(this.barInserts(), (action: InsertAction) => {
+        Column() {
+          SymbolGlyph(action.symbol)
+            .fontSize($r('sys.float.ohos_id_text_size_headline7'))
+            .fontColor([$r('sys.color.font_primary')])
+        }
+        .layoutWeight(1)
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .accessibilityText(action.label)
+        .onClick(() => this.insertToken(action))
+      }, (action: InsertAction) => action.token)
+
+      if (this.currentFormat().inserts.length > 4) {
+        Column() {
+          SymbolGlyph($r('sys.symbol.more'))
+            .fontSize($r('sys.float.ohos_id_text_size_headline7'))
+            .fontColor([$r('sys.color.font_primary')])
+        }
+        .layoutWeight(1)
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .accessibilityText('更多格式')
+        .bindMenu(this.moreInserts())
+      }
+    }
+    .width('100%')
+    .height(56)
+    .id('marknote-format-bar')
+    .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+    .visibility(this.formatBarActive() ? Visibility.Visible : Visibility.None)
+  }
+
+  /**
+   * 底部页签用 HDS 的沉浸光感材质，跟随系统算力自适应，与系统「备忘录」的悬浮半透明页签一致。
+   */
+  private floatingBar(): HdsTabsFloatingStyle {
+    const material: SystemMaterialParams = {
+      materialType: hdsMaterial.MaterialType.ADAPTIVE,
+      materialLevel: this.materialLevel
+    };
+    const style: HdsTabsFloatingStyle = {
+      barBottomMargin: 28,
+      systemMaterialEffect: material
+    };
+    return style;
   }
 
   @Builder
@@ -1065,8 +1175,6 @@ struct Index {
       }
       .titleBar(this.documentTitle())
       .titleMode(HdsNavDestinationTitleMode.MINI)
-      .toolbarConfiguration(this.editorTools())
-      .hideToolBar(this.hideEditorTools())
       .onBackPressed(() => {
         if (this.routes.size() > 0) this.leaveDocument();
         return true;
