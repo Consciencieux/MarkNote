@@ -8,6 +8,7 @@
 *.app
 .DS_Store
 local.properties
+/build-profile.json5
 renderer/node_modules/
 renderer/dist/
 renderer/.vite/

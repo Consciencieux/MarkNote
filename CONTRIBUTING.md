@@ -22,9 +22,23 @@ entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt
 
 ## 应用
 
-用 DevEco Studio 打开仓库根目录并同步 OHPM。包名是 `com.zhouyi.marknote`，写在 `AppScope/app.json5`。调试签名由本机「自动生成签名文件」产生，只留在本地的 `build-profile.json5`。不要提交证书、Profile、密钥库路径或口令。
+用 DevEco Studio 打开仓库根目录并同步 OHPM。包名是 `com.zhouyi.marknote`，写在 `AppScope/app.json5`。
 
-真机安装前，产品 `default` 需要引用这份本地签名，否则打出来的是未签名 HAP。
+## 本地构建配置与签名
+
+仓库使用 `build-profile.example.json5` 保存公共构建配置，实际使用的 `build-profile.json5` 不参与 Git 版本控制。
+
+首次克隆仓库后，在项目根目录执行：
+
+```sh
+cp build-profile.example.json5 build-profile.json5
+```
+
+随后在 DevEco Studio 中配置本机调试签名。
+
+`build-profile.json5` 已加入 `.gitignore`，DevEco Studio 自动生成的签名设置不会进入版本控制。修改 SDK、产品等公共构建配置时，应同步更新模板。
+
+签名证书、Profile、密钥库和口令不得提交到仓库。真机安装前，产品 `default` 需要引用这份本地签名，否则打出来的是未签名 HAP。
 
 ## 提交前
 
