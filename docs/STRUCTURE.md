@@ -9,7 +9,15 @@ marknote
 │   ├── module.json5                        Ability、FileOpen 关联与权限
 │   ├── ets/
 │   │   ├── entryability/EntryAbility.ets   启动与系统打开文件
-│   │   ├── pages/Index.ets                 首页、编辑、预览调度、查找、菜单、主题
+│   │   ├── pages/
+│   │   │   ├── Index.ets                    首页外壳、导航栈、主题、设置与关于
+│   │   │   ├── HomeView.ets                 首页列表、新建菜单、最近文稿
+│   │   │   ├── DocumentView.ets             文稿页：编辑、预览、大纲、分栏、查找、保存
+│   │   │   ├── FormatBarView.ets            键盘上方的格式栏
+│   │   │   ├── DocumentMenus.ets            首页与文稿页的菜单内容和动作桥
+│   │   │   ├── DocumentBridge.ets           首页与文稿页的未保存询问桥
+│   │   │   ├── SettingsView.ets             外观设置
+│   │   │   └── LegalView.ets                关于与第三方许可证
 │   │   ├── document/
 │   │   │   ├── DocumentService.ets         文稿会话、打开、保存、冲突
 │   │   │   ├── FormatRegistry.ets          扩展名、UTD、MIME、大纲、快捷插入
@@ -42,7 +50,10 @@ marknote
 
 | 要改什么 | 改哪里 |
 | --- | --- |
-| 首页、编辑、查找、菜单、主题 | `entry/src/main/ets/pages/Index.ets` |
+| 首页列表、新建菜单 | `entry/src/main/ets/pages/HomeView.ets` |
+| 文稿页：编辑、预览、大纲、分栏、查找、保存 | `entry/src/main/ets/pages/DocumentView.ets` |
+| 首页外壳、导航、主题、设置与关于 | `entry/src/main/ets/pages/Index.ets`、`pages/SettingsView.ets`、`pages/LegalView.ets` |
+| 菜单内容与跨页动作 | `entry/src/main/ets/pages/DocumentMenus.ets`、`pages/DocumentBridge.ets` |
 | 打开、保存、草稿恢复 | `entry/src/main/ets/document/DocumentService.ets` |
 | 文件授权与字节指纹 | `entry/src/main/ets/storage/DocumentFiles.ets` |
 | 编码、BOM、换行 | `entry/src/main/ets/document/TextEncoding.ets` |

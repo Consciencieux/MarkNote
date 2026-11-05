@@ -3,7 +3,7 @@ import { copyInfo, DocumentInfo, Heading, RecoveryData, documentOutline } from '
 import { DocumentFiles, FileContents } from '../storage/DocumentFiles';
 import { DocumentFormat, FormatRegistry } from './FormatRegistry';
 
-/** The one open document. Index mirrors these fields into ArkUI state. */
+/** The one open document. DocumentView mirrors these fields into ArkUI state. */
 export class DocumentSession {
   info: DocumentInfo = new DocumentInfo();
   source: string = '';
