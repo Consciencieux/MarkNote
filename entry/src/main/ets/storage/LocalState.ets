@@ -6,7 +6,6 @@ import { RecentDocument, RecoveryData } from '../model/Document';
 
 const RECENT_KEY: string = 'recent_files';
 const THEME_KEY: string = 'color_choice';
-const TOOLBAR_POSITION_KEY: string = 'editor_toolbar_position';
 const DRAFT: string = '/unsaved-draft.json';
 const TEMP: string = '/unsaved-draft.tmp';
 
@@ -20,21 +19,6 @@ export class LocalState {
   static async writeTheme(context: common.UIAbilityContext, choice: string): Promise<void> {
     const store = await preferences.getPreferences(context, 'marknote-settings');
     await store.put(THEME_KEY, choice);
-    await store.flush();
-  }
-
-  static async readToolbarPosition(context: common.UIAbilityContext): Promise<string> {
-    const store = await preferences.getPreferences(context, 'marknote-settings');
-    const value = await store.get(TOOLBAR_POSITION_KEY, 'top') as string;
-    // Migrate the earlier single-side setting to its existing right-side behavior.
-    if (value === 'side') return 'right';
-    return value === 'left' || value === 'right' ? value : 'top';
-  }
-
-  static async writeToolbarPosition(context: common.UIAbilityContext, position: string): Promise<void> {
-    const store = await preferences.getPreferences(context, 'marknote-settings');
-    const value = position === 'left' || position === 'right' ? position : 'top';
-    await store.put(TOOLBAR_POSITION_KEY, value);
     await store.flush();
   }
 

@@ -27,9 +27,6 @@ const TAB_PREVIEW: number = 0;
 const TAB_EDIT: number = 1;
 const TAB_OUTLINE: number = 2;
 const TAB_SPLIT: number = 3;
-/** HdsNavDestination MINI titlebar height documented by the UI Design Kit API. */
-const MINI_TITLE_BAR_HEIGHT: number = 56;
-
 /** Flat row model used by the documented ArkUI List-based tree pattern. */
 class OutlineRow {
   id: number = 0;
@@ -48,7 +45,6 @@ class OutlineRow {
 export struct DocumentView {
   // 由首页传入。
   @Prop @Watch('onThemeChange') theme: string = 'system';
-  @Prop toolbarPosition: string = 'top';
   @Prop @Watch('onWideChange') wide: boolean = false;
   /** 每打开一篇就加一，用来在路由已经存在时重新载入会话。 */
   @Prop @Watch('loadSession') revision: number = 0;
@@ -188,6 +184,11 @@ export struct DocumentView {
       ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
+    if (this.formatBarWanted()) {
+      // 官方导航自定义区域：标题栏负责底部区域布局和安全区。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
+      content.bottomBuilder = { builder: (): void => this.TopFormatBar() };
+    }
     return scrollingTitleBar(content);
   }
 
@@ -682,16 +683,24 @@ export struct DocumentView {
   private TopFormatBar() {
     FormatBarView({
       formatId: this.formatId,
-      horizontal: true,
       onInsert: (action: InsertAction): void => this.insertToken(action)
     })
-      .align(Alignment.Top)
-      .margin({ top: MINI_TITLE_BAR_HEIGHT })
   }
 
-  /** 页签图标沿用系统符号，选中态由系统页签样式给出。 */
+  /** TabBarSymbol 使用独立的普通态和选中态；图标色需单独设置。 */
   private tabSymbol(symbol: Resource): TabBarSymbol {
-    return { normal: new SymbolGlyphModifier(symbol) };
+    return {
+      normal: new SymbolGlyphModifier(symbol).renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        .fontColor([$r('sys.color.icon_primary')]),
+      selected: new SymbolGlyphModifier(symbol).renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        .fontColor([$r('sys.color.brand')])
+    };
+  }
+
+  /** 华为 uiMaterial 沉浸材质示例：文字颜色使用可适配深浅色的系统资源。 */
+  private bottomTab(symbol: Resource, label: string): BottomTabBarStyle {
+    return BottomTabBarStyle.of(this.tabSymbol(symbol), label)
+      .labelStyle({ selectedColor: $r('sys.color.brand'), unselectedColor: $r('sys.color.font_primary') });
   }
 
   @Builder
@@ -727,20 +736,20 @@ export struct DocumentView {
           this.PreviewPage(this.preview, this.previewScroller, () => { this.previewReady = true; })
         }
           .attributeModifier(this.tabContentPolicy)
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
+          .tabBar(this.bottomTab($r('sys.symbol.eye'), '预览'))
         TabContent() { this.EditPage(this.editScroller) }
           .attributeModifier(this.tabContentPolicy)
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
+          .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), '编辑'))
         // Only formats that declare an outline get the tab; plain text and SVG have none.
         if (this.currentFormat().outline) {
           TabContent() { this.OutlinePage() }
             .attributeModifier(this.tabContentPolicy)
-            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
+            .tabBar(this.bottomTab($r('sys.symbol.list_bullet'), '大纲'))
         }
         if (this.wide) {
           TabContent() { this.SplitPage() }
             .attributeModifier(this.tabContentPolicy)
-            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
+            .tabBar(this.bottomTab($r('sys.symbol.rectangle_split_2x1'), '分栏'))
         }
       }
       // HdsTabs (ui-design-hdstabs)：存在 BottomTabBarStyle 时，未设置动画时长即使用官方默认值。
@@ -763,36 +772,9 @@ export struct DocumentView {
       .attributeModifier(this.tabsPolicy)
       .width('100%')
       .height('100%')
-      if (this.toolbarPosition === 'top' && this.formatBarWanted()) {
-        this.TopFormatBar()
-      }
-      if (this.toolbarPosition !== 'top' && this.formatBarWanted()) {
-        this.SideFormatBar()
-      }
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  private SideFormatBar() {
-    if (this.toolbarPosition === 'left') {
-      FormatBarView({
-        formatId: this.formatId,
-        horizontal: false,
-        onInsert: (action: InsertAction): void => this.insertToken(action)
-      })
-        .align(Alignment.Start)
-        .margin({ left: $r('sys.float.margin_left') })
-    } else {
-      FormatBarView({
-        formatId: this.formatId,
-        horizontal: false,
-        onInsert: (action: InsertAction): void => this.insertToken(action)
-      })
-        .align(Alignment.End)
-        .margin({ right: $r('sys.float.margin_right') })
-    }
   }
 
   /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */

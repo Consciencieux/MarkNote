@@ -18,7 +18,7 @@
 | 功能 | 当前行为与限制 | 主要代码 |
 | --- | --- | --- |
 | 编辑 | 使用 ArkUI `TextArea` 编辑源文本，支持光标和选区。切换到编辑页签不会主动弹出键盘；点击文本后才进入输入状态。不支持多光标、语法折叠或行级语法高亮 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
-| 快捷插入 | Markdown 编辑页提供标题、强调、链接、列表、待办、代码和公式等快捷操作。工具栏可设置在顶部、左侧或右侧；其他格式不显示格式工具栏 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[FormatBarView.ets](../entry/src/main/ets/pages/FormatBarView.ets) |
+| 快捷插入 | Markdown 编辑页提供标题、强调、链接、列表、待办、代码和公式等快捷操作。工具栏位于顶部标题栏下方，空间不足时可横向滚动。其他格式不显示格式工具栏 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[FormatBarView.ets](../entry/src/main/ets/pages/FormatBarView.ets) |
 | 查找与替换 | 按字面文本查找，可跳到下一处并替换单处；不支持正则表达式和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | Markdown 大纲 | 提取代码围栏以外的 ATX 标题，按标题级别分层；可展开、折叠并跳转到相应位置。暂不解析 Setext 标题 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 撤销与重做 | 编辑历史保存在内存中，连续输入在 600 毫秒内合并，最多保留 200 步；切换文稿时清空 | [EditHistory.ets](../entry/src/main/ets/document/EditHistory.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
@@ -37,7 +37,7 @@
 
 ## 设置与导航
 
-设置从首页或文稿页的更多菜单进入。外观和编辑工具栏位置为一组，隐私说明、开源许可证和关于为一组。外观提供跟随系统、浅色和深色三个选项；两项偏好保存在本机。
+设置从首页或文稿页的更多菜单进入。外观提供跟随系统、浅色和深色三个选项，偏好保存在本机；设置页还提供隐私说明、开源许可证和关于。
 
 “开源许可证”页分别提供本项目和第三方许可证全文。“关于”页显示应用名称、版本及 GitHub 项目主页入口；主页交给系统浏览器打开。
 

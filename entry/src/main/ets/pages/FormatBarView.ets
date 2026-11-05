@@ -1,44 +1,43 @@
-import { ActionBarButton, ActionBarButtonOptions, ActionBarStyle, BlurStrategy, HdsActionBar } from '@kit.UIDesignKit';
+import { Chip, SymbolGlyphModifier, uiMaterial } from '@kit.ArkUI';
 import { FormatRegistry, InsertAction } from '../document/FormatRegistry';
 
-/**
- * HdsActionBar supplies the documented grouped backplane, round action buttons, and adaptive
- * component blur. Keep its native backplane so it remains a floating bar instead of stretching a
- * generic systemMaterial across the titlebar builder's full-width layout slot.
- */
+/** 编辑快捷操作放在导航标题栏的 bottomBuilder 中。 */
 @ComponentV2
 export struct FormatBarView {
   @Param formatId: string = '';
-  @Param horizontal: boolean = true;
   @Param onInsert: (action: InsertAction) => void = (_action: InsertAction): void => {};
-
-  private actionButtons(): ActionBarButton[] {
-    const actions = FormatRegistry.byId(this.formatId).inserts;
-    const buttons: ActionBarButton[] = [];
-    for (let index = 0; index < actions.length; index++) {
-      const action = actions[index];
-      const options: ActionBarButtonOptions = {
-        baseIcon: action.symbol,
-        accessibilityText: action.label,
-        hoverTips: action.label,
-        onClick: (): void => this.onInsert(action)
-      };
-      buttons.push(new ActionBarButton(options));
-    }
-    return buttons;
-  }
-
-  @Builder
-  private ActionBar() {
-    HdsActionBar({
-      startButtons: this.actionButtons(),
-      actionBarStyle: new ActionBarStyle({ isHorizontal: this.horizontal }),
-      blurStrategy: BlurStrategy.ADAPTIVE
-    })
-      .id('marknote-format-bar')
-  }
+  // 显式开启系统的触摸流光；未设置时由组件决定是否启用。
+  // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/arkts-apis-uimaterial
+  private material: uiMaterial.Material | undefined = uiMaterial.isImmersiveMaterialSupported() ?
+    new uiMaterial.ImmersiveMaterial({
+      style: uiMaterial.ImmersiveStyle.ULTRA_THIN,
+      colorInvert: true,
+      lightEffect: {}
+    }) : undefined;
 
   build() {
-    this.ActionBar()
+    Scroll() {
+      // 使用 ChipGroup 文档给出的默认项间距和左右边距。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ohos-arkui-advanced-chipgroup
+      Row({ space: 8 }) {
+        ForEach(FormatRegistry.byId(this.formatId).inserts, (action: InsertAction) => {
+          // Chip 的点击态用于执行操作；字号、图标比例、圆角和按压反馈均使用组件默认值。
+          // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ohos-arkui-advanced-chip
+          Chip({
+            label: { text: action.label },
+            prefixSymbol: { normal: new SymbolGlyphModifier(action.symbol) },
+            allowClose: false,
+            backgroundColor: this.material ? Color.Transparent : undefined,
+            backgroundSystemMaterial: this.material,
+            onClicked: (): void => this.onInsert(action)
+          })
+        }, (action: InsertAction) => action.label)
+      }
+      .padding({ left: 16, right: 16 })
+    }
+    .width('100%')
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .id('marknote-format-bar')
   }
 }

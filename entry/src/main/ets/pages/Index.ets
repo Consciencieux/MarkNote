@@ -30,7 +30,6 @@ struct Index {
   @State private projectLicenseText: string = '';
   @State private recents: RecentDocument[] = [];
   @State private theme: string = 'system';
-  @State private toolbarPosition: string = 'top';
   @State private version: string = '';
   @State private wide: boolean = false;
   /** 每开一篇加一，文稿页据此重新载入会话。 */
@@ -92,7 +91,6 @@ struct Index {
     try {
       this.recents = await LocalState.readRecent(this.context);
       this.changeTheme(await LocalState.readTheme(this.context), false);
-      this.toolbarPosition = await LocalState.readToolbarPosition(this.context);
     } catch {
       this.toast('读取设置失败，已使用系统默认值');
     }
@@ -156,14 +154,6 @@ struct Index {
       if (persist) {
         void LocalState.writeTheme(this.context, choice).catch(() => this.toast('主题设置未能保存'));
       }
-    }
-  }
-
-  private changeToolbarPosition(position: string): void {
-    this.toolbarPosition = position === 'left' || position === 'right' ? position : 'top';
-    if (this.context) {
-      void LocalState.writeToolbarPosition(this.context, this.toolbarPosition)
-        .catch(() => this.toast('编辑工具栏位置未能保存'));
     }
   }
 
@@ -372,7 +362,6 @@ struct Index {
     if (name === 'document') {
       DocumentView({
         theme: this.theme,
-        toolbarPosition: this.toolbarPosition,
         wide: this.wide,
         revision: this.revision,
         onLeave: (): void => {
@@ -386,14 +375,12 @@ struct Index {
       SettingsPage({
         section: name,
         theme: $theme,
-        toolbarPosition: this.toolbarPosition,
         version: this.version,
         text: name === 'project-license' ? this.projectLicenseText : this.legalText,
         onOpen: (section: string): void => this.openSetting(section),
         onOpenProject: (): void => this.openProjectHome(),
         onBack: (): void => { this.routes.pop(); },
-        onChooseTheme: (choice: string): void => this.changeTheme(choice),
-        onChooseToolbarPosition: (position: string): void => this.changeToolbarPosition(position)
+        onChooseTheme: (choice: string): void => this.changeTheme(choice)
       })
     }
   }

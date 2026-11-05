@@ -3,13 +3,10 @@ import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 
 export const THEME_VALUES: string[] = ['system', 'light', 'dark'];
 export const THEME_LABELS: string[] = ['跟随系统', '浅色', '深色'];
-export const TOOLBAR_POSITION_VALUES: string[] = ['top', 'left', 'right'];
-export const TOOLBAR_POSITION_LABELS: string[] = ['顶部', '左侧', '右侧'];
 
 /** 二级页标题，和设置首页的行名一致。 */
 export function settingTitle(section: string): string {
   if (section === 'appearance') return '外观';
-  if (section === 'toolbar') return '编辑工具栏位置';
   if (section === 'privacy') return '隐私说明';
   if (section === 'license-list') return '开源许可证';
   if (section === 'project-license') return '本项目开源许可证';
@@ -38,7 +35,6 @@ export struct SettingsView {
   private groupStyle: SettingsGroupStyle = new SettingsGroupStyle();
   /** @Link keeps the displayed theme in sync with the owner when returning from its detail page. */
   @Link theme: string;
-  @Prop toolbarPosition: string = 'top';
   onOpen: (section: string) => void = (_section: string): void => {};
 
   @Builder
@@ -53,8 +49,6 @@ export struct SettingsView {
     List({ spaceWidth: $r('sys.float.padding_level6'), scroller: this.scroller }) {
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
         this.LinkRow('外观', themeLabel(this.theme), 'appearance')
-        this.LinkRow('编辑工具栏位置', this.toolbarPosition === 'left' ? '左侧' :
-          (this.toolbarPosition === 'right' ? '右侧' : '顶部'), 'toolbar')
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
         this.LinkRow('隐私说明', '', 'privacy')
