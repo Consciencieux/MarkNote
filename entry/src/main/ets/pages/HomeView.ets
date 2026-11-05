@@ -1,4 +1,4 @@
-import { ComposeListItem, IconType, SubHeader, SymbolGlyphModifier } from '@kit.ArkUI';
+import { ComposeListItem, IconType, SymbolGlyphModifier } from '@kit.ArkUI';
 import { RecentDocument } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
 
@@ -27,11 +27,6 @@ export struct HomeView {
     return items;
   }
 
-  @Builder
-  private RecentHeader() {
-    SubHeader({ primaryTitle: '最近文稿' })
-  }
-
   /**
    * 列表行使用官方 ComposeListItem：图标尺寸、主副标题字号和行高都由组件按系统规范给出，
    * 不再手写 Row + SymbolGlyph + 两行 Text 和自行计算的 padding。
@@ -57,50 +52,41 @@ export struct HomeView {
   }
 
   build() {
-    // 卡片分组之间没有默认间隔：ListItemGroup 的 space 只作用于组内 ListItem，
-    // 组与组的间隔由 List({ space }) 给出。12vp 与卡片自身的左右外边距一致。
-    List({ scroller: this.scroller, space: 12 }) {
-      ListItem() {
-        Column({ space: 12 }) {
-          Text('离线编辑，随时保存到自己的文件。')
-            .fontSize($r('sys.float.ohos_id_text_size_body1'))
-            .fontColor($r('sys.color.font_secondary'))
-            .width('100%')
-          Row({ space: 12 }) {
-            Button('新建文稿')
-              .bindMenu(this.newDocumentMenu())
-              .layoutWeight(1)
-            Button('打开文件')
-              .buttonStyle(ButtonStyleMode.NORMAL)
-              .layoutWeight(1)
-              .onClick(() => this.onOpen())
-          }
-          .width('100%')
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+    // 首页只承担两件事：开始一篇新文稿/打开已有文件，和回到最近打开过的文稿。
+    // 标题「全部」由导航标题栏给出，页面里不再写标语和分组标题。
+    Column() {
+      Row({ space: 12 }) {
+        Button('新建文稿')
+          .bindMenu(this.newDocumentMenu())
+          .layoutWeight(1)
+        Button('打开文件')
+          .buttonStyle(ButtonStyleMode.NORMAL)
+          .layoutWeight(1)
+          .onClick(() => this.onOpen())
       }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 8, bottom: 8 })
 
-      ListItemGroup({ header: this.RecentHeader, style: ListItemGroupStyle.CARD }) {
-        if (this.recents.length === 0) {
-          ListItem() {
-            Text('最近打开的文件会显示在这里')
-              .fontColor($r('sys.color.font_secondary'))
-              .width('100%')
-              .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-          }
-        } else {
-          ForEach(this.recents, (item: RecentDocument) => {
-            this.RecentRow(item)
-          }, (item: RecentDocument) => item.uri)
-        }
+      // 整页是一块列表，不再用 ListItemGroup 的卡片样式分块：
+      // 卡片会抬升一层底色，和页面底色形成两块颜色，浅色深色下都显得割裂。
+      // 行与行之间交给 List 的 divider（API 参考 List > divider），
+      // 颜色用系统组件分割线色，深浅色模式自动适配。
+      List({ scroller: this.scroller }) {
+        ForEach(this.recents, (item: RecentDocument) => {
+          this.RecentRow(item)
+        }, (item: RecentDocument) => item.uri)
       }
+      .width('100%')
+      .layoutWeight(1)
+      .divider({
+        strokeWidth: 1,
+        color: $r('sys.color.comp_divider')
+      })
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
     .height('100%')
-    // 分组列表的卡片是有抬升的一层，页面底必须比卡片低一层，否则浅色模式下卡片与页面同色。
-    // 结构照《如何设置分组列表的圆角和间距》(faqs-arkui-28)：外层容器给底色，卡片保持默认。
-    .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
-    .edgeEffect(EdgeEffect.Spring)
+    // 整页使用系统的一级页面底色，标题栏保持透明叠在同一底色上，不再有第二层颜色。
+    .backgroundColor($r('sys.color.ohos_id_color_background'))
   }
 }

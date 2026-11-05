@@ -3,10 +3,10 @@ import { ComponentContent, mediaquery } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import {
   HdsNavigation, HdsNavigationTitleMode, HdsNavDestination, HdsNavDestinationTitleMode,
-  ScrollEffectType, IconStyleMode, hdsMaterial,
+  ScrollEffectType, IconStyleMode,
   HdsNavigationTitle, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationMenuContentOptions, TitleBarContentOptions, TitleBarStyleOptions,
-  HdsNavigationTitleBarOptions, ScrollEffectOptions, SystemMaterialParams
+  HdsNavigationTitleBarOptions, ScrollEffectOptions
 } from '@kit.UIDesignKit';
 import { RecentDocument } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
@@ -172,40 +172,29 @@ struct Index {
   }
 
   /**
-   * 首页列表会滚到标题栏下方，所以这里保留官方的渐变模糊（`GRADIENT_BLUR`）。
-   * 文稿页内容在标题栏下方截断，那一页已经关掉模糊。
-   */
-  private titleStyle(): TitleBarStyleOptions {
-    const scroll: ScrollEffectOptions = {
-      enableScrollEffect: true,
-      scrollEffectType: ScrollEffectType.GRADIENT_BLUR
-    };
-    const material: SystemMaterialParams = {
-      materialType: hdsMaterial.MaterialType.ADAPTIVE,
-      materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
-    };
-    const style: TitleBarStyleOptions = {
-      scrollEffectOpts: scroll,
-      systemMaterialEffect: material
-    };
-    return style;
-  }
-
-  /**
-   * 首页标题栏。四宫格菜单只放「设置」：首页内容区已经有「新建文稿」和「打开文件」，
-   * 菜单里不再重复。「关于」是设置页里的第二级入口，也不在这里。
+   * 首页标题栏。按官方《开发实例》(ui-design-navigation-dynamic-blur-demo) 的一级页面写法：
+   * `titleMode` 用 HdsNavigationTitleMode.MINI，标题与右侧菜单在同一行，
+   * 模糊样式显式写 ScrollEffectType.COMMON_BLUR（该示例同样这么配置），
+   * 文档对 COMMON_BLUR 的说明是「用于强调控件与内容的层级分隔……适用于非沉浸式场景」，
+   * 其标题栏背景默认透明，和页面同一底色。
+   * 不用 FULL/FREE 的大标题形态：那两种模式下标题单独排在菜单下面，不在同一行。
    */
   private homeTitle(): HdsNavigationTitleBarOptions {
-    const heading: HdsNavigationTitle = { mainTitle: '文稿' };
+    const heading: HdsNavigationTitle = { mainTitle: '全部' };
     const menu: HdsNavigationMenuContentOptions = {
       value: [
         this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more', (): void => this.openHomeMenu())
       ]
     };
+    const scroll: ScrollEffectOptions = {
+      enableScrollEffect: true,
+      scrollEffectType: ScrollEffectType.COMMON_BLUR
+    };
+    const style: TitleBarStyleOptions = { scrollEffectOpts: scroll };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
     const options: HdsNavigationTitleBarOptions = {
       enableComponentSafeArea: true,
-      style: this.titleStyle(),
+      style: style,
       content: content
     };
     return options;
@@ -424,7 +413,9 @@ struct Index {
       }
       .navDestination(this.Destination)
       .titleBar(this.homeTitle())
-      .titleMode(HdsNavigationTitleMode.FULL)
+      // 一级页面用 MINI：标题栏固定 56vp，标题与右侧菜单同一行。
+      // 依据是官方《开发实例》中首页的写法（同篇示例同时用 MINI + COMMON_BLUR）。
+      .titleMode(HdsNavigationTitleMode.MINI)
       .mode(NavigationMode.Stack)
       .hideBackButton(true)
       .bindToScrollable([this.libraryScroller])
