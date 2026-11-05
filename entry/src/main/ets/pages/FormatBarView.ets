@@ -2,12 +2,6 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { FormatRegistry, InsertAction } from '../document/FormatRegistry';
 
 /**
- * 图标按钮的可点热区。出处：Code Linter 规则 @cross-device-app-dev/touch-target-size
- * ——「主要交互元素或控件的可点击热区至少为 48vp×48vp（推荐），不得小于 40vp×40vp」。
- */
-const TOUCH_TARGET: number = 48;
-
-/**
  * The insert bar that sits under the title bar on the edit tab.
  *
  * It is a fixed row, not an accessory view that follows the keyboard: the page keeps its
@@ -54,22 +48,24 @@ export struct FormatBarView {
    * 插入栏的图标按钮。
    *
    * 这一行在官方组件里没有对应项：HdsNavigation 的菜单只属于标题栏，HdsActionBar 是带背板的
-   * 圆形按钮胶囊（会在编辑区重新多出一块颜色）。因此按兜底处理，但尽量不自己写样式：
+   * 圆形按钮胶囊（会在编辑区重新多出一块颜色）。因此按兜底处理，但尺寸和颜色都不自己填：
    * - 按钮用系统 Button，样式取 ButtonStyleMode.TEXTUAL（枚举说明：纯文本、无背景颜色，
    *   适用于次要操作），按压态由组件给出；
-   * - 高度取文档规定的可点热区（见 TOUCH_TARGET），不自己编一个行高；
-   * - 图标大小是唯一没有文档依据的值：SymbolGlyph 默认 16fp（API 参考 SymbolGlyph > fontSize）
-   *   在按钮里偏小，这里取 24。
+   * - 高度用系统「圆形按钮直径」资源（`sys.float.ohos_id_min_circle_button_diameter`），
+   *   不写自己算出来的热区数值；
+   * - 图标大小用配套的「圆形按钮图标尺寸」资源（`sys.float.ohos_id_min_circle_button_icon_size`），
+   *   不用 SymbolGlyph 默认的 16fp（API 参考 SymbolGlyph > fontSize）。
+   * 两个资源名都在 SDK 的系统资源定义里，取值不需要知道。
    */
   @Builder
   private IconButton(symbol: Resource, label: string, action: () => void) {
     Button({ type: ButtonType.Circle, buttonStyle: ButtonStyleMode.TEXTUAL }) {
       SymbolGlyph(symbol)
-        .fontSize(24)
+        .fontSize($r('sys.float.ohos_id_min_circle_button_icon_size'))
         .fontColor([$r('sys.color.icon_primary')])
     }
     .layoutWeight(1)
-    .height(TOUCH_TARGET)
+    .height($r('sys.float.ohos_id_min_circle_button_diameter'))
     .accessibilityText(label)
     .onClick(action)
   }
@@ -84,11 +80,11 @@ export struct FormatBarView {
         if (this.inserts().length > 4) {
           Button({ type: ButtonType.Circle, buttonStyle: ButtonStyleMode.TEXTUAL }) {
             SymbolGlyph($r('sys.symbol.more'))
-              .fontSize(24)
+              .fontSize($r('sys.float.ohos_id_min_circle_button_icon_size'))
               .fontColor([$r('sys.color.icon_primary')])
           }
           .layoutWeight(1)
-          .height(TOUCH_TARGET)
+          .height($r('sys.float.ohos_id_min_circle_button_diameter'))
           .accessibilityText('更多格式')
           .bindMenu(this.moreInserts())
         }

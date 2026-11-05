@@ -64,7 +64,7 @@ export struct SettingsView {
     // (faqs-arkui-28)：外层容器给底色，卡片保持默认。底色由 HdsNavDestination
     // 根节点统一提供（见 Index 的 Destination），这里不再铺一层。
     Column() {
-      List({ space: 12 }) {
+      List({ spaceWidth: $r('sys.float.padding_level6') }) {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           this.LinkRow('外观', themeLabel(this.theme), 'appearance')
         }

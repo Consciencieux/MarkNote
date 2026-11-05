@@ -63,8 +63,8 @@ export struct SettingsDetail {
       .padding({
         left: $r('sys.float.margin_left'),
         right: $r('sys.float.margin_right'),
-        top: $r('sys.float.padding_level16'),
-        bottom: $r('sys.float.padding_level16')
+        top: $r('sys.float.padding_level8'),
+        bottom: $r('sys.float.padding_level8')
       })
       .copyOption(mono ? CopyOptions.LocalDevice : CopyOptions.None)
   }

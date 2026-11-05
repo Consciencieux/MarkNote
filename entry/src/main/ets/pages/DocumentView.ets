@@ -1,5 +1,5 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { ComposeListItem, SymbolGlyphModifier } from '@kit.ArkUI';
+import { AdvancedDialogV2Button, ComposeListItem, CustomContentDialogV2, SymbolGlyphModifier } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, hdsMaterial, HdsNavigationTitle,
@@ -71,6 +71,9 @@ export struct DocumentView {
   private selectionEnd: number = 0;
   private recoveryTimer: number = -1;
   private materialLevel: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.EXQUISITE;
+  /** 未保存确认弹窗的正文与保存按钮文案，弹窗构建时读取，不需要观察。 */
+  private leaveMessage: string = '';
+  private leaveSaveLabel: string = '保存';
 
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -250,52 +253,73 @@ export struct DocumentView {
   /**
    * 未保存的退出确认。true 表示可以离开。
    *
-   * 用固定样式的警告弹窗（AlertDialog）：API 参考对它的场景说明是「触发一个将产生严重后果的
-   * 不可逆操作时，如删除、重置、取消编辑、停止等」，这里正是「取消编辑」。
-   * 按钮不再手写颜色：`AlertDialogButtonBaseOptions.style` 默认 `DialogButtonStyle.DEFAULT`，
-   * 文档的效果表里「无背景色 + 无文字色 + DEFAULT」是「白底蓝字」，颜色由系统给出；
-   * 强调「保存」用 `DialogButtonStyle.HIGHLIGHT`（官方多按钮示例的写法，效果表的「蓝底白字」）。
-   * 上一版用 `showDialog` 并把按钮色写成 `font_primary`/`font_secondary`，黑字和灰字都是自己填的。
+   * 用 DialogV2 的自定义内容弹出框（API 参考：`CustomContentDialogV2`，最多 4 个按钮），
+   * 因为只有它的按钮支持 `role`：API 参考 `AdvancedDialogV2Button.role` 的默认值说明是
+   * 「根据设置枚举值的不同，系统自动调整按钮的背景色和文字颜色」，`ButtonRole.ERROR` 的
+   * 文档说明是「警示按钮，通常用于删除、清空等危险或警示性操作」——「放弃修改」正是这一类。
+   * 不用 `AlertDialog`：它的 `fontColor` 只能填色值，没有危险操作的语义位，红色得自己写。
+   * 也不用 `AlertDialogV2`：它只接受两个按钮，而这里需要保存、放弃修改、取消三个。
+   * 其余按钮不配样式，让系统按各自的默认值给出颜色。
    */
   private askSaveOrDiscard(): Promise<boolean> {
     // The reason matters: an unnamed document needs a name, a read-only one needs another
     // location, and a failed write may be an external modification.
     let message = '这份文稿没能写回原文件。可以先另存为，也可以放弃修改。';
-    let saveLabel = '另存为';
+    this.leaveSaveLabel = '另存为';
     if (this.info.uri.length === 0) {
       message = '这份文稿还没有保存到文件。可以先保存，也可以放弃修改。';
-      saveLabel = '保存';
+      this.leaveSaveLabel = '保存';
     } else if (!this.info.writable) {
       message = '这个文件没有写入权限。可以另存为新文件，也可以放弃修改。';
     }
+    this.leaveMessage = message;
     return new Promise<boolean>((resolve: (leave: boolean) => void) => {
-      this.getUIContext().showAlertDialog({
-        title: '未保存的修改',
-        message: message,
+      this.getUIContext().getPromptAction().openCustomDialog({
         autoCancel: true,
-        // 点遮罩或按 back 关闭弹窗按取消处理，留在当前文稿。
-        cancel: (): void => resolve(false),
-        buttons: [
-          {
-            value: saveLabel,
-            style: DialogButtonStyle.HIGHLIGHT,
-            action: (): void => {
-              this.saveFile(this.info.uri.length > 0 && !this.info.writable)
-                .then((saved: boolean) => resolve(saved))
-                .catch(() => resolve(false));
-            }
-          },
-          {
-            value: '放弃修改',
-            action: (): void => resolve(true)
-          },
-          {
-            value: '取消',
-            action: (): void => resolve(false)
-          }
-        ]
-      });
+        // 点遮罩或按 back 关闭弹窗也按取消处理，留在当前文稿。
+        // Promise 只认第一次结果，正常点按钮时这里不会覆盖。
+        onDidDisappear: (): void => resolve(false),
+        builder: (): void => {
+          this.LeaveConfirmDialog(resolve);
+        }
+      }).catch(() => resolve(false));
     });
+  }
+
+  @Builder
+  private LeaveConfirmDialog(resolve: (leave: boolean) => void) {
+    CustomContentDialogV2({
+      primaryTitle: '未保存的修改',
+      contentBuilder: (): void => {
+        this.LeaveConfirmContent();
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: this.leaveSaveLabel,
+          action: (): void => {
+            this.saveFile(this.info.uri.length > 0 && !this.info.writable)
+              .then((saved: boolean) => resolve(saved))
+              .catch(() => resolve(false));
+          }
+        }),
+        new AdvancedDialogV2Button({
+          content: '放弃修改',
+          role: ButtonRole.ERROR,
+          action: (): void => resolve(true)
+        }),
+        new AdvancedDialogV2Button({
+          content: '取消',
+          action: (): void => resolve(false)
+        })
+      ]
+    })
+  }
+
+  /** 内容区只有一句说明，用普通 Text，不额外配字号和颜色。 */
+  @Builder
+  private LeaveConfirmContent() {
+    Text(this.leaveMessage)
+      .width('100%')
   }
 
   private syncFromService(): void {
@@ -487,16 +511,18 @@ export struct DocumentView {
   /**
    * 查找栏用官方 Search 的 searchButton 承载「下一处」，onSubmit 与按钮点击共用同一入口，
    * 不再在 Search 旁边另放一个文字按钮。关闭用系统符号的文本按钮。
+   * 行内间距和上下留白取系统间距资源（`Row` 的 `space` 只接受数字，所以间距写成子项 margin）。
    */
   @Builder
   private FindBar() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
+    Column() {
+      Row() {
         Search({ value: this.query, placeholder: '查找文稿内容' })
           .searchButton('下一处')
           .onSubmit(() => this.findNext())
           .onChange((value: string) => { this.query = value; this.currentMatch = -1; })
           .layoutWeight(1)
+          .margin({ right: $r('sys.float.padding_level4') })
         Button({ type: ButtonType.Circle }) {
           SymbolGlyph($r('sys.symbol.xmark'))
             .fontSize($r('sys.float.ohos_id_text_size_body1'))
@@ -507,20 +533,22 @@ export struct DocumentView {
         .onClick(() => this.searchVisible = false)
       }
       .width('100%')
-      Row({ space: 8 }) {
+      Row() {
         TextInput({ text: this.replacement, placeholder: '替换为' })
           .onChange((value: string) => { this.replacement = value; })
           .layoutWeight(1)
+          .margin({ right: $r('sys.float.padding_level4') })
         Button('替换')
           .onClick(() => this.replaceMatch())
       }
       .width('100%')
+      .margin({ top: $r('sys.float.padding_level4') })
     }
     .padding({
       left: $r('sys.float.margin_left'),
       right: $r('sys.float.margin_right'),
-      top: 8,
-      bottom: 8
+      top: $r('sys.float.padding_level4'),
+      bottom: $r('sys.float.padding_level4')
     })
     .width('100%')
   }
@@ -544,7 +572,8 @@ export struct DocumentView {
         // TextArea 默认带一层灰底和圆角。编辑区应该就是页面本身，所以底色取透明（不做新颜色），
         // 圆角归零，正文直接落在页面底色上，和预览页是同一张纸。
         .backgroundColor(Color.Transparent)
-        .borderRadius(0)
+        // 圆角归零用系统的“无圆角”资源，不写 0。
+        .borderRadius($r('sys.float.corner_radius_none'))
         // 切回编辑页签时 Tabs 会把焦点还给上次编辑的 TextArea，光标停在原处并直接拉起键盘，
         // 手感被打断。enableKeyboardOnFocus(false) 让点击以外的获焦不弹键盘，只有点击文字才弹。
         // 这是官方「管理软键盘」和 faqs-arkui-932 推荐的写法。
@@ -600,17 +629,18 @@ export struct DocumentView {
   @Builder
   private OutlinePage() {
     if (this.headings.length === 0) {
-      Column({ space: 10 }) {
+      Column() {
         Text('暂无大纲').fontSize($r('sys.float.ohos_id_text_size_body1'))
         Text('在编辑页使用 #、## 等 Markdown 标题语法即可生成大纲。')
           .fontColor($r('sys.color.font_secondary'))
+          .margin({ top: $r('sys.float.padding_level4') })
       }
       // TabContent 默认把不撑满的子组件居中，这里撑满后文字才会从顶部开始排。
       // 留白取系统 margin 资源，不写死数值。
       .padding({
         left: $r('sys.float.margin_left'),
         right: $r('sys.float.margin_right'),
-        top: $r('sys.float.padding_level16')
+        top: $r('sys.float.padding_level8')
       })
       .alignItems(HorizontalAlign.Start)
       .width('100%')
@@ -626,14 +656,30 @@ export struct DocumentView {
               }
             })
           }
-          // 缩进表示 Markdown 标题层级，没有系统 token 可依，是兜底值。
-          .margin({ left: (heading.level - 1) * 12 })
+          // 缩进表示 Markdown 标题层级，取系统间距资源（见 outlineIndent）。
+          .margin({ left: this.outlineIndent(heading.level) })
           .onClick(() => this.focusHeading(heading))
         }, (heading: Heading) => heading.offset.toString())
       }
       .width('100%')
       .height('100%')
     }
+  }
+
+  /**
+   * 大纲行的左缩进：按标题层级取系统间距资源，一级到四级分别是
+   * 0 / 16 / 32 / 48vp（`padding_level0` / `8` / `16` / `24`），
+   * 比四级更深的层级沿用最大那一档，不再补自定义数值。
+   */
+  private outlineIndent(level: number): Resource {
+    const steps: Resource[] = [
+      $r('sys.float.padding_level0'),
+      $r('sys.float.padding_level8'),
+      $r('sys.float.padding_level16'),
+      $r('sys.float.padding_level24')
+    ];
+    const index: number = Math.min(Math.max(level - 1, 0), steps.length - 1);
+    return steps[index];
   }
 
   private splitTab(): number {
