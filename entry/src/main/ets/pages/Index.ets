@@ -160,7 +160,7 @@ struct Index {
   }
 
   private changeToolbarPosition(position: string): void {
-    this.toolbarPosition = position === 'side' ? 'side' : 'top';
+    this.toolbarPosition = position === 'left' || position === 'right' ? position : 'top';
     if (this.context) {
       void LocalState.writeToolbarPosition(this.context, this.toolbarPosition)
         .catch(() => this.toast('编辑工具栏位置未能保存'));

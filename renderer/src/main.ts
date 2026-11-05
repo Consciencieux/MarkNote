@@ -8,7 +8,7 @@ import { renderTexMath } from './renderers/tex-math';
 
 type Kind = 'markdown' | 'plain' | 'svg' | 'tex-math';
 type Theme = 'system' | 'light' | 'dark';
-interface PreviewUpdate { kind: Kind; source: string; theme: Theme; topInset?: number }
+interface PreviewUpdate { kind: Kind; source: string; theme: Theme }
 
 const host = document.getElementById('preview');
 if (!host) throw new Error('missing preview root');
@@ -24,11 +24,6 @@ function render(update: PreviewUpdate): void {
   if (!['system', 'light', 'dark'].includes(update.theme)) return;
   if (!['markdown', 'plain', 'svg', 'tex-math'].includes(update.kind)) return;
   if (typeof update.source !== 'string') return;
-  const topInset = typeof update.topInset === 'number' && Number.isFinite(update.topInset) && update.topInset >= 0
-    ? update.topInset
-    : 56;
-  // HDS FAQ faqs-arkui-1095 keeps the scroll viewport full-size and reserves this gap in its content.
-  host!.style.setProperty('--content-top-inset', `${topInset}px`);
   document.documentElement.removeAttribute('data-theme');
   if (update.theme !== 'system') document.documentElement.dataset.theme = update.theme;
   if (!DOMPurify.isSupported) {
@@ -55,4 +50,4 @@ function render(update: PreviewUpdate): void {
 
 const api = Object.freeze({ update: (data: PreviewUpdate) => render(data) });
 Object.defineProperty(window, 'MarknotePreview', { value: api, writable: false, configurable: false });
-render({ kind: 'markdown', source: '', theme: 'system', topInset: 56 });
+render({ kind: 'markdown', source: '', theme: 'system' });

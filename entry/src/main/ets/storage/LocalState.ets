@@ -26,12 +26,15 @@ export class LocalState {
   static async readToolbarPosition(context: common.UIAbilityContext): Promise<string> {
     const store = await preferences.getPreferences(context, 'marknote-settings');
     const value = await store.get(TOOLBAR_POSITION_KEY, 'top') as string;
-    return value === 'side' ? 'side' : 'top';
+    // Migrate the earlier single-side setting to its existing right-side behavior.
+    if (value === 'side') return 'right';
+    return value === 'left' || value === 'right' ? value : 'top';
   }
 
   static async writeToolbarPosition(context: common.UIAbilityContext, position: string): Promise<void> {
     const store = await preferences.getPreferences(context, 'marknote-settings');
-    await store.put(TOOLBAR_POSITION_KEY, position === 'side' ? 'side' : 'top');
+    const value = position === 'left' || position === 'right' ? position : 'top';
+    await store.put(TOOLBAR_POSITION_KEY, value);
     await store.flush();
   }
 

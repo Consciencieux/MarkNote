@@ -13,15 +13,16 @@ export function adaptiveHdsTitleBarStyle(): TitleBarStyleOptions {
 }
 
 /**
- * HDS titlebar button material without a full-width titlebar blur backdrop.
- * The API keeps only originalStyle active when enableScrollEffect is false;
- * COMMON_BLUR's default backdrop is transparent (ui-design-hdsnavigation).
+ * Documents have independently scrolling Web/TextArea/List content, so they cannot be bound to
+ * HdsNavDestination with one Scroller. The official HDS immersive-material sample keeps a fixed
+ * GRADIENT_BLUR backdrop together with the adaptive system material in precisely this situation
+ * (ui-design-hds-component-material).
  */
 export function adaptiveFloatingHdsTitleBarStyle(): TitleBarStyleOptions {
   return {
     scrollEffectOpts: {
       enableScrollEffect: false,
-      scrollEffectType: ScrollEffectType.COMMON_BLUR
+      scrollEffectType: ScrollEffectType.GRADIENT_BLUR
     },
     systemMaterialEffect: adaptiveSystemMaterial()
   };

@@ -2,8 +2,8 @@ import { HdsListItemCard, SuffixArrow, SuffixTextAndArrow } from '@kit.UIDesignK
 
 export const THEME_VALUES: string[] = ['system', 'light', 'dark'];
 export const THEME_LABELS: string[] = ['跟随系统', '浅色', '深色'];
-export const TOOLBAR_POSITION_VALUES: string[] = ['top', 'side'];
-export const TOOLBAR_POSITION_LABELS: string[] = ['顶部', '右侧'];
+export const TOOLBAR_POSITION_VALUES: string[] = ['top', 'left', 'right'];
+export const TOOLBAR_POSITION_LABELS: string[] = ['顶部', '左侧', '右侧'];
 
 /** 二级页标题，和设置首页的行名一致。 */
 export function settingTitle(section: string): string {
@@ -67,7 +67,8 @@ export struct SettingsView {
     Column() {
       List({ space: 10 }) {
         this.LinkRow('外观', themeLabel(this.theme), 'appearance')
-        this.LinkRow('编辑工具栏位置', this.toolbarPosition === 'side' ? '右侧' : '顶部', 'toolbar')
+        this.LinkRow('编辑工具栏位置', this.toolbarPosition === 'left' ? '左侧' :
+          (this.toolbarPosition === 'right' ? '右侧' : '顶部'), 'toolbar')
         this.LinkRow('隐私说明', '', 'privacy')
         this.LinkRow('第三方开源许可证', '', 'licenses')
         this.LinkRow('关于', this.version.length > 0 ? `版本 ${this.version}` : '', 'about')

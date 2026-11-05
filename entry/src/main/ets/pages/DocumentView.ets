@@ -12,6 +12,7 @@ import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
 import { EditHistory, EditStep } from '../document/EditHistory';
 import { FormatBarView } from './FormatBarView';
+import { DocumentScrollLayer } from './DocumentScrollLayer';
 import { menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { adaptiveFloatingHdsTitleBarStyle } from './HdsMaterialStyles';
@@ -25,10 +26,8 @@ const TAB_PREVIEW: number = 0;
 const TAB_EDIT: number = 1;
 const TAB_OUTLINE: number = 2;
 const TAB_SPLIT: number = 3;
-/** HdsNavDestination MINI title-bar height documented by the UI Design Kit API. */
+/** HdsNavDestination MINI titlebar height documented by the UI Design Kit API. */
 const MINI_TITLE_BAR_HEIGHT: number = 56;
-/** HdsNavigation bottomBuilder default height documented by the UI Design Kit API. */
-const BOTTOM_BUILDER_HEIGHT: number = 56;
 
 /** Flat row model used by the documented ArkUI List-based tree pattern. */
 class OutlineRow {
@@ -58,6 +57,11 @@ export struct DocumentView {
 
   private preview: webview.WebviewController = new webview.WebviewController();
   private splitPreview: webview.WebviewController = new webview.WebviewController();
+  private previewScroller: Scroller = new Scroller();
+  private editScroller: Scroller = new Scroller();
+  private outlineScroller: Scroller = new Scroller();
+  private splitEditScroller: Scroller = new Scroller();
+  private splitPreviewScroller: Scroller = new Scroller();
   private previewReady: boolean = false;
   private splitReady: boolean = false;
   private previewTimer: number = -1;
@@ -181,14 +185,6 @@ export struct DocumentView {
       ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
-    if (this.toolbarPosition === 'top' && this.formatBarWanted()) {
-      // ui-design-navigation-customized-area: put the edit actions in HDS's titlebar bottomBuilder,
-      // so the API 26 immersive material is applied within its documented Navigation titlebar scope.
-      content.bottomBuilder = {
-        builder: (): void => this.TopFormatBar(),
-        height: BOTTOM_BUILDER_HEIGHT
-      };
-    }
     const options: HdsNavigationTitleBarOptions = {
       avoidLayoutSafeArea: false,
       enableComponentSafeArea: false,
@@ -215,6 +211,16 @@ export struct DocumentView {
     return DocumentService.formatFor(this.info);
   }
 
+  /** Bind HDS navigation effects to the shared Scroll surface(s) in the active tab. */
+  private activeScrollers(): Scroller[] {
+    if (this.wide && this.selectedTab === this.splitTab()) {
+      return [this.splitEditScroller, this.splitPreviewScroller];
+    }
+    if (this.currentFormat().outline && this.selectedTab === TAB_OUTLINE) return [this.outlineScroller];
+    if (this.selectedTab === TAB_EDIT) return [this.editScroller];
+    return [this.previewScroller];
+  }
+
   private previewIsDark(): boolean {
     if (this.theme === 'dark') return true;
     if (this.theme === 'light') return false;
@@ -227,8 +233,7 @@ export struct DocumentView {
     const command = 'window.MarknotePreview.update(' + JSON.stringify({
       kind: kind,
       source: this.source,
-      theme: theme,
-      topInset: this.contentTopInset()
+      theme: theme
     }) + ')';
     try {
       controller.runJavaScript(command);
@@ -321,13 +326,6 @@ export struct DocumentView {
     this.expandedOutline = expanded;
   }
 
-  private contentTopInset(): number {
-    // HdsNavDestination API (ui-design-hdsnavdestination): MINI is 56vp. HdsNavigation API
-    // (ui-design-hdsnavigation) documents bottomBuilder's default as another 56vp when present.
-    return MINI_TITLE_BAR_HEIGHT +
-      (this.toolbarPosition === 'top' && this.formatBarWanted() ? BOTTOM_BUILDER_HEIGHT : 0);
-  }
-
   private visibleOutlineRows(): OutlineRow[] {
     const rows: OutlineRow[] = [];
     const ancestors: OutlineRow[] = [];
@@ -374,7 +372,6 @@ export struct DocumentView {
       Text(row.heading.text)
         .layoutWeight(1)
         .onClick(() => this.focusHeading(row.heading))
-      Text(`第 ${row.heading.line} 行`)
     }
     .width('100%')
   }
@@ -598,40 +595,37 @@ export struct DocumentView {
   }
 
   @Builder
-  private EditPage() {
-    Column() {
-      if (this.searchVisible) {
-        this.FindBar()
+  private EditPage(scroller: Scroller) {
+    DocumentScrollLayer({ scroller: scroller }) {
+      Column() {
+        if (this.searchVisible) {
+          this.FindBar()
+        }
+        TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: this.cursor })
+          .width('100%')
+          .padding({
+            top: 0,
+            right: 16,
+            bottom: 8,
+            left: 16
+          })
+          // Keep the official ArkUI TextArea, with a transparent fill and the system no-corner resource
+          // so the editor surface remains the same page background instead of a separate card.
+          .backgroundColor(Color.Transparent)
+          .borderRadius($r('sys.float.corner_radius_none'))
+          // 切回编辑页签时 Tabs 会把焦点还给上次编辑的 TextArea，光标停在原处并直接拉起键盘，
+          // 手感被打断。enableKeyboardOnFocus(false) 让点击以外的获焦不弹键盘，只有点击文字才弹。
+          // 这是官方「管理软键盘」和 faqs-arkui-932 推荐的写法。
+          .enableKeyboardOnFocus(false)
+          .onChange((value: string) => this.updateSource(value))
+          .onTextSelectionChange((start: number, end: number) => {
+            this.selectionStart = start;
+            this.selectionEnd = end;
+          })
       }
-      TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: this.cursor })
-        .width('100%')
-        .layoutWeight(1)
-        // TextArea's documented default padding is 8/16/8/16vp. Keep those defaults and add
-        // the HDS title-bar region inside the scrollable text content so its first line begins
-        // below the floating controls and can scroll behind them afterward.
-        .padding({
-          top: this.contentTopInset() + 8,
-          right: 16,
-          bottom: 8,
-          left: 16
-        })
-        // Keep the official ArkUI TextArea, with a transparent fill and the system no-corner resource
-        // so the editor surface remains the same page background instead of a separate card.
-        .backgroundColor(Color.Transparent)
-        .borderRadius($r('sys.float.corner_radius_none'))
-        // 切回编辑页签时 Tabs 会把焦点还给上次编辑的 TextArea，光标停在原处并直接拉起键盘，
-        // 手感被打断。enableKeyboardOnFocus(false) 让点击以外的获焦不弹键盘，只有点击文字才弹。
-        // 这是官方「管理软键盘」和 faqs-arkui-932 推荐的写法。
-        .enableKeyboardOnFocus(false)
-        .onChange((value: string) => this.updateSource(value))
-        .onTextSelectionChange((start: number, end: number) => {
-          this.selectionStart = start;
-          this.selectionEnd = end;
-        })
+      .width('100%')
+      .backgroundColor($r('sys.color.ohos_id_color_background'))
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('sys.color.ohos_id_color_background'))
   }
 
   /**
@@ -640,7 +634,9 @@ export struct DocumentView {
    */
   @Builder
   private PreviewWeb(controller: webview.WebviewController, onReady: () => void) {
-    Web({ src: $rawfile('preview/index.html'), controller: controller })
+    // renderMode 是 Web 构造参数（web.d.ts 的 WebOptions，API 12 起），没有同名链式属性。
+    // SYNC_RENDER 让 Web 作为画布节点和 ArkUI 一起绘制，FIT_CONTENT 才能按内容撑高。
+    Web({ src: $rawfile('preview/index.html'), controller: controller, renderMode: RenderMode.SYNC_RENDER })
       .javaScriptAccess(true)
       .domStorageAccess(false)
       // 兜底底色跟随页面底色（同一个系统 token），不写死黑白两色；
@@ -651,34 +647,36 @@ export struct DocumentView {
         this.sendPreview(controller);
       })
       .width('100%')
-      .height('100%')
+      // 《Web组件大小自适应页面内容布局》：Web 按内容撑高，滚动交给外层 Scroll；
+      // NEVER 关掉 Web 自己的过滚动，避免和 Scroll 抢边缘效果。
+      .layoutMode(WebLayoutMode.FIT_CONTENT)
+      .overScrollMode(OverScrollMode.NEVER)
   }
 
   @Builder
-  private PreviewPage() {
-    this.PreviewWeb(this.preview, () => { this.previewReady = true; })
+  private PreviewPage(controller: webview.WebviewController, scroller: Scroller, onReady: () => void) {
+    DocumentScrollLayer({ scroller: scroller }) {
+      this.PreviewWeb(controller, onReady)
+    }
   }
 
-  @Builder
-  private SplitPreviewPage() {
-    this.PreviewWeb(this.splitPreview, () => { this.splitReady = true; })
-  }
-
-  /** Official List/ListItem tree pattern; List owns the full-height scroll viewport. */
+  /** The unbounded List contributes rows; the shared parent Scroll owns page movement. */
   @Builder
   private OutlinePage() {
-    List({ initialIndex: 0 }) {
-      ForEach(this.visibleOutlineRows(), (row: OutlineRow) => {
-        ListItem() {
-          this.OutlineRowContent(row)
-        }
-      }, (row: OutlineRow) => `${row.id}`)
+    DocumentScrollLayer({ scroller: this.outlineScroller }) {
+      List({ initialIndex: 0 }) {
+        ForEach(this.visibleOutlineRows(), (row: OutlineRow) => {
+          ListItem() {
+            this.OutlineRowContent(row)
+          }
+        }, (row: OutlineRow) => `${row.id}`)
+      }
+      // FAQ faqs-arkui-295: an unbounded List inside Scroll expands with its rows and lets the
+      // outer Scroll move the layout. ForEach already eagerly builds this outline's rows.
+      .width('100%')
+      .edgeEffect(EdgeEffect.None)
+      .scrollBar(BarState.Off)
     }
-    // List API (ts-container-list): contentStartOffset reserves the start gap while keeping the
-    // viewport full-height. The tree structure follows FAQ faqs-arkui-758.
-    .contentStartOffset(this.contentTopInset())
-    .width('100%')
-    .height('100%')
   }
 
   private splitTab(): number {
@@ -691,9 +689,10 @@ export struct DocumentView {
       visible: true,
       formatId: this.formatId,
       horizontal: true,
-      immersive: true,
       onInsert: (action: InsertAction): void => this.insertToken(action)
     })
+      .align(Alignment.Top)
+      .margin({ top: MINI_TITLE_BAR_HEIGHT })
   }
 
   /** 页签图标沿用系统符号，选中态由系统页签样式给出。 */
@@ -704,10 +703,12 @@ export struct DocumentView {
   @Builder
   private SplitPage() {
     RowSplit() {
-      Column() { this.EditPage() }
+      Column() { this.EditPage(this.splitEditScroller) }
         .width('50%')
         .height('100%')
-      Column() { this.SplitPreviewPage() }
+      Column() {
+        this.PreviewPage(this.splitPreview, this.splitPreviewScroller, () => { this.splitReady = true; })
+      }
         .width('50%')
         .height('100%')
     }
@@ -728,9 +729,11 @@ export struct DocumentView {
     Stack() {
       HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
         // Preview is first so a newly opened document lands on its rendered content.
-        TabContent() { this.PreviewPage() }
+        TabContent() {
+          this.PreviewPage(this.preview, this.previewScroller, () => { this.previewReady = true; })
+        }
           .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
-        TabContent() { this.EditPage() }
+        TabContent() { this.EditPage(this.editScroller) }
           .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
         // Only formats that declare an outline get the tab; plain text and SVG have none.
         if (this.currentFormat().outline) {
@@ -761,20 +764,38 @@ export struct DocumentView {
       })
       .width('100%')
       .height('100%')
-      if (this.toolbarPosition === 'side' && this.formatBarWanted()) {
-        FormatBarView({
-          visible: true,
-          formatId: this.formatId,
-          horizontal: false,
-          immersive: false,
-          onInsert: (action: InsertAction): void => this.insertToken(action)
-        })
-          .align(Alignment.End)
-          .margin({ right: $r('sys.float.margin_right') })
+      if (this.toolbarPosition === 'top' && this.formatBarWanted()) {
+        this.TopFormatBar()
+      }
+      if (this.toolbarPosition !== 'top' && this.formatBarWanted()) {
+        this.SideFormatBar()
       }
     }
     .width('100%')
     .height('100%')
+  }
+
+  @Builder
+  private SideFormatBar() {
+    if (this.toolbarPosition === 'left') {
+      FormatBarView({
+        visible: true,
+        formatId: this.formatId,
+        horizontal: false,
+        onInsert: (action: InsertAction): void => this.insertToken(action)
+      })
+        .align(Alignment.Start)
+        .margin({ left: $r('sys.float.margin_left') })
+    } else {
+      FormatBarView({
+        visible: true,
+        formatId: this.formatId,
+        horizontal: false,
+        onInsert: (action: InsertAction): void => this.insertToken(action)
+      })
+        .align(Alignment.End)
+        .margin({ right: $r('sys.float.margin_right') })
+    }
   }
 
   /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */
@@ -799,6 +820,7 @@ export struct DocumentView {
     }
     .titleBar(this.documentTitle())
     .titleMode(HdsNavDestinationTitleMode.MINI)
+    .bindToScrollable(this.activeScrollers())
     // HdsNavDestination API 的 ignoreLayoutSafeArea 与 HDS 沉浸光感示例一起使用，
     // 让正文延伸到系统上下避让区；只给标题栏按钮加系统材质，不铺全宽模糊背板。
     .backgroundColor($r('sys.color.ohos_id_color_background'))

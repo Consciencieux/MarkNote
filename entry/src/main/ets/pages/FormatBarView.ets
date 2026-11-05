@@ -1,19 +1,16 @@
-import { ButtonModifier, uiMaterial } from '@kit.ArkUI';
-import { ActionBarButton, ActionBarButtonOptions, ActionBarStyle, HdsActionBar } from '@kit.UIDesignKit';
+import { ActionBarButton, ActionBarButtonOptions, ActionBarStyle, BlurStrategy, HdsActionBar } from '@kit.UIDesignKit';
 import { FormatRegistry, InsertAction } from '../document/FormatRegistry';
 
 /**
- * HdsActionBar (ui-design-hdsactionbar), with actions in startButtons per
- * ui-design-actionbar-without-master-button. The top placement is hosted in the HDS titlebar's
- * bottomBuilder. Its round buttons use API 26 systemMaterial there; the side placement uses the
- * ActionBar's documented component blur because immersive material is not effective in page content.
+ * HdsActionBar supplies the documented grouped backplane, round action buttons, and adaptive
+ * component blur. Keep its native backplane so it remains a floating bar instead of stretching a
+ * generic systemMaterial across the titlebar builder's full-width layout slot.
  */
 @ComponentV2
 export struct FormatBarView {
   @Param visible: boolean = false;
   @Param formatId: string = '';
   @Param horizontal: boolean = true;
-  @Param immersive: boolean = false;
   @Param onInsert: (action: InsertAction) => void = (_action: InsertAction): void => {};
 
   private actionButtons(): ActionBarButton[] {
@@ -27,15 +24,6 @@ export struct FormatBarView {
         hoverTips: action.label,
         onClick: (): void => this.onInsert(action)
       };
-      if (this.immersive) {
-        const modifier = new ButtonModifier();
-        // API 26 recommends ULTRA_THIN for floating buttons. The top placement is hosted in the
-        // HDS titlebar bottomBuilder; the right-side body is outside the documented effect region.
-        modifier.systemMaterial(new uiMaterial.ImmersiveMaterial({
-          style: uiMaterial.ImmersiveStyle.ULTRA_THIN
-        }));
-        options.buttonModifier = modifier;
-      }
       buttons.push(new ActionBarButton(options));
     }
     return buttons;
@@ -45,7 +33,8 @@ export struct FormatBarView {
   private ActionBar() {
     HdsActionBar({
       startButtons: this.actionButtons(),
-      actionBarStyle: new ActionBarStyle({ isHorizontal: this.horizontal })
+      actionBarStyle: new ActionBarStyle({ isHorizontal: this.horizontal }),
+      blurStrategy: BlurStrategy.ADAPTIVE
     })
       .id('marknote-format-bar')
   }
