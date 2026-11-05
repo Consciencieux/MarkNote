@@ -19,7 +19,13 @@ export class FileAccess {
   persistent: boolean = false;
 }
 
+/** SHA-256 of empty input. Frames MD does not accept a zero-length update, so it is a constant. */
+const EMPTY_DIGEST: string = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
 function fingerprintOf(bytes: Uint8Array): string {
+  // 空文件也必须有指纹：冲突检查用「指纹为空」表示缺少指纹，
+  // 而 MD 的 updateSync 对零长度数据会报 crypto operation error，所以直接返回空输入的摘要。
+  if (bytes.length === 0) return EMPTY_DIGEST;
   const md = cryptoFramework.createMd('SHA256');
   const blob: cryptoFramework.DataBlob = { data: bytes };
   md.updateSync(blob);
