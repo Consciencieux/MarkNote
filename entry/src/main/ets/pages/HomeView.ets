@@ -28,7 +28,8 @@ export struct HomeView {
   }
 
   /**
-   * 列表行使用官方 ComposeListItem：图标尺寸、主副标题字号和行高都由组件按系统规范给出，
+   * 列表行使用官方 ComposeListItem（ohos-arkui-advanced-composelistitem）：
+   * 图标尺寸、主副标题字号和行高都由组件按系统规范给出，
    * 不再手写 Row + SymbolGlyph + 两行 Text 和自行计算的 padding。
    */
   @Builder
@@ -54,9 +55,8 @@ export struct HomeView {
   build() {
     // 首页只承担两件事：开始一篇新文稿/打开已有文件，和回到最近打开过的文稿。
     // 标题「全部」由导航标题栏给出，页面里不再写标语和分组标题。
-    // 列表配置照官方《设置动态模糊样式》示例：项间距、左右留白、
-    // clip(false) 让列表项能画到标题栏下方、cachedCount 保证穿透出去的项不被回收。
-    // 间距和留白取系统间距资源，不自己抄数值。
+    // List gap and edge spacing use system resources; clip(false) follows
+    // 《设置动态模糊样式》(ui-design-navigation-dynamic-blur) so rows can scroll under the title bar.
     List({ scroller: this.scroller, spaceWidth: $r('sys.float.padding_level6') }) {
       ListItem() {
         Row() {
@@ -65,7 +65,6 @@ export struct HomeView {
             .layoutWeight(1)
             .margin({ right: $r('sys.float.padding_level6') })
           Button('打开文件')
-            .buttonStyle(ButtonStyleMode.NORMAL)
             .layoutWeight(1)
             .onClick(() => this.onOpen())
         }
@@ -76,12 +75,9 @@ export struct HomeView {
         this.RecentRow(item)
       }, (item: RecentDocument) => item.uri)
     }
-    // 左右留白交给列表的 margin（官方示例的写法）；不要同时写 width('100%')，
-    // 否则 100% 会把 margin 撑到父容器外面，列表仍然贴边。
+    // Keep the list at the available width and use system margin resources for its edges.
     .layoutWeight(1)
     .margin({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
-    // 不对子组件超出当前范围的区域裁剪，使内容区可以穿透到标题栏下方（官方示例注释）。
     .clip(false)
-    .cachedCount(3, true)
   }
 }

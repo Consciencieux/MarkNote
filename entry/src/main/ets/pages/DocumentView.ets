@@ -1,11 +1,13 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { AdvancedDialogV2Button, ComposeListItem, CustomContentDialogV2, SymbolGlyphModifier } from '@kit.ArkUI';
+import {
+  CallbackParam, NodeParam, SymbolGlyphModifier, TreeController, TreeListenType, TreeListener,
+  TreeListenerManager, TreeView
+} from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import {
-  HdsNavDestination, HdsNavDestinationTitleMode, hdsMaterial, HdsNavigationTitle,
+  HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
-  TitleBarContentOptions, HdsNavigationTitleBarOptions, SystemMaterialParams,
-  HdsTabs, HdsTabsFloatingStyle
+  TitleBarContentOptions, HdsNavigationTitleBarOptions, HdsTabs
 } from '@kit.UIDesignKit';
 import { DocumentInfo, Heading, RecoveryData, linesIn } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
@@ -19,13 +21,18 @@ import { LocalState } from '../storage/LocalState';
 
 /**
  * Tab positions on the document page. Preview comes first so a document opens in reading
- * view, the same way Word, Keynote and the system notes app open a file. Named constants
- * keep the index arithmetic readable now that editing is not the first tab.
+ * view. Named constants keep the index arithmetic readable now that editing is not the first tab.
  */
 const TAB_PREVIEW: number = 0;
 const TAB_EDIT: number = 1;
 const TAB_OUTLINE: number = 2;
 const TAB_SPLIT: number = 3;
+
+/** 大纲树的父节点。ArkTS 不允许把对象字面量当成类型，所以单独声明。 */
+class OutlineParent {
+  id: number = -1;
+  level: number = 0;
+}
 
 /**
  * 文稿页：预览、编辑、大纲和分栏，以及它们的标题栏、格式栏和保存/草稿逻辑。
@@ -55,6 +62,13 @@ export struct DocumentView {
   /** Format id of the open document, kept as state so the format bar rebuilds on switch. */
   @State private formatId: string = '';
   @State private headings: Heading[] = [];
+  private outlineTree: TreeController = new TreeController();
+  private outlineNodeHeadings: Map<number, Heading> = new Map<number, Heading>();
+  private outlineTreeListener: TreeListener | null = null;
+  private outlineNodeClick: (param: CallbackParam) => void = (param: CallbackParam): void => {
+    const heading = this.outlineNodeHeadings.get(param.currentNodeId);
+    if (heading) this.focusHeading(heading);
+  };
   @State private saving: boolean = false;
   @State private searchVisible: boolean = false;
   @State private query: string = '';
@@ -70,14 +84,10 @@ export struct DocumentView {
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
   private recoveryTimer: number = -1;
-  private materialLevel: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.EXQUISITE;
-  /** 未保存确认弹窗的正文与保存按钮文案，弹窗构建时读取，不需要观察。 */
-  private leaveMessage: string = '';
-  private leaveSaveLabel: string = '保存';
-
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    this.pickMaterialLevel();
+    this.outlineTreeListener = TreeListenerManager.getInstance().getTreeListener();
+    this.outlineTreeListener.on(TreeListenType.NODE_CLICK, this.outlineNodeClick);
     // 文稿页自己的菜单项：另存为和查找只对当前文稿有意义。
     menuBridge.saveAs = (): void => {
       menuBridge.dismiss((): void => { void this.saveFile(true); });
@@ -94,19 +104,6 @@ export struct DocumentView {
     this.loadSession();
   }
 
-
-  /**
-   * 设备不支持 IMMERSIVE 材质类型时降级到 SMOOTH，避免底部页签的沉浸光感拖慢低算力设备。
-   * 判断方式取自官方沉浸光感示例。
-   */
-  private pickMaterialLevel(): void {
-    let level = hdsMaterial.MaterialLevel.EXQUISITE;
-    const types: Array<hdsMaterial.MaterialType> = hdsMaterial.getSystemMaterialTypes();
-    if (types.indexOf(hdsMaterial.MaterialType.IMMERSIVE) < 0) {
-      level = hdsMaterial.MaterialLevel.SMOOTH;
-    }
-    this.materialLevel = level;
-  }
 
   /** 窄屏收起分栏时回到预览，和之前媒体查询监听里的行为一致。 */
   private onWideChange(): void {
@@ -139,6 +136,10 @@ export struct DocumentView {
     this.flushRecovery();
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     if (this.previewTimer >= 0) clearTimeout(this.previewTimer);
+    if (this.outlineTreeListener !== null) {
+      this.outlineTreeListener.off(TreeListenType.NODE_CLICK, this.outlineNodeClick);
+      this.outlineTreeListener = null;
+    }
     menuBridge.saveAs = (): void => {};
     menuBridge.find = (): void => {};
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
@@ -174,8 +175,7 @@ export struct DocumentView {
     const menu: HdsNavigationMenuContentOptions = {
       maxCount: 4,
       value: [
-        // 系统「备忘录」编辑态的标题栏右侧依次是撤销、重做、四宫格和纯勾（无圆圈），
-        // 这里跟随同一排列。查找不是高频动作，收进四宫格菜单，把位置让给撤销和重做。
+        // Keep the document actions in one navigation menu; find remains in the overflow menu.
         this.menuIcon('撤销', $r('sys.symbol.undo'), 'marknote-undo',
           (): void => this.undo(), this.undoAvailable),
         this.menuIcon('重做', $r('sys.symbol.redo'), 'marknote-redo',
@@ -251,75 +251,47 @@ export struct DocumentView {
   }
 
   /**
-   * 未保存的退出确认。true 表示可以离开。
-   *
-   * 用 DialogV2 的自定义内容弹出框（API 参考：`CustomContentDialogV2`，最多 4 个按钮），
-   * 因为只有它的按钮支持 `role`：API 参考 `AdvancedDialogV2Button.role` 的默认值说明是
-   * 「根据设置枚举值的不同，系统自动调整按钮的背景色和文字颜色」，`ButtonRole.ERROR` 的
-   * 文档说明是「警示按钮，通常用于删除、清空等危险或警示性操作」——「放弃修改」正是这一类。
-   * 不用 `AlertDialog`：它的 `fontColor` 只能填色值，没有危险操作的语义位，红色得自己写。
-   * 也不用 `AlertDialogV2`：它只接受两个按钮，而这里需要保存、放弃修改、取消三个。
-   * 其余按钮不配样式，让系统按各自的默认值给出颜色。
+   * 未保存的退出确认。AlertDialog API 与 arkts-fixes-style-dialog 的场景说明包含“取消编辑”；
+   * 多按钮默认排布为 AUTO，按钮样式使用 DEFAULT，只有主操作“保存”使用 HIGHLIGHT。
    */
   private askSaveOrDiscard(): Promise<boolean> {
     // The reason matters: an unnamed document needs a name, a read-only one needs another
     // location, and a failed write may be an external modification.
     let message = '这份文稿没能写回原文件。可以先另存为，也可以放弃修改。';
-    this.leaveSaveLabel = '另存为';
+    let saveLabel = '另存为';
     if (this.info.uri.length === 0) {
       message = '这份文稿还没有保存到文件。可以先保存，也可以放弃修改。';
-      this.leaveSaveLabel = '保存';
+      saveLabel = '保存';
     } else if (!this.info.writable) {
       message = '这个文件没有写入权限。可以另存为新文件，也可以放弃修改。';
     }
-    this.leaveMessage = message;
     return new Promise<boolean>((resolve: (leave: boolean) => void) => {
-      this.getUIContext().getPromptAction().openCustomDialog({
+      this.getUIContext().showAlertDialog({
+        title: '未保存的修改',
+        message: message,
         autoCancel: true,
-        // 点遮罩或按 back 关闭弹窗也按取消处理，留在当前文稿。
-        // Promise 只认第一次结果，正常点按钮时这里不会覆盖。
-        onDidDisappear: (): void => resolve(false),
-        builder: (): void => {
-          this.LeaveConfirmDialog(resolve);
-        }
-      }).catch(() => resolve(false));
-    });
-  }
-
-  @Builder
-  private LeaveConfirmDialog(resolve: (leave: boolean) => void) {
-    CustomContentDialogV2({
-      primaryTitle: '未保存的修改',
-      contentBuilder: (): void => {
-        this.LeaveConfirmContent();
-      },
-      buttons: [
-        new AdvancedDialogV2Button({
-          content: this.leaveSaveLabel,
-          action: (): void => {
-            this.saveFile(this.info.uri.length > 0 && !this.info.writable)
-              .then((saved: boolean) => resolve(saved))
-              .catch(() => resolve(false));
+        cancel: (): void => resolve(false),
+        buttons: [
+          {
+            value: saveLabel,
+            style: DialogButtonStyle.HIGHLIGHT,
+            action: (): void => {
+              this.saveFile(this.info.uri.length > 0 && !this.info.writable)
+                .then((saved: boolean) => resolve(saved))
+                .catch(() => resolve(false));
+            }
+          },
+          {
+            value: '放弃修改',
+            action: (): void => resolve(true)
+          },
+          {
+            value: '取消',
+            action: (): void => resolve(false)
           }
-        }),
-        new AdvancedDialogV2Button({
-          content: '放弃修改',
-          role: ButtonRole.ERROR,
-          action: (): void => resolve(true)
-        }),
-        new AdvancedDialogV2Button({
-          content: '取消',
-          action: (): void => resolve(false)
-        })
-      ]
-    })
-  }
-
-  /** 内容区只有一句说明，用普通 Text，不额外配字号和颜色。 */
-  @Builder
-  private LeaveConfirmContent() {
-    Text(this.leaveMessage)
-      .width('100%')
+        ]
+      });
+    });
   }
 
   private syncFromService(): void {
@@ -329,8 +301,45 @@ export struct DocumentView {
     this.formatId = session.info.formatId;
     this.source = session.source;
     this.savedText = session.savedText;
-    this.headings = DocumentService.headingsFor(this.info, this.source);
+    this.updateHeadings();
     this.schedulePreview();
+  }
+
+  /** TreeView (ohos-arkui-advanced-treeview) is the system component for nested structures. */
+  private updateHeadings(): void {
+    this.headings = DocumentService.headingsFor(this.info, this.source);
+    this.outlineNodeHeadings = new Map<number, Heading>();
+    const controller = new TreeController();
+    const parents: OutlineParent[] = [];
+
+    for (let index = 0; index < this.headings.length; index++) {
+      const heading = this.headings[index];
+      while (parents.length > 0 && parents[parents.length - 1].level >= heading.level) {
+        parents.pop();
+      }
+      const parentNodeId = parents.length > 0 ? parents[parents.length - 1].id : -1;
+      const nextHeading = index + 1 < this.headings.length ? this.headings[index + 1] : undefined;
+      const isFolder = nextHeading !== undefined && nextHeading.level > heading.level;
+      const currentNodeId = index + 1;
+      const node: NodeParam = {
+        parentNodeId: parentNodeId,
+        currentNodeId: currentNodeId,
+        isFolder: isFolder,
+        primaryTitle: heading.text,
+        secondaryTitle: `第 ${heading.line} 行`
+      };
+      controller.addNode(node);
+      this.outlineNodeHeadings.set(currentNodeId, heading);
+      if (isFolder) {
+        const parent = new OutlineParent();
+        parent.id = currentNodeId;
+        parent.level = heading.level;
+        parents.push(parent);
+      }
+    }
+
+    controller.buildDone();
+    this.outlineTree = controller;
   }
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
@@ -415,7 +424,7 @@ export struct DocumentView {
     DocumentService.edit(text);
     this.source = text;
     this.currentMatch = -1;
-    this.headings = DocumentService.headingsFor(this.info, text);
+    this.updateHeadings();
     const position = caret >= 0 ? caret : this.selectionEnd;
     this.history.record(text, position, Date.now());
     this.refreshHistoryState();
@@ -447,7 +456,7 @@ export struct DocumentView {
     DocumentService.edit(step.text);
     this.source = step.text;
     this.currentMatch = -1;
-    this.headings = DocumentService.headingsFor(this.info, step.text);
+    this.updateHeadings();
     this.refreshHistoryState();
     this.scheduleRecovery();
     this.schedulePreview();
@@ -525,8 +534,6 @@ export struct DocumentView {
           .margin({ right: $r('sys.float.padding_level4') })
         Button({ type: ButtonType.Circle }) {
           SymbolGlyph($r('sys.symbol.xmark'))
-            .fontSize($r('sys.float.ohos_id_text_size_body1'))
-            .fontColor([$r('sys.color.font_primary')])
         }
         .buttonStyle(ButtonStyleMode.TEXTUAL)
         .accessibilityText('关闭查找')
@@ -556,7 +563,7 @@ export struct DocumentView {
   @Builder
   private EditPage() {
     Column() {
-      // 格式栏常驻在标题栏下方，不跟键盘移动。实心一行，和「备忘录」的编辑区一致。
+      // The official action bar stays in the edit page layout above the text editor.
       FormatBarView({
         visible: this.formatBarWanted(),
         formatId: this.formatId,
@@ -566,14 +573,8 @@ export struct DocumentView {
         this.FindBar()
       }
       TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: this.cursor })
-        .fontSize($r('sys.float.ohos_id_text_size_body1'))
         .width('100%')
         .layoutWeight(1)
-        // TextArea 默认带一层灰底和圆角。编辑区应该就是页面本身，所以底色取透明（不做新颜色），
-        // 圆角归零，正文直接落在页面底色上，和预览页是同一张纸。
-        .backgroundColor(Color.Transparent)
-        // 圆角归零用系统的“无圆角”资源，不写 0。
-        .borderRadius($r('sys.float.corner_radius_none'))
         // 切回编辑页签时 Tabs 会把焦点还给上次编辑的 TextArea，光标停在原处并直接拉起键盘，
         // 手感被打断。enableKeyboardOnFocus(false) 让点击以外的获焦不弹键盘，只有点击文字才弹。
         // 这是官方「管理软键盘」和 faqs-arkui-932 推荐的写法。
@@ -619,67 +620,14 @@ export struct DocumentView {
     this.PreviewWeb(this.splitPreview, () => { this.splitReady = true; })
   }
 
-  /**
-   * 大纲是只读的扁平标题列表，层级只用于缩进，没有折叠和重命名。
-   * 官方的 TreeView 面向带目录图标、增删改入口的文件树，套在这里会多出用不到的操作，
-   * 因此沿用 List 承载行，行内容交给官方 ComposeListItem：主标题是标题文字，
-   * 副标题是行号，行高、内边距和字号都由组件按系统规范给出。
-   * 层级缩进没有对应的系统 token，是这一处唯一的兜底值。
-   */
+  /** TreeView is the official ArkUI component for displaying nested structures. */
   @Builder
   private OutlinePage() {
-    if (this.headings.length === 0) {
-      Column() {
-        Text('暂无大纲').fontSize($r('sys.float.ohos_id_text_size_body1'))
-        Text('在编辑页使用 #、## 等 Markdown 标题语法即可生成大纲。')
-          .fontColor($r('sys.color.font_secondary'))
-          .margin({ top: $r('sys.float.padding_level4') })
-      }
-      // TabContent 默认把不撑满的子组件居中，这里撑满后文字才会从顶部开始排。
-      // 留白取系统 margin 资源，不写死数值。
-      .padding({
-        left: $r('sys.float.margin_left'),
-        right: $r('sys.float.margin_right'),
-        top: $r('sys.float.padding_level8')
-      })
-      .alignItems(HorizontalAlign.Start)
-      .width('100%')
-      .height('100%')
-    } else {
-      List() {
-        ForEach(this.headings, (heading: Heading) => {
-          ListItem() {
-            ComposeListItem({
-              contentItem: {
-                primaryText: heading.text,
-                secondaryText: `第 ${heading.line} 行`
-              }
-            })
-          }
-          // 缩进表示 Markdown 标题层级，取系统间距资源（见 outlineIndent）。
-          .margin({ left: this.outlineIndent(heading.level) })
-          .onClick(() => this.focusHeading(heading))
-        }, (heading: Heading) => heading.offset.toString())
-      }
-      .width('100%')
-      .height('100%')
+    Column() {
+      TreeView({ treeController: this.outlineTree })
     }
-  }
-
-  /**
-   * 大纲行的左缩进：按标题层级取系统间距资源，一级到四级分别是
-   * 0 / 16 / 32 / 48vp（`padding_level0` / `8` / `16` / `24`），
-   * 比四级更深的层级沿用最大那一档，不再补自定义数值。
-   */
-  private outlineIndent(level: number): Resource {
-    const steps: Resource[] = [
-      $r('sys.float.padding_level0'),
-      $r('sys.float.padding_level8'),
-      $r('sys.float.padding_level16'),
-      $r('sys.float.padding_level24')
-    ];
-    const index: number = Math.min(Math.max(level - 1, 0), steps.length - 1);
-    return steps[index];
+    .width('100%')
+    .height('100%')
   }
 
   private splitTab(): number {
@@ -693,15 +641,15 @@ export struct DocumentView {
 
   @Builder
   private SplitPage() {
-    Row() {
+    RowSplit() {
       Column() { this.EditPage() }
-        .layoutWeight(1)
+        .width('50%')
         .height('100%')
-      Divider().vertical(true).height('100%')
       Column() { this.SplitPreviewPage() }
-        .layoutWeight(1)
+        .width('50%')
         .height('100%')
     }
+    // RowSplit (ts-container-rowsplit) supplies the divider; resizeable keeps its documented false default.
     .height('100%')
     .width('100%')
   }
@@ -716,7 +664,7 @@ export struct DocumentView {
   @LocalBuilder
   private WorkspacePage() {
     HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
-      // Preview first: opening a document lands in reading view, like the system apps.
+      // Preview is first so a newly opened document lands on its rendered content.
       TabContent() { this.PreviewPage() }
         .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
       TabContent() { this.EditPage() }
@@ -739,10 +687,9 @@ export struct DocumentView {
       this.schedulePreview();
     })
     .barMode(BarMode.Fixed)
-    // barOverlap 让页签栏浮在内容之上，底部页签的沉浸光感才有内容可映。页签栏不再随键盘
-    // 收起或换行，底部始终只有这一条，动画连续。
+    // HdsTabs (ui-design-hdstabs) documents barOverlap plus barFloatingStyle for the floating bar.
     .barOverlap(true)
-    .barFloatingStyle(this.floatingBar())
+    .barFloatingStyle({})
     .width('100%')
     .height('100%')
   }
@@ -761,21 +708,6 @@ export struct DocumentView {
   /** 编辑页签和分栏页签都能写；格式栏只在能写的页签出现。 */
   private inEditTab(): boolean {
     return this.selectedTab === TAB_EDIT || this.selectedTab === this.splitTab();
-  }
-
-  /**
-   * 底部页签用 HDS 的沉浸光感材质，跟随系统算力自适应，与系统「备忘录」的悬浮半透明页签一致。
-   */
-  private floatingBar(): HdsTabsFloatingStyle {
-    const material: SystemMaterialParams = {
-      materialType: hdsMaterial.MaterialType.ADAPTIVE,
-      materialLevel: this.materialLevel
-    };
-    const style: HdsTabsFloatingStyle = {
-      barBottomMargin: 28,
-      systemMaterialEffect: material
-    };
-    return style;
   }
 
   build() {

@@ -128,11 +128,11 @@ struct Index {
   }
 
   /**
-   * 分栏阈值用官方媒体查询监听窗口宽度，不再在 Tabs 的 onAreaChange 里自己算宽度。
-   * 720vp 与系统推荐的横向断点一致。
+   * 分栏阈值使用 ArkUI 典型 WIDTH_LG 断点（API 枚举文档 ts-appendix-enums）：窗口宽度达到 840vp。
+   * 监听仍由官方媒体查询 API 完成，避免在页面区域变化事件里自行计算宽度。
    */
   private bindWideBreakpoint(): void {
-    this.wideQuery = this.getUIContext().getMediaQuery().matchMediaSync('(width >= 720vp)');
+    this.wideQuery = this.getUIContext().getMediaQuery().matchMediaSync('(width >= 840vp)');
     this.wide = this.wideQuery.matches;
     this.wideQuery.on('change', (result: mediaquery.MediaQueryResult) => {
       this.wide = result.matches;
@@ -171,10 +171,10 @@ struct Index {
   }
 
   /**
-   * 首页标题栏。默认行为就够用，因此不配置 style：
-   * - API 参考 ScrollEffectOptions：`scrollEffectType` 默认 ScrollEffectType.COMMON_BLUR，
+   * 首页标题栏使用 HdsNavigation API 默认样式，因此不配置 style：
+   * - HdsNavigation API (ui-design-hdsnavigation)：`scrollEffectType` 默认 ScrollEffectType.COMMON_BLUR，
    *   `enableScrollEffect` 默认 true，文档对 COMMON_BLUR 的说明是「适用于列表型非沉浸式场景」。
-   * - API 参考 HdsNavigationBackgroundStyle.backgroundColor：模糊样式为 COMMON_BLUR 时
+   * - 同一 API 的 HdsNavigationBackgroundStyle.backgroundColor：模糊样式为 COMMON_BLUR 时
    *   「背景色默认值均为透明色」；COMMON_BLUR 的说明是「滑动内容进入/离开标题栏区域过程中，
    *   模糊背板和分割线透明渐变出现/消失」。所以顶栏没有常驻色块，标题和菜单悬浮在内容上，
    *   内容滑到下面时才浮出模糊蒙板。
@@ -417,10 +417,9 @@ struct Index {
       }
       .navDestination(this.Destination)
       .titleBar(this.homeTitle())
-      // 一级页面用 MINI：标题栏固定 56vp，标题与右侧菜单同一行。
-      // 依据是官方《开发实例》中首页的写法（同篇示例同时用 MINI + COMMON_BLUR）。
+      // HdsNavigationTitleMode.MINI 固定为 56vp（ui-design-hdsnavigation）。
       .titleMode(HdsNavigationTitleMode.MINI)
-      .mode(NavigationMode.Stack)
+      // Leave mode unset: HdsNavigation defaults to NavigationMode.Auto (ui-design-hdsnavigation).
       .hideBackButton(true)
       .bindToScrollable([this.libraryScroller])
       .width('100%')
