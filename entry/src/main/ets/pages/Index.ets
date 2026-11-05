@@ -26,6 +26,7 @@ import { LocalState } from '../storage/LocalState';
 @Component
 struct Index {
   @State private legalText: string = '';
+  @State private projectLicenseText: string = '';
   @State private recents: RecentDocument[] = [];
   @State private theme: string = 'system';
   @State private toolbarPosition: string = 'top';
@@ -224,18 +225,27 @@ struct Index {
   /**
    * 打开设置的二级页：推入设置自己的导航栈，子页从右侧滑入，半模态本身不收起。
    * 许可证全文按需读一次，其余页面不碰磁盘。
+   * 本项目许可证和第三方声明分开放，避免后打开的页面覆盖先打开的全文。
    */
   private openSetting(section: string): void {
+    if (section === 'project-license' && this.projectLicenseText.length === 0) {
+      this.projectLicenseText = this.readRawLicense('licenses/LICENSE', '未能读取本项目许可证。');
+    }
     if (section === 'licenses' && this.legalText.length === 0) {
-      if (!this.context) return;
-      try {
-        const bytes = this.context.resourceManager.getRawFileContentSync('licenses/THIRD_PARTY_NOTICES.txt');
-        this.legalText = util.TextDecoder.create('utf-8').decodeToString(bytes);
-      } catch {
-        this.legalText = '未能读取第三方许可证，请确保已运行 renderer 的构建命令。';
-      }
+      this.legalText = this.readRawLicense('licenses/THIRD_PARTY_NOTICES.txt',
+        '未能读取第三方许可证，请确保已运行 renderer 的构建命令。');
     }
     this.routes.pushPathByName(section, '');
+  }
+
+  private readRawLicense(path: string, failure: string): string {
+    if (!this.context) return failure;
+    try {
+      const bytes = this.context.resourceManager.getRawFileContentSync(path);
+      return util.TextDecoder.create('utf-8').decodeToString(bytes);
+    } catch {
+      return failure;
+    }
   }
 
   /**
@@ -368,7 +378,7 @@ struct Index {
         theme: $theme,
         toolbarPosition: this.toolbarPosition,
         version: this.version,
-        text: this.legalText,
+        text: name === 'project-license' ? this.projectLicenseText : this.legalText,
         onOpen: (section: string): void => this.openSetting(section),
         onChooseTheme: (choice: string): void => this.changeTheme(choice),
         onChooseToolbarPosition: (position: string): void => this.changeToolbarPosition(position)

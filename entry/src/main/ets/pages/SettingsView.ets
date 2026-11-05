@@ -11,6 +11,7 @@ export function settingTitle(section: string): string {
   if (section === 'appearance') return '外观';
   if (section === 'toolbar') return '编辑工具栏位置';
   if (section === 'privacy') return '隐私说明';
+  if (section === 'project-license') return '本项目开源许可证';
   if (section === 'licenses') return '第三方开源许可证';
   return '关于';
 }
@@ -72,6 +73,7 @@ export struct SettingsView {
       this.LinkRow('编辑工具栏位置', this.toolbarPosition === 'left' ? '左侧' :
         (this.toolbarPosition === 'right' ? '右侧' : '顶部'), 'toolbar')
       this.LinkRow('隐私说明', '', 'privacy')
+      this.LinkRow('本项目开源许可证', '', 'project-license')
       this.LinkRow('第三方开源许可证', '', 'licenses')
       this.LinkRow('关于', this.version.length > 0 ? `版本 ${this.version}` : '', 'about')
     }

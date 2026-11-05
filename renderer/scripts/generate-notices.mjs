@@ -65,8 +65,14 @@ for (const p of all) {
   sections.push('='.repeat(75), `${p.name}@${p.version}`, `License: ${p.license}`, '', p.text.trim(), '');
   if (p.notice.trim()) sections.push('Upstream NOTICE:', p.notice.trim(), '');
 }
+const projectLicense = join(root, '..', 'LICENSE');
+if (!existsSync(projectLicense)) throw new Error('Missing project LICENSE');
+const projectLicenseBytes = readFileSync(projectLicense);
 const output = join(root, '..', 'entry', 'src', 'main', 'resources', 'rawfile', 'licenses');
 mkdirSync(output, { recursive: true });
 const file = join(output, 'THIRD_PARTY_NOTICES.txt');
 writeFileSync(file, sections.join('\n') + '\n', 'utf8');
+const shippedLicense = join(output, 'LICENSE');
+writeFileSync(shippedLicense, projectLicenseBytes);
 console.log(`Wrote ${file} (${all.length} runtime packages; ${sections.join('\n').length} characters)`);
+console.log(`Copied project LICENSE to ${shippedLicense}`);

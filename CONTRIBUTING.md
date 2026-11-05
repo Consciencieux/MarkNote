@@ -15,12 +15,15 @@ npm run check
 npm run build
 ```
 
-`npm run build` 生成单文件预览页，同时从当前安装的生产依赖中收集许可证，写入以下两个位置：
+`npm run build` 生成单文件预览页，同时从当前安装的生产依赖中收集许可证，写入以下位置：
 
 ```text
 entry/src/main/resources/rawfile/preview/index.html
 entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt
+entry/src/main/resources/rawfile/licenses/LICENSE
 ```
+
+`licenses/LICENSE` 是仓库根目录 `LICENSE` 的原样副本，供设置里的「本项目开源许可证」离线阅读。不要改这份副本，也不要把它写进 `THIRD_PARTY_NOTICES.txt`。
 
 许可证缺失，或者许可证类型不在允许范围内时，构建会失败。不要手工编写 `THIRD_PARTY_NOTICES.txt` 来绕过这一步。`package-lock.json` 随依赖变更一起提交，之后用 `npm ci` 还原同一棵依赖树。
 

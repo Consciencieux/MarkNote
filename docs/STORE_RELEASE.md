@@ -13,14 +13,14 @@
 - 导航、文件选取、读写、源码编辑、主题和关于页面均使用 ArkUI / ArkTS。
 - Markdown、SVG 和 TeX 数学公式由打包进 HAP 的离线 ArkWeb 渲染，没有网络权限，也不发起 CDN 请求。
 - SVG 和 Markdown 标记经过安全清理，预览页配置了内容安全策略。
-- 第三方依赖均采用许可友好的开源许可证。DOMPurify 按 Apache-2.0 分发，KaTeX 字体按 SIL OFL 1.1 单独声明。
+- 第三方依赖均采用许可友好的开源许可证。DOMPurify 按 Apache-2.0 分发，KaTeX 及其附带字体按该包的 MIT 声明收录。
 - `renderer` 的构建从实际安装的生产依赖中收集版权与许可全文，缺少许可证时中止构建。
 - `EntryAbility` 以 singleton 注册了 Markdown、纯文本、SVG 和 TeX 的 `FileOpen`。
 
 ## 上架前必须完成
 
 1. 在 `renderer/` 执行 `npm ci`、`npm run check` 和 `npm run build`，确认 `package-lock.json` 与依赖一致。
-2. 在应用内打开「关于」，确认许可证全文和隐私说明显示完整；复核传递依赖、NOTICE 与数学字体授权。
+2. 在设置中打开「本项目开源许可证」「第三方开源许可证」和「隐私说明」，确认全文显示完整；复核传递依赖、NOTICE 与数学字体授权。
 3. 用 DevEco Studio 26 和目标 HarmonyOS 7 设备完成真机验收，覆盖 HAP 编译与安装、应用内打开与保存、文件管理器「打开方式」、只读授权下的另存为、外部修改拒绝覆盖、草稿恢复、外观切换和离线预览。
 4. 在应用市场材料中声明 `FileOpen`，以及 `general.markdown`、`general.plain-text`、`general.svg-image`、`org.tug.tex` 和 `general.tex`。审核完成前，不要宣称可以从文件管理器打开。
 5. 配置发行方自己的签名与证书，替换测试用包名，不要使用他人的包名、商标或商店图片。
