@@ -2,6 +2,7 @@ import { PageScrollPolicy } from './PageScrollPolicy';
 import { ComposeListItem, IconType, SymbolGlyphModifier } from '@kit.ArkUI';
 import { RecentDocument } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
+import { menuMaterialOptions } from './MenuMaterialOptions';
 
 /**
  * 首页文稿列表。新建、打开和最近文稿的动作都交回页面，这里只负责展示和发起。
@@ -62,7 +63,7 @@ export struct HomeView {
       ListItem() {
         Row() {
           Button('新建文稿')
-            .bindMenu(this.newDocumentMenu())
+            .bindMenu(this.newDocumentMenu(), menuMaterialOptions())
             .layoutWeight(1)
             .margin({ right: $r('sys.float.padding_level6') })
           Button('打开文件')

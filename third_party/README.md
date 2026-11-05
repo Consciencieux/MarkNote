@@ -1,23 +1,18 @@
 # 第三方组件与许可证
 
-MarkNote 在本地打包的 ArkWeb 预览中使用第三方软件。这些代码、字体和商标归各自的上游作者所有，MarkNote 不主张其所有权，具体的分发条件由各自的许可证给出。
+MarkNote 的离线预览使用下列第三方组件。各组件及附带资源的使用和分发条件以其上游许可证为准。
 
-## 生成声明
-
-在 `renderer/` 执行 `npm ci && npm run build` 即可生成声明。该命令从实际安装的生产依赖图中收集全部 LICENSE 和 NOTICE，写入 `entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt`。应用在设置页的「第三方开源许可证」里展示这份全文，与「本项目开源许可证」分开。
-
-遇到未知许可证类型或缺少许可证文件时，构建会失败。KaTeX 及其附带字体由该包的 MIT 声明覆盖，生成脚本不另要求一份 OFL。
-
-## 直接依赖
-
-| 组件 | 固定版本 | 许可证 | 上游 |
+| 组件 | 版本 | 许可证 | 上游 |
 | --- | --- | --- | --- |
-| markdown-it | 15.0.3 | MIT | https://github.com/markdown-it/markdown-it |
-| @mdit/plugin-katex | 1.1.4 | MIT | https://github.com/mdit-plugins/mdit-plugins |
-| KaTeX 代码 | 0.19.1 | MIT | https://github.com/KaTeX/KaTeX |
-| KaTeX 数学字体（随 KaTeX 附带） | 0.19.1 | MIT | 随 KaTeX 包的 MIT LICENSE 一并声明 |
-| DOMPurify | 3.4.17 | Apache-2.0 或 MPL-2.0，本项目选用 Apache-2.0 | https://github.com/cure53/DOMPurify |
+| markdown-it | 15.0.3 | MIT | [markdown-it](https://github.com/markdown-it/markdown-it) |
+| @mdit/plugin-katex | 1.1.4 | MIT | [mdit-plugins](https://github.com/mdit-plugins/mdit-plugins) |
+| KaTeX 及其附带字体 | 0.19.1 | MIT | [KaTeX](https://github.com/KaTeX/KaTeX) |
+| DOMPurify | 3.4.17 | Apache-2.0 或 MPL-2.0；本项目选择 Apache-2.0 | [DOMPurify](https://github.com/cure53/DOMPurify) |
 
-构建工具（Vite、TypeScript、vite-plugin-singlefile）不会打进 HAP。运行时传递依赖由安装后的包图确定，其许可证文本同样包含在生成的声明中。发布时不要用手写的说明替换这份生成结果。
+## 应用内声明
 
-应用图标为本仓库新绘制，未使用第三方素材。商店图片、翻译文案、用户导入的文稿，以及后续可能加入的主题或字体资源，如果随应用分发，需要单独确认权利。
+按[构建与贡献](../CONTRIBUTING.md)中的预览构建步骤生成许可证文件。脚本从实际安装的生产依赖图中收集许可证和 NOTICE，写入 `entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt`；遇到未允许的许可证类型或缺少许可证文件时会中止构建。KaTeX 及其附带字体使用该包收录的 MIT 许可证声明。
+
+应用通过“设置 → 开源许可证 → 第三方开源许可证”显示生成的声明；本项目的 GPL-3.0 许可证单独显示。Vite、TypeScript 和 vite-plugin-singlefile 用于构建，不打包到应用预览中。
+
+应用图标由本仓库绘制。发布时应另行核对商店素材、翻译文案及其他随应用分发的资源的使用权。

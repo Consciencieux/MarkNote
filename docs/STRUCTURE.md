@@ -1,78 +1,52 @@
 # 仓库结构
 
-本页只说明文件和目录的用途。模块之间如何配合见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+本文介绍目录用途和常见改动的位置。模块如何协作见[架构](ARCHITECTURE.md)。
 
 ```text
-marknote
-├── AppScope/app.json5                      包名、版本与应用图标
-├── entry/src/main/
-│   ├── module.json5                        Ability、FileOpen 关联与权限
-│   ├── ets/
-│   │   ├── entryability/EntryAbility.ets   启动与系统打开文件
-│   │   ├── pages/
-│   │   │   ├── Index.ets                    首页外壳、导航栈、主题、设置与关于
-│   │   │   ├── HomeView.ets                 首页列表、新建菜单、最近文稿
-│   │   │   ├── DocumentView.ets             文稿页：编辑、预览、大纲、分栏、查找、保存
-│   │   │   ├── FormatBarView.ets            编辑页顶部的常驻格式栏
-│   │   │   ├── DocumentMenus.ets            首页与文稿页的菜单内容和动作桥
-│   │   │   ├── DocumentBridge.ets           首页与文稿页的未保存询问桥
-│   │   │   ├── PageScrollPolicy.ets         Scroll/List 公共配置及页签裁剪策略
-│   │   │   ├── SettingsPage.ets             设置路由与滚动控制器
-│   │   │   ├── SettingsView.ets             设置首页的导航列表
-│   │   │   └── SettingsDetail.ets           设置的二级页
-│   │   ├── document/
-│   │   │   ├── DocumentService.ets         文稿会话、打开、保存、冲突
-│   │   │   ├── FormatRegistry.ets          扩展名、UTD、MIME、大纲、快捷插入
-│   │   │   ├── EditHistory.ets             编辑缓冲的撤销与重做
-│   │   │   ├── TextSearch.ets              字面文本查找与替换
-│   │   │   ├── LaunchRequests.ets          冷启动时暂存外部文件请求
-│   │   │   └── TextEncoding.ets            编码、BOM、换行
-│   │   ├── model/Document.ets              文稿字段与大纲标题偏移
-│   │   └── storage/
-│   │       ├── DocumentFiles.ets           选择、读写、持久授权
-│   │       └── LocalState.ets              最近文稿、草稿、外观偏好
-│   └── resources/rawfile/                  构建写入的预览页与许可证文本
-├── renderer/                               离线预览的源码与构建脚本
-│   ├── index.html                          预览页外壳
-│   ├── vite.config.ts                      打包为单个 HTML
-│   ├── src/main.ts                         按格式 ID 分发并接收更新
-│   ├── src/renderers/                      plain、markdown、svg、tex-math
-│   ├── src/styles.css                      预览主题
-│   └── scripts/                            复制预览页、生成许可证声明
-├── docs/                                   架构、功能目录、结构、隐私、上架
-├── examples/                               markdown、svg、tex 示例
-├── third_party/README.md                   直接依赖与许可证选择
-├── README.md                               产品概览
-├── CONTRIBUTING.md                         构建、签名与提交
-├── AGENTS.md                               改代码时的项目边界
-├── build-profile.example.json5             公共构建配置模板
-├── hvigorfile.ts                           应用构建入口
-└── oh-package.json5                        OHPM 工程描述
+marknote/
+├── AppScope/                         应用包名、版本、名称和图标
+├── entry/                            HarmonyOS 应用模块
+│   └── src/main/
+│       ├── module.json5              Ability、文件关联和权限
+│       ├── ets/
+│       │   ├── entryability/         应用启动及系统文件打开入口
+│       │   ├── pages/                首页、文稿、设置及公共界面组件
+│       │   ├── document/             文稿会话、格式、编辑历史、查找和编码
+│       │   ├── model/                文稿及大纲数据结构
+│       │   └── storage/              文件访问和本机状态
+│       └── resources/rawfile/        构建生成的预览页与许可证文本
+├── renderer/                         离线预览源码及构建脚本
+│   ├── src/renderers/                各文稿格式的渲染器
+│   ├── src/styles.css                预览样式
+│   └── scripts/                      打包资源及生成许可证声明
+├── docs/                             功能、架构、隐私及发布文档
+├── examples/                         Markdown、SVG 和 TeX 示例文稿
+├── third_party/                      第三方依赖说明
+├── README.md                         产品概览
+├── CONTRIBUTING.md                   构建与验证
+├── AGENTS.md                         项目开发约定
+├── build-profile.example.json5       构建配置模板
+├── hvigorfile.ts                     应用构建入口
+└── oh-package.json5                  OHPM 工程描述
 ```
 
-## 常见改动的落点
+## 常见改动
 
-| 要改什么 | 改哪里 |
+除特别注明的路径外，下表中的路径相对于 `entry/src/main/ets/`。
+
+| 修改内容 | 主要位置 |
 | --- | --- |
-| 首页列表、新建菜单 | `entry/src/main/ets/pages/HomeView.ets` |
-| 文稿页：编辑、预览、大纲、分栏、查找、保存 | `entry/src/main/ets/pages/DocumentView.ets` |
-| 公共滚动与标题栏 | `entry/src/main/ets/pages/PageScrollPolicy.ets`、`pages/HdsMaterialStyles.ets` |
-| 首页外壳、导航、主题、设置与关于 | `entry/src/main/ets/pages/Index.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets` |
-| 菜单内容与跨页动作 | `entry/src/main/ets/pages/DocumentMenus.ets`、`pages/DocumentBridge.ets` |
-| 打开、保存、草稿恢复 | `entry/src/main/ets/document/DocumentService.ets` |
-| 文件授权与字节指纹 | `entry/src/main/ets/storage/DocumentFiles.ets` |
-| 编码、BOM、换行 | `entry/src/main/ets/document/TextEncoding.ets` |
-| 新增文稿格式 | 在 `document/FormatRegistry.ets` 登记扩展名、UTD 和 MIME，在 `module.json5` 的 `FileOpen` 中加入相同类型，并补充对应的预览渲染器 |
-| 预览渲染 | `renderer/src/renderers/` |
-| 预览样式 | `renderer/src/styles.css` |
+| 首页列表和新建菜单 | `pages/HomeView.ets`、`pages/Index.ets` |
+| 文稿编辑、预览、大纲、查找和保存 | `pages/DocumentView.ets` |
+| 编辑工具栏 | `pages/FormatBarView.ets`、`document/FormatRegistry.ets` |
+| 标题栏与滚动 | `pages/HdsMaterialStyles.ets`、`pages/PageScrollPolicy.ets`、`pages/DocumentScrollLayer.ets` |
+| 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets` |
+| 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
+| 文稿打开、保存和草稿恢复 | `document/DocumentService.ets`、`storage/DocumentFiles.ets`、`storage/LocalState.ets` |
+| 文件编码与换行 | `document/TextEncoding.ets` |
+| 格式注册与文件关联 | `document/FormatRegistry.ets`，仓库根目录下的 `entry/src/main/module.json5` 和 `renderer/src/renderers/` |
+| 预览行为与样式 | 仓库根目录下的 `renderer/src/main.ts`、`renderer/src/renderers/` 和 `renderer/src/styles.css` |
 
-`entry/src/main/resources/rawfile/preview/index.html` 由构建复制生成，不要直接编辑。修改渲染后重新构建即可。
+`entry/src/main/resources/rawfile/preview/index.html` 和 `rawfile/licenses/` 中的许可证文件由预览构建生成；修改预览或依赖后，按[构建与贡献](../CONTRIBUTING.md)中的步骤重新生成。
 
-## 不进入版本库的本地文件
-
-- `build-profile.json5`：本机调试签名配置
-- `~/.ohos/config/`：证书、描述文件和密钥库
-- `.hvigor/`、`entry/build/`：构建缓存与产物
-- `renderer/node_modules/`、`renderer/dist/`：依赖与预览构建输出
-
-调试签名、证书和密钥库只保留在本机。
+本机 `build-profile.json5`、签名材料、构建产物、缓存和安装的依赖不提交到版本库。

@@ -13,6 +13,7 @@ import { HomeView } from './HomeView';
 import { DocumentView } from './DocumentView';
 import { SettingsPage } from './SettingsPage';
 import { scrollingTitleBar } from './HdsMaterialStyles';
+import { menuMaterialOptions } from './MenuMaterialOptions';
 import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
@@ -29,7 +30,6 @@ struct Index {
   @State private projectLicenseText: string = '';
   @State private recents: RecentDocument[] = [];
   @State private theme: string = 'system';
-  @State private toolbarPosition: string = 'top';
   @State private version: string = '';
   @State private wide: boolean = false;
   /** 每开一篇加一，文稿页据此重新载入会话。 */
@@ -91,7 +91,6 @@ struct Index {
     try {
       this.recents = await LocalState.readRecent(this.context);
       this.changeTheme(await LocalState.readTheme(this.context), false);
-      this.toolbarPosition = await LocalState.readToolbarPosition(this.context);
     } catch {
       this.toast('读取设置失败，已使用系统默认值');
     }
@@ -101,7 +100,7 @@ struct Index {
     await this.resumeDraft();
   }
 
-  /** 版本号只读一次，设置里的「关于」行和「关于」页共用。读不到就留空，由界面自己省略。 */
+  /** 版本号只读一次，供「关于」页显示；读取失败时由页面显示提示。 */
   private readVersion(): void {
     try {
       this.version = bundleManager.getBundleInfoForSelfSync(
@@ -158,14 +157,6 @@ struct Index {
     }
   }
 
-  private changeToolbarPosition(position: string): void {
-    this.toolbarPosition = position === 'left' || position === 'right' ? position : 'top';
-    if (this.context) {
-      void LocalState.writeToolbarPosition(this.context, this.toolbarPosition)
-        .catch(() => this.toast('编辑工具栏位置未能保存'));
-    }
-  }
-
   private menuIcon(label: string, symbol: Resource, id: string,
     action: () => void): HdsNavigationMenuItemOptions {
     // 只配必要的字段；isEnabled 默认 true、type 默认 IconStyleMode.NORMAL，不再重复写。
@@ -195,7 +186,7 @@ struct Index {
   private openHomeMenu(): void {
     const uiContext = this.getUIContext();
     this.homeMenu = new ComponentContent<Object>(uiContext, wrapBuilder(HomeMenuContent));
-    uiContext.getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }).catch(() => {
+    uiContext.getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }, menuMaterialOptions()).catch(() => {
       // The menu stays closed when its anchor is not on screen.
     });
   }
@@ -203,7 +194,7 @@ struct Index {
   private openDocumentMenu(): void {
     const uiContext = this.getUIContext();
     this.documentMenu = new ComponentContent<Object>(uiContext, wrapBuilder(DocumentMenuContent));
-    uiContext.getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }).catch(() => {
+    uiContext.getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }, menuMaterialOptions()).catch(() => {
       // The menu stays closed when its anchor is not on screen.
     });
   }
@@ -223,7 +214,7 @@ struct Index {
   }
 
   /**
-   * 打开设置的二级页：推入设置自己的导航栈，子页从右侧滑入，半模态本身不收起。
+   * 将设置子页推入当前导航栈。
    * 许可证全文按需读一次，其余页面不碰磁盘。
    * 本项目许可证和第三方声明分开放，避免后打开的页面覆盖先打开的全文。
    */
@@ -238,6 +229,16 @@ struct Index {
     this.routes.pushPathByName(section, '');
   }
 
+  /** 华为 FAQ faqs-ability-58：通过隐式 Want 打开默认浏览器。 */
+  private openProjectHome(): void {
+    if (!this.context) return;
+    this.context.startAbility({
+      action: 'ohos.want.action.viewData',
+      entities: ['entity.system.browsable'],
+      uri: 'https://github.com/Consciencieux/marknote'
+    }).catch(() => this.toast('无法打开项目主页'));
+  }
+
   private readRawLicense(path: string, failure: string): string {
     if (!this.context) return failure;
     try {
@@ -249,8 +250,7 @@ struct Index {
   }
 
   /**
-   * 切换文稿前的保存决策由文稿页决定：已保存过且有写权限的文件直接写回，不再询问；
-   * 只有无法静默写入的情况才让用户选择。首页只负责等结果。
+   * 切换文稿前由文稿页处理未保存的修改：有改动就先询问，不直接写回。首页只负责等结果。
    */
   private confirmSwitch(proceed: () => Promise<void>): void {
     void documentBridge.saveBeforeLeaving().then((ok: boolean) => {
@@ -362,7 +362,6 @@ struct Index {
     if (name === 'document') {
       DocumentView({
         theme: this.theme,
-        toolbarPosition: this.toolbarPosition,
         wide: this.wide,
         revision: this.revision,
         onLeave: (): void => {
@@ -376,12 +375,12 @@ struct Index {
       SettingsPage({
         section: name,
         theme: $theme,
-        toolbarPosition: this.toolbarPosition,
         version: this.version,
         text: name === 'project-license' ? this.projectLicenseText : this.legalText,
         onOpen: (section: string): void => this.openSetting(section),
-        onChooseTheme: (choice: string): void => this.changeTheme(choice),
-        onChooseToolbarPosition: (position: string): void => this.changeToolbarPosition(position)
+        onOpenProject: (): void => this.openProjectHome(),
+        onBack: (): void => { this.routes.pop(); },
+        onChooseTheme: (choice: string): void => this.changeTheme(choice)
       })
     }
   }

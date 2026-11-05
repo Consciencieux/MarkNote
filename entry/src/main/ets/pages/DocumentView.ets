@@ -1,4 +1,4 @@
-import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import {
@@ -27,9 +27,6 @@ const TAB_PREVIEW: number = 0;
 const TAB_EDIT: number = 1;
 const TAB_OUTLINE: number = 2;
 const TAB_SPLIT: number = 3;
-/** HdsNavDestination MINI titlebar height documented by the UI Design Kit API. */
-const MINI_TITLE_BAR_HEIGHT: number = 56;
-
 /** Flat row model used by the documented ArkUI List-based tree pattern. */
 class OutlineRow {
   id: number = 0;
@@ -48,7 +45,6 @@ class OutlineRow {
 export struct DocumentView {
   // 由首页传入。
   @Prop @Watch('onThemeChange') theme: string = 'system';
-  @Prop toolbarPosition: string = 'top';
   @Prop @Watch('onWideChange') wide: boolean = false;
   /** 每打开一篇就加一，用来在路由已经存在时重新载入会话。 */
   @Prop @Watch('loadSession') revision: number = 0;
@@ -188,6 +184,11 @@ export struct DocumentView {
       ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
+    if (this.formatBarWanted()) {
+      // 官方导航自定义区域：标题栏负责底部区域布局和安全区。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
+      content.bottomBuilder = { builder: (): void => this.TopFormatBar() };
+    }
     return scrollingTitleBar(content);
   }
 
@@ -218,19 +219,12 @@ export struct DocumentView {
     return [this.previewScroller];
   }
 
-  private previewIsDark(): boolean {
-    if (this.theme === 'dark') return true;
-    if (this.theme === 'light') return false;
-    return this.context?.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
-  }
-
   private sendPreview(controller: webview.WebviewController): void {
     const kind = this.currentFormat().id;
-    const theme = this.previewIsDark() ? 'dark' : (this.theme === 'light' ? 'light' : 'system');
     const command = 'window.MarknotePreview.update(' + JSON.stringify({
       kind: kind,
       source: this.source,
-      theme: theme
+      theme: this.theme
     }) + ')';
     try {
       controller.runJavaScript(command);
@@ -244,59 +238,60 @@ export struct DocumentView {
   }
 
   /**
-   * 切换文稿前的保存决策，规则参考各平台编辑器的通行做法：
-   * 已保存过且有写权限的文件直接写回，不再询问；只有无法静默写入的情况才让用户选择，
-   * 也就是新建文稿还没有文件名、文件只读，或写回失败。
+   * 离开前只要正文和上次保存不同，就先问用户。不因为文件可写就直接写回。
    * 草稿副本只用于崩溃兜底，不再作为「未保存」的常驻入口。
    */
   private async saveBeforeLeaving(): Promise<boolean> {
-    // 编辑态只在会话里有一份，页面不再另存一份副本。
     if (!DocumentService.current().editing || !this.isDirty()) return true;
-    const canWriteInPlace = this.info.uri.length > 0 && this.info.writable;
-    if (canWriteInPlace && await this.saveFile(false)) return true;
     return await this.askSaveOrDiscard();
   }
 
   /**
-   * 未保存的退出确认。AlertDialog API 与 arkts-fixes-style-dialog 的场景说明包含“取消编辑”；
-   * 多按钮默认排布为 AUTO，按钮样式使用 DEFAULT，只有主操作“保存”使用 HIGHLIGHT。
+   * 未保存的退出确认。问句只留一句。
+   * 《警告弹窗》里两个及以下按钮在 AUTO 下水平排布，这里显式用 HORIZONTAL：
+   * 数组第一项在左，第二项在右。两边都用 DialogButtonStyle.DEFAULT（白底蓝字，
+   * 深色主题为黑底蓝字），不改字色，也不用 HIGHLIGHT（那是蓝底白字）。
+   * 没有取消按钮。onWillDismiss 拦截侧滑、返回键和点击遮罩，关闭后留在文稿。
+   * 侧滑和返回键的 reason 是 PRESS_BACK（ts-methods-alert-dialog-box，DismissReason）。
    */
   private askSaveOrDiscard(): Promise<boolean> {
-    // The reason matters: an unnamed document needs a name, a read-only one needs another
-    // location, and a failed write may be an external modification.
-    let message = '这份文稿没能写回原文件。可以先另存为，也可以放弃修改。';
-    let saveLabel = '另存为';
-    if (this.info.uri.length === 0) {
-      message = '这份文稿还没有保存到文件。可以先保存，也可以放弃修改。';
-      saveLabel = '保存';
-    } else if (!this.info.writable) {
-      message = '这个文件没有写入权限。可以另存为新文件，也可以放弃修改。';
-    }
+    const saveLabel = this.info.uri.length > 0 && !this.info.writable ? '另存为' : '保存';
     return new Promise<boolean>((resolve: (leave: boolean) => void) => {
+      let settled = false;
+      const finish = (leave: boolean): void => {
+        if (settled) return;
+        settled = true;
+        resolve(leave);
+      };
       this.getUIContext().showAlertDialog({
-        title: '未保存的修改',
-        message: message,
+        message: '是否保存更改？',
         autoCancel: true,
-        cancel: (): void => resolve(false),
+        buttonDirection: DialogButtonDirection.HORIZONTAL,
         buttons: [
           {
+            value: '不保存',
+            style: DialogButtonStyle.DEFAULT,
+            action: (): void => finish(true)
+          },
+          {
             value: saveLabel,
-            style: DialogButtonStyle.HIGHLIGHT,
+            style: DialogButtonStyle.DEFAULT,
+            primary: true,
             action: (): void => {
               this.saveFile(this.info.uri.length > 0 && !this.info.writable)
-                .then((saved: boolean) => resolve(saved))
-                .catch(() => resolve(false));
+                .then((saved: boolean) => finish(saved))
+                .catch(() => finish(false));
             }
-          },
-          {
-            value: '放弃修改',
-            action: (): void => resolve(true)
-          },
-          {
-            value: '取消',
-            action: (): void => resolve(false)
           }
-        ]
+        ],
+        cancel: (): void => finish(false),
+        onWillDismiss: (dismissDialogAction: DismissDialogAction): void => {
+          if (dismissDialogAction.reason === DismissReason.PRESS_BACK ||
+            dismissDialogAction.reason === DismissReason.TOUCH_OUTSIDE) {
+            dismissDialogAction.dismiss();
+            finish(false);
+          }
+        }
       });
     });
   }
@@ -626,8 +621,8 @@ export struct DocumentView {
   }
 
   /**
-   * 编辑页、预览页和分栏共用同一个本地预览页面，差异只有 Web 控制器和就绪标记。
-   * 合成一个构建器，避免三份重复的 Web 配置发生漂移。
+   * 预览页和分栏共用同一个本地预览页面，差异只有 Web 控制器和就绪标记。
+   * 共用构建器，避免 Web 配置发生漂移。
    */
   @Builder
   private PreviewWeb(controller: webview.WebviewController, onReady: () => void) {
@@ -636,6 +631,10 @@ export struct DocumentView {
     Web({ src: $rawfile('preview/index.html'), controller: controller, renderMode: RenderMode.SYNC_RENDER })
       .javaScriptAccess(true)
       .domStorageAccess(false)
+      // ArkWeb 默认关闭深色模式；须在首次加载前设置，网页的 prefers-color-scheme 才能生效。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/web-set-dark-mode
+      .darkMode(this.theme === 'system' ? WebDarkMode.Auto :
+        (this.theme === 'dark' ? WebDarkMode.On : WebDarkMode.Off))
       // 兜底底色跟随页面底色（同一个系统 token），不写死黑白两色；
       // 预览正文的底色由 renderer 的样式表按主题决定。
       .backgroundColor($r('sys.color.ohos_id_color_background'))
@@ -683,18 +682,25 @@ export struct DocumentView {
   @Builder
   private TopFormatBar() {
     FormatBarView({
-      visible: true,
       formatId: this.formatId,
-      horizontal: true,
       onInsert: (action: InsertAction): void => this.insertToken(action)
     })
-      .align(Alignment.Top)
-      .margin({ top: MINI_TITLE_BAR_HEIGHT })
   }
 
-  /** 页签图标沿用系统符号，选中态由系统页签样式给出。 */
+  /** TabBarSymbol 使用独立的普通态和选中态；图标色需单独设置。 */
   private tabSymbol(symbol: Resource): TabBarSymbol {
-    return { normal: new SymbolGlyphModifier(symbol) };
+    return {
+      normal: new SymbolGlyphModifier(symbol).renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        .fontColor([$r('sys.color.icon_primary')]),
+      selected: new SymbolGlyphModifier(symbol).renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        .fontColor([$r('sys.color.brand')])
+    };
+  }
+
+  /** 华为 uiMaterial 沉浸材质示例：文字颜色使用可适配深浅色的系统资源。 */
+  private bottomTab(symbol: Resource, label: string): BottomTabBarStyle {
+    return BottomTabBarStyle.of(this.tabSymbol(symbol), label)
+      .labelStyle({ selectedColor: $r('sys.color.brand'), unselectedColor: $r('sys.color.font_primary') });
   }
 
   @Builder
@@ -730,20 +736,20 @@ export struct DocumentView {
           this.PreviewPage(this.preview, this.previewScroller, () => { this.previewReady = true; })
         }
           .attributeModifier(this.tabContentPolicy)
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
+          .tabBar(this.bottomTab($r('sys.symbol.eye'), '预览'))
         TabContent() { this.EditPage(this.editScroller) }
           .attributeModifier(this.tabContentPolicy)
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
+          .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), '编辑'))
         // Only formats that declare an outline get the tab; plain text and SVG have none.
         if (this.currentFormat().outline) {
           TabContent() { this.OutlinePage() }
             .attributeModifier(this.tabContentPolicy)
-            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
+            .tabBar(this.bottomTab($r('sys.symbol.list_bullet'), '大纲'))
         }
         if (this.wide) {
           TabContent() { this.SplitPage() }
             .attributeModifier(this.tabContentPolicy)
-            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
+            .tabBar(this.bottomTab($r('sys.symbol.rectangle_split_2x1'), '分栏'))
         }
       }
       // HdsTabs (ui-design-hdstabs)：存在 BottomTabBarStyle 时，未设置动画时长即使用官方默认值。
@@ -766,38 +772,9 @@ export struct DocumentView {
       .attributeModifier(this.tabsPolicy)
       .width('100%')
       .height('100%')
-      if (this.toolbarPosition === 'top' && this.formatBarWanted()) {
-        this.TopFormatBar()
-      }
-      if (this.toolbarPosition !== 'top' && this.formatBarWanted()) {
-        this.SideFormatBar()
-      }
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  private SideFormatBar() {
-    if (this.toolbarPosition === 'left') {
-      FormatBarView({
-        visible: true,
-        formatId: this.formatId,
-        horizontal: false,
-        onInsert: (action: InsertAction): void => this.insertToken(action)
-      })
-        .align(Alignment.Start)
-        .margin({ left: $r('sys.float.margin_left') })
-    } else {
-      FormatBarView({
-        visible: true,
-        formatId: this.formatId,
-        horizontal: false,
-        onInsert: (action: InsertAction): void => this.insertToken(action)
-      })
-        .align(Alignment.End)
-        .margin({ right: $r('sys.float.margin_right') })
-    }
   }
 
   /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */

@@ -1,43 +1,34 @@
 # MarkNote
 
-MarkNote 是 HarmonyOS 上的本地文稿编辑器。界面、导航、编辑、查找、大纲和主题由 ArkUI 实现；ArkWeb 只负责渲染离线预览，不参与编辑。
+MarkNote 是 HarmonyOS 上的本地文稿编辑器。应用使用 ArkUI 提供导航和编辑功能，使用 ArkWeb 渲染离线预览。
 
-## 支持的格式
+## 功能
 
-| 格式 | 编辑 | 预览 |
-| --- | --- | --- |
-| `.md` `.markdown` | ArkUI TextArea | markdown-it 15.0.3，支持表格、代码围栏、KaTeX 公式和 `svg` 代码围栏 |
-| `.txt` | ArkUI TextArea | 原样显示纯文本，保留空格、换行和缩进，不解释 Markdown |
-| `.svg` | ArkUI TextArea | 经 DOMPurify 清理的静态 SVG，不含脚本、动画和外链 |
-| `.tex` | ArkUI TextArea | KaTeX 0.19.1 数学表达式，不编译完整 TeX 文档 |
+MarkNote 可以新建文稿，通过系统文件选择器或文件管理器打开文件，并保存或另存为。应用会记录最近文稿，并在异常退出后尝试恢复未保存的草稿。文稿页提供预览、源码编辑、查找替换和 Markdown 大纲；在宽屏设备上，还可以分栏显示编辑和预览。
 
-预览所需的 JavaScript、样式和数学字体都打包在 HAP 内，运行时不访问网络。
+| 格式 | 预览方式 |
+| --- | --- |
+| Markdown（`.md`、`.markdown`） | 渲染 Markdown、表格、代码围栏、数学公式和 SVG 代码围栏 |
+| 纯文本（`.txt`） | 显示原文，保留空格、换行和缩进 |
+| SVG（`.svg`） | 清理后显示静态图形 |
+| LaTeX（`.tex`） | 使用 KaTeX 渲染数学表达式，不编译完整 TeX 文档 |
 
-## 能做什么
+文件读写支持 UTF-8、UTF-16 LE/BE 和 GB18030。保存时保留原编码、BOM 和换行方式，并在写入前检查外部修改。详细行为和限制见[功能目录](docs/FEATURES.md)。
 
-首页可以新建文稿、通过系统文件选择器打开文件、恢复未保存的草稿，并列出最近文稿。系统文件管理器也能把上述四种文件交给 MarkNote，直接进入编辑页。
-
-编辑页提供源码编辑、离线预览、Markdown 大纲、查找替换、保存和另存为；屏幕足够宽时可以分栏对照。文件读写支持 UTF-8、UTF-16 LE/BE 和 GB18030，保存时按原编码、BOM 和换行写回。写入前会比对字节指纹，以发现文件是否被外部修改。外观可以设为跟随系统、浅色或深色。
-
-各项功能的具体边界和已知限制集中在 [docs/FEATURES.md](docs/FEATURES.md)。`examples/` 提供 Markdown、SVG 和 TeX 三种格式的示例文件，仅供对照，应用运行时不读取该目录。
+预览所需的脚本、样式和字体随应用打包；预览页面不访问网络。`examples/` 包含 Markdown、SVG 和 TeX 示例文件，供手动打开查看。
 
 ## 文档
 
-| 文件 | 内容 |
-| --- | --- |
-| [docs/FEATURES.md](docs/FEATURES.md) | 已接入的用户功能、实际限制与负责代码 |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 模块职责与数据流向 |
-| [docs/STRUCTURE.md](docs/STRUCTURE.md) | 目录与文件用途 |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 环境、构建、签名与提交要求 |
-| [docs/STORE_RELEASE.md](docs/STORE_RELEASE.md) | 上架前必须完成的事项 |
-| [docs/PRIVACY.md](docs/PRIVACY.md) | 本机数据行为，以及发行者需要补齐的隐私政策字段 |
-| [third_party/README.md](third_party/README.md) | 直接依赖及其许可证 |
-| [AGENTS.md](AGENTS.md) | 修改代码时需要遵守的项目边界 |
+- [功能目录](docs/FEATURES.md)：已实现的功能、限制和相关代码。
+- [架构](docs/ARCHITECTURE.md)：模块职责与数据流。
+- [仓库结构](docs/STRUCTURE.md)：目录、文件及常见改动的位置。
+- [构建与贡献](CONTRIBUTING.md)：开发环境、构建和验证方法。
+- [隐私说明](docs/PRIVACY.md)与[上架准备](docs/STORE_RELEASE.md)：数据行为及发布前需要核对的事项。
+- [第三方组件与许可证](third_party/README.md)：依赖、许可证和声明生成方式。
+- [项目开发约定](AGENTS.md)：修改项目时需要遵守的边界。
 
-## 开源许可证
+## 许可证
 
-MarkNote 采用 GNU General Public License v3.0（GPL-3.0-only）许可证开源。
+MarkNote 采用 GNU General Public License v3.0（GPL-3.0-only）。
 
-Copyright (C) 2026 Zhou Yi.
-
-详见 [LICENSE](LICENSE)。
+Copyright (C) 2026 Zhou Yi. 详见 [LICENSE](LICENSE)。
