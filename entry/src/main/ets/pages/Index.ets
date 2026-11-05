@@ -1,7 +1,7 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import {
   ComponentContent, ComposeListItem, IconType, mediaquery, SegmentButton, SegmentButtonItemTuple,
-  SegmentButtonOptions, SubHeader, SymbolGlyphModifier
+  SegmentButtonOptions, SubHeader, SymbolGlyphModifier, window
 } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
@@ -18,6 +18,7 @@ import { DocumentFormat, FormatRegistry, InsertAction } from '../document/Format
 import { SearchHit, TextSearch } from '../document/TextSearch';
 import { EditHistory, EditStep } from '../document/EditHistory';
 import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
+import { FormatBarView } from './FormatBarView';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 
@@ -111,6 +112,8 @@ struct Index {
   @State private source: string = '';
   @State private savedText: string = '';
   @State private selectedTab: number = TAB_PREVIEW;
+  /** Format id of the open document, kept as state so the format bar rebuilds on switch. */
+  @State private formatId: string = '';
   @State private headings: Heading[] = [];
   @State private recents: RecentDocument[] = [];
   @State private theme: string = 'system';
@@ -124,10 +127,21 @@ struct Index {
   /** Drives the enabled state of the title bar undo and redo icons. */
   @State private undoAvailable: boolean = false;
   @State private redoAvailable: boolean = false;
-  /** True while the editor has focus, so the format bar can replace the tab bar. */
-  @State private formatBarShown: boolean = false;
+  /** 软键盘是否在屏幕上。格式栏和页签栏的切换都跟着它走。 */
+  @State private typing: boolean = false;
+  /** 键盘顶端到页面底部的距离（vp）。页面不随键盘压缩，所以位置要自己算。 */
+  @State private keyboardInset: number = 0;
   private history: EditHistory = new EditHistory();
   private context: common.UIAbilityContext | null = null;
+  private mainWindow: window.Window | null = null;
+  /** 键盘高度监听是否已生效；生效后格式栏只跟键盘走，不再用焦点兜底。 */
+  private keyboardBound: boolean = false;
+  /** 绑定监听时的窗口高度（px），用来判断窗口是否已经替我们避让过键盘。 */
+  private windowHeightPx: number = 0;
+  /** 当前键盘高度（px），0 表示没有键盘。 */
+  private keyboardHeightPx: number = 0;
+  /** 工作区底边在窗口里的位置（px），由 onAreaChange 实测得到。 */
+  private pageBottomPx: number = 0;
   private info: DocumentInfo = new DocumentInfo();
   private cursor: TextAreaController = new TextAreaController();
   private selectionStart: number = 0;
@@ -170,8 +184,49 @@ struct Index {
     };
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.bindWideBreakpoint();
+    this.bindKeyboard();
     this.pickMaterialLevel();
     void this.initialize();
+  }
+
+  /**
+   * 格式栏的显隐和位置都跟着键盘走，而不是跟着输入框焦点走。
+   * 官方 FAQ 把 onFocus/onBlur 列为「间接判断」，而点格式栏里的按钮或展开菜单会让
+   * TextArea 失焦，用 onBlur 隐藏会导致栏自己消失。keyboardHeightChange 弹出时高度
+   * 非零、收起时为 0，是官方给出的可靠信号。
+   *
+   * 这块页面本身不随键盘压缩（实测弹键盘前后窗口高度都是 2832px），页签栏和格式栏都会
+   * 落在键盘后面，所以位置按官方「键盘上方自定义工具栏」的方案二自己算：用工作区实测的
+   * 底边和键盘顶端求差，把栏抬到键盘上方。
+   */
+  private bindKeyboard(): void {
+    if (!this.context) return;
+    window.getLastWindow(this.context).then((win: window.Window) => {
+      this.mainWindow = win;
+      this.keyboardBound = true;
+      this.windowHeightPx = win.getWindowProperties().windowRect.height;
+      win.on('keyboardHeightChange', (height: number) => {
+        this.keyboardHeightPx = height;
+        this.typing = height > 0;
+        this.applyKeyboardInset();
+      });
+    }).catch(() => {
+      // 监听不到键盘时退回焦点事件，由 TextArea 的 onFocus 兜底显示格式栏。
+    });
+  }
+
+  /**
+   * 键盘贴着屏幕底边，页面底边却停在它上面一段（HDS 导航容器自己留了底部空间），
+   * 所以格式栏要抬的距离是「页面底边到键盘顶端」，两边都换算成 px 再减。
+   */
+  private applyKeyboardInset(): void {
+    if (this.keyboardHeightPx <= 0) {
+      this.keyboardInset = 0;
+      return;
+    }
+    const keyboardTopPx = this.windowHeightPx - this.keyboardHeightPx;
+    const gapPx = Math.max(0, this.pageBottomPx - keyboardTopPx);
+    this.keyboardInset = this.getUIContext().px2vp(gapPx);
   }
 
   /**
@@ -202,6 +257,11 @@ struct Index {
 
   aboutToDisappear(): void {
     LaunchRequests.unbind();
+    if (this.mainWindow !== null) {
+      this.mainWindow.off('keyboardHeightChange');
+      this.mainWindow = null;
+    }
+    this.keyboardBound = false;
     if (this.wideQuery !== null) {
       this.wideQuery.off('change');
       this.wideQuery = null;
@@ -493,6 +553,7 @@ struct Index {
     const session = DocumentService.current();
     this.info = session.info;
     this.title = session.info.name;
+    this.formatId = session.info.formatId;
     this.source = session.source;
     this.savedText = session.savedText;
     this.editing = session.editing;
@@ -524,6 +585,8 @@ struct Index {
     this.selectionStart = 0;
     this.selectionEnd = 0;
     this.selectedTab = TAB_PREVIEW;
+    // 新文档从预览开始，编辑区不应带着上一篇的光标或编辑态。
+    this.stopEditing();
     this.searchVisible = false;
     this.settingsOpen = false;
     this.legalOpen = false;
@@ -909,8 +972,13 @@ struct Index {
         .fontFamily('monospace')
         .width('100%')
         .layoutWeight(1)
-        .onFocus(() => { this.formatBarShown = true; })
-        .onBlur(() => { this.formatBarShown = false; })
+        // 切回编辑页签时 Tabs 会把焦点还给上次编辑的 TextArea，光标停在原处并直接拉起键盘，
+        // 手感被打断。enableKeyboardOnFocus(false) 让点击以外的获焦不弹键盘，只有点击文字才弹。
+        // 这是官方「管理软键盘」和 faqs-arkui-932 推荐的写法。
+        .enableKeyboardOnFocus(false)
+        .onFocus(() => {
+          if (!this.keyboardBound) this.typing = true;
+        })
         .onChange((value: string) => this.updateSource(value))
         .onTextSelectionChange((start: number, end: number) => {
           this.selectionStart = start;
@@ -1064,111 +1132,93 @@ struct Index {
    */
   @LocalBuilder
   private WorkspacePage() {
-    Column() {
-      HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
-        // Preview first: opening a document lands in reading view, like the system apps.
-        TabContent() { this.PreviewPage() }
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
-        TabContent() { this.EditPage() }
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
-        // Only formats that declare an outline get the tab; plain text and SVG have none.
-        if (this.currentFormat().outline) {
-          TabContent() { this.OutlinePage() }
-            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
+    // Stack + 底部对齐：页面不会随键盘压缩，所以格式栏用 keyboardInset 抬到键盘顶端。
+    // 这是官方「键盘上方自定义工具栏」FAQ 的方案二。
+    Stack({ alignContent: Alignment.Bottom }) {
+      Column() {
+        HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
+          // Preview first: opening a document lands in reading view, like the system apps.
+          TabContent() { this.PreviewPage() }
+            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
+          TabContent() { this.EditPage() }
+            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
+          // Only formats that declare an outline get the tab; plain text and SVG have none.
+          if (this.currentFormat().outline) {
+            TabContent() { this.OutlinePage() }
+              .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
+          }
+          if (this.wide) {
+            TabContent() { this.SplitPage() }
+              .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
+          }
         }
-        if (this.wide) {
-          TabContent() { this.SplitPage() }
-            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
-        }
+        .onChange((index: number) => {
+          this.selectedTab = index;
+          // 离开编辑页签就退出编辑态：键盘跟着收起，焦点不再挂在隐藏的 TextArea 上，
+          // 回来时也不会把光标和键盘一起带回来。
+          if (index !== TAB_EDIT && index !== this.splitTab()) this.stopEditing();
+          this.schedulePreview();
+        })
+        .barMode(BarMode.Fixed)
+        // barOverlap keeps the bar above the content, so swapping it out for the format bar
+        // does not move the text, and the system material gives the translucent look.
+        .barOverlap(true)
+        .barFloatingStyle(this.floatingBar())
+        // 打字时页签栏收起，底部只留格式栏，避免两行栏叠在一起。
+        .barHeight(this.tabBarHidden() ? 0 : 56)
+        .layoutWeight(1)
+        .width('100%')
       }
-      .onChange((index: number) => { this.selectedTab = index; this.schedulePreview(); })
-      .barMode(BarMode.Fixed)
-      // barOverlap keeps the bar above the content, so swapping it out for the format bar
-      // does not move the text, and the system material gives the translucent look.
-      .barOverlap(true)
-      .barFloatingStyle(this.floatingBar())
-      // While typing, the format bar takes the place of the tab bar. Only one bar is ever
-      // visible, which is what keeps the bottom of the screen from carrying two rows.
-      .barHeight(this.formatBarActive() ? 0 : 56)
-      .layoutWeight(1)
       .width('100%')
+      .height('100%')
+      // 编辑区让开格式栏：栏浮在键盘上方，内容要停在栏的上沿，光标才不会藏在栏后面。
+      .padding({ bottom: this.formatBarActive() ? this.keyboardInset + 56 : 0 })
 
-      // The bar is always built and only toggles visibility: an if branch inside a @Builder
-      // does not rebuild when the state changes, while a property update does.
-      this.FormatBar()
+      // The bar is a real component, so its own @Prop drives the rebuild. A nested @Builder
+      // would not refresh here: the official @Builder guide requires reference passing at
+      // every nesting level for the innermost builder to update.
+      FormatBarView({
+        visible: this.formatBarActive(),
+        formatId: this.formatId,
+        onInsert: (action: InsertAction): void => this.insertToken(action)
+      })
+        .margin({ bottom: this.keyboardInset })
     }
     .width('100%')
     .height('100%')
+    // 实测工作区底边：键盘贴屏幕底边，页面底边却在它上面一段，差多少抬多少。
+    .onAreaChange((_old: Area, now: Area) => {
+      this.pageBottomPx = this.getUIContext().vp2px(Number(now.globalPosition.y) + Number(now.height));
+      this.applyKeyboardInset();
+    })
   }
 
   private formatBarActive(): boolean {
-    return this.formatBarShown && this.formatBarWanted();
+    return this.typing && this.formatBarWanted();
   }
+
+  /** 打字时页签栏让位；没有快捷插入的格式也先收起，避免页签栏被键盘挡住。 */
+  private tabBarHidden(): boolean {
+    return this.typing && this.inEditTab();
+  }
+
+  /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */
+  private stopEditing(): void {
+    this.cursor.stopEditing();
+    this.typing = false;
+    this.keyboardInset = 0;
+  }
+
 
   /** The format bar applies to the editable tab, and to the split tab which also edits. */
   private formatBarWanted(): boolean {
     if (this.currentFormat().inserts.length === 0) return false;
+    return this.inEditTab();
+  }
+
+  /** 编辑页签和分栏页签都能写，格式栏和「退出编辑态」的判断都用它。 */
+  private inEditTab(): boolean {
     return this.selectedTab === TAB_EDIT || this.selectedTab === this.splitTab();
-  }
-
-  /** The four most common inserts stay on the bar; the rest move into the more menu. */
-  private barInserts(): InsertAction[] {
-    return this.currentFormat().inserts.slice(0, 4);
-  }
-
-  private moreInserts(): MenuElement[] {
-    const rest = this.currentFormat().inserts.slice(4);
-    const items: MenuElement[] = [];
-    for (let index = 0; index < rest.length; index++) {
-      const action = rest[index];
-      items.push({
-        value: action.label,
-        symbolIcon: new SymbolGlyphModifier(action.symbol),
-        action: (): void => this.insertToken(action)
-      });
-    }
-    return items;
-  }
-
-  /**
-   * @LocalBuilder, not @Builder: a plain nested @Builder does not keep the state parent-child
-   * relationship, so its attributes stop following @State changes. The official guide on
-   * @LocalBuilder describes exactly this case.
-   */
-  @LocalBuilder
-  private FormatBar() {
-    Row() {
-      ForEach(this.barInserts(), (action: InsertAction) => {
-        Column() {
-          SymbolGlyph(action.symbol)
-            .fontSize($r('sys.float.ohos_id_text_size_headline7'))
-            .fontColor([$r('sys.color.font_primary')])
-        }
-        .layoutWeight(1)
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .accessibilityText(action.label)
-        .onClick(() => this.insertToken(action))
-      }, (action: InsertAction) => action.token)
-
-      if (this.currentFormat().inserts.length > 4) {
-        Column() {
-          SymbolGlyph($r('sys.symbol.more'))
-            .fontSize($r('sys.float.ohos_id_text_size_headline7'))
-            .fontColor([$r('sys.color.font_primary')])
-        }
-        .layoutWeight(1)
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .accessibilityText('更多格式')
-        .bindMenu(this.moreInserts())
-      }
-    }
-    .width('100%')
-    .height(56)
-    .id('marknote-format-bar')
-    .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-    .visibility(this.formatBarActive() ? Visibility.Visible : Visibility.None)
   }
 
   /**
