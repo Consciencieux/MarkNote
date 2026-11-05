@@ -2,7 +2,11 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { FormatRegistry, InsertAction } from '../document/FormatRegistry';
 
 /**
- * The insert bar that sits above the keyboard while editing.
+ * The insert bar that sits under the title bar on the edit tab.
+ *
+ * It is a fixed row, not an accessory view that follows the keyboard: the page keeps its
+ * content below the title bar (the same layout the system notes app uses), so the bar never
+ * has to be repositioned when the keyboard opens or closes.
  *
  * This is a real @Component rather than a @Builder on purpose. The official @Builder guide
  * says a nested @Builder only refreshes when every level passes its parameters by reference,
@@ -12,7 +16,7 @@ import { FormatRegistry, InsertAction } from '../document/FormatRegistry';
  */
 @Component
 export struct FormatBarView {
-  /** Shown only while the keyboard is up and the format has inserts. */
+  /** Shown only on the tabs that can edit, and only for formats that declare inserts. */
   @Prop visible: boolean = false;
   @Prop formatId: string = '';
   onInsert: (action: InsertAction) => void = (_action: InsertAction): void => {};
@@ -77,7 +81,9 @@ export struct FormatBarView {
       .width('100%')
       .height(56)
       .id('marknote-format-bar')
-      .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+      // 实心底色：这一行是固定布局的一部分，不叠加在正文上，所以不需要模糊背板。
+      .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
+      .border({ width: { bottom: 1 }, color: $r('sys.color.comp_divider') })
     }
   }
 }

@@ -1,11 +1,12 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { SymbolGlyphModifier, window } from '@kit.ArkUI';
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import {
-  HdsNavDestination, HdsNavDestinationTitleMode,
+  HdsNavDestination, HdsNavDestinationTitleMode, BlurStrategy,
   ScrollEffectType, IconStyleMode, hdsMaterial, HdsNavigationTitle, HdsNavigationIconOptions,
   HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions, TitleBarContentOptions,
   TitleBarStyleOptions, HdsNavigationTitleBarOptions, ScrollEffectOptions, SystemMaterialParams,
+  HdsNavigationTitleBarStyle, HdsNavigationBackgroundStyle,
   HdsTabs, HdsTabsFloatingStyle
 } from '@kit.UIDesignKit';
 import { DocumentInfo, Heading, RecoveryData, linesIn } from '../model/Document';
@@ -65,21 +66,8 @@ export struct DocumentView {
   /** Drives the enabled state of the title bar undo and redo icons. */
   @State private undoAvailable: boolean = false;
   @State private redoAvailable: boolean = false;
-  /** 软键盘是否在屏幕上。格式栏和页签栏的切换都跟着它走。 */
-  @State private typing: boolean = false;
-  /** 键盘顶端到页面底部的距离（vp）。页面不随键盘压缩，所以位置要自己算。 */
-  @State private keyboardInset: number = 0;
   private history: EditHistory = new EditHistory();
   private context: common.UIAbilityContext | null = null;
-  private mainWindow: window.Window | null = null;
-  /** 键盘高度监听是否已生效；生效后格式栏只跟键盘走，不再用焦点兜底。 */
-  private keyboardBound: boolean = false;
-  /** 绑定监听时的窗口高度（px），用来判断窗口是否已经替我们避让过键盘。 */
-  private windowHeightPx: number = 0;
-  /** 当前键盘高度（px），0 表示没有键盘。 */
-  private keyboardHeightPx: number = 0;
-  /** 工作区底边在窗口里的位置（px），由 onAreaChange 实测得到。 */
-  private pageBottomPx: number = 0;
   private info: DocumentInfo = new DocumentInfo();
   private cursor: TextAreaController = new TextAreaController();
   private selectionStart: number = 0;
@@ -89,7 +77,6 @@ export struct DocumentView {
 
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    this.bindKeyboard();
     this.pickMaterialLevel();
     // 文稿页自己的菜单项：另存为和查找只对当前文稿有意义。
     menuBridge.saveAs = (): void => {
@@ -109,46 +96,6 @@ export struct DocumentView {
 
 
   /**
-   * 格式栏的显隐和位置都跟着键盘走，而不是跟着输入框焦点走。
-   * 官方 FAQ 把 onFocus/onBlur 列为「间接判断」，而点格式栏里的按钮或展开菜单会让
-   * TextArea 失焦，用 onBlur 隐藏会导致栏自己消失。keyboardHeightChange 弹出时高度
-   * 非零、收起时为 0，是官方给出的可靠信号。
-   *
-   * 这块页面本身不随键盘压缩（实测弹键盘前后窗口高度都是 2832px），页签栏和格式栏都会
-   * 落在键盘后面，所以位置按官方「键盘上方自定义工具栏」的方案二自己算：用工作区实测的
-   * 底边和键盘顶端求差，把栏抬到键盘上方。
-   */
-  private bindKeyboard(): void {
-    if (!this.context) return;
-    window.getLastWindow(this.context).then((win: window.Window) => {
-      this.mainWindow = win;
-      this.keyboardBound = true;
-      this.windowHeightPx = win.getWindowProperties().windowRect.height;
-      win.on('keyboardHeightChange', (height: number) => {
-        this.keyboardHeightPx = height;
-        this.typing = height > 0;
-        this.applyKeyboardInset();
-      });
-    }).catch(() => {
-      // 监听不到键盘时退回焦点事件，由 TextArea 的 onFocus 兜底显示格式栏。
-    });
-  }
-
-  /**
-   * 键盘贴着屏幕底边，页面底边却停在它上面一段（HDS 导航容器自己留了底部空间），
-   * 所以格式栏要抬的距离是「页面底边到键盘顶端」，两边都换算成 px 再减。
-   */
-  private applyKeyboardInset(): void {
-    if (this.keyboardHeightPx <= 0) {
-      this.keyboardInset = 0;
-      return;
-    }
-    const keyboardTopPx = this.windowHeightPx - this.keyboardHeightPx;
-    const gapPx = Math.max(0, this.pageBottomPx - keyboardTopPx);
-    this.keyboardInset = this.getUIContext().px2vp(gapPx);
-  }
-
-  /**
    * 设备不支持 IMMERSIVE 材质类型时降级到 SMOOTH，避免底部页签的沉浸光感拖慢低算力设备。
    * 判断方式取自官方沉浸光感示例。
    */
@@ -161,10 +108,6 @@ export struct DocumentView {
     this.materialLevel = level;
   }
 
-  /**
-   * 分栏阈值用官方媒体查询监听窗口宽度，不再在 Tabs 的 onAreaChange 里自己算宽度。
-   * 720vp 与系统推荐的横向断点一致。
-   */
   /** 窄屏收起分栏时回到预览，和之前媒体查询监听里的行为一致。 */
   private onWideChange(): void {
     if (!this.wide && this.selectedTab === this.splitTab()) this.selectedTab = TAB_PREVIEW;
@@ -193,11 +136,6 @@ export struct DocumentView {
   }
 
   aboutToDisappear(): void {
-    if (this.mainWindow !== null) {
-      this.mainWindow.off('keyboardHeightChange');
-      this.mainWindow = null;
-    }
-    this.keyboardBound = false;
     this.flushRecovery();
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     if (this.previewTimer >= 0) clearTimeout(this.previewTimer);
@@ -232,18 +170,26 @@ export struct DocumentView {
     return item;
   }
 
-  private titleStyle(scrolls: boolean): TitleBarStyleOptions {
+  /**
+   * 文稿页用「内容在标题栏下方截断」的布局，和系统「备忘录」一致：编辑区不延伸到按钮下面，
+   * 所以这里不需要标题栏模糊。模糊的官方适用场景都是「内容滚动到标题栏下方」——沉浸式图文
+   * （照片、运动健康）用 GRADIENT_BLUR，列表型用 COMMON_BLUR。编辑页上面是可编辑的
+   * TextArea，内容若压到按钮和工具栏后面，光标与选区手柄都会错位，所以直接关掉模糊，
+   * 用不透明背板。BlurStrategy.DISABLE 是官方关闭模糊的开关。
+   */
+  private titleStyle(): TitleBarStyleOptions {
     const scroll: ScrollEffectOptions = {
-      enableScrollEffect: scrolls,
-      scrollEffectType: ScrollEffectType.GRADIENT_BLUR
+      enableScrollEffect: false,
+      scrollEffectType: ScrollEffectType.COMMON_BLUR
     };
-    const material: SystemMaterialParams = {
-      materialType: hdsMaterial.MaterialType.ADAPTIVE,
-      materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+    const background: HdsNavigationBackgroundStyle = {
+      backgroundColor: $r('sys.color.ohos_id_color_background')
     };
+    const original: HdsNavigationTitleBarStyle = { backgroundStyle: background };
     const style: TitleBarStyleOptions = {
       scrollEffectOpts: scroll,
-      systemMaterialEffect: material
+      originalStyle: original,
+      blurStrategy: BlurStrategy.DISABLE
     };
     return style;
   }
@@ -268,7 +214,7 @@ export struct DocumentView {
     const content: TitleBarContentOptions = { title: heading, menu: menu };
     const options: HdsNavigationTitleBarOptions = {
       enableComponentSafeArea: true,
-      style: this.titleStyle(false),
+      style: this.titleStyle(),
       content: content
     };
     return options;
@@ -595,6 +541,12 @@ export struct DocumentView {
   @Builder
   private EditPage() {
     Column() {
+      // 格式栏常驻在标题栏下方，不跟键盘移动。实心一行，和「备忘录」的编辑区一致。
+      FormatBarView({
+        visible: this.formatBarWanted(),
+        formatId: this.formatId,
+        onInsert: (action: InsertAction): void => this.insertToken(action)
+      })
       if (this.searchVisible) {
         this.FindBar()
       }
@@ -603,13 +555,14 @@ export struct DocumentView {
         .fontFamily('monospace')
         .width('100%')
         .layoutWeight(1)
+        // TextArea 默认带一层灰底和圆角。编辑区应该就是页面本身，所以底色透明、圆角归零，
+        // 只在上面留格式栏的次级底色和一条分隔线，看上去和预览页是同一张纸。
+        .backgroundColor(Color.Transparent)
+        .borderRadius(0)
         // 切回编辑页签时 Tabs 会把焦点还给上次编辑的 TextArea，光标停在原处并直接拉起键盘，
         // 手感被打断。enableKeyboardOnFocus(false) 让点击以外的获焦不弹键盘，只有点击文字才弹。
         // 这是官方「管理软键盘」和 faqs-arkui-932 推荐的写法。
         .enableKeyboardOnFocus(false)
-        .onFocus(() => {
-          if (!this.keyboardBound) this.typing = true;
-        })
         .onChange((value: string) => this.updateSource(value))
         .onTextSelectionChange((start: number, end: number) => {
           this.selectionStart = start;
@@ -618,6 +571,7 @@ export struct DocumentView {
     }
     .width('100%')
     .height('100%')
+    .backgroundColor($r('sys.color.ohos_id_color_background'))
   }
 
   /**
@@ -714,89 +668,50 @@ export struct DocumentView {
   }
 
   /**
-   * @LocalBuilder, not @Builder: this subtree contains an if branch for the outline tab and
-   * the format bar, and a plain nested @Builder does not keep the state parent-child
-   * relationship, so those branches would not rebuild when the state changes.
+   * @LocalBuilder, not @Builder: this subtree contains an if branch for the outline tab,
+   * and a plain nested @Builder does not keep the state parent-child relationship, so that
+   * branch would not rebuild when the state changes.
+   *
+   * 内容在标题栏下方截断，页签栏固定在底部，两者都不随键盘移动，所以这里只是一列普通布局。
    */
   @LocalBuilder
   private WorkspacePage() {
-    // Stack + 底部对齐：页面不会随键盘压缩，所以格式栏用 keyboardInset 抬到键盘顶端。
-    // 这是官方「键盘上方自定义工具栏」FAQ 的方案二。
-    Stack({ alignContent: Alignment.Bottom }) {
-      Column() {
-        HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
-          // Preview first: opening a document lands in reading view, like the system apps.
-          TabContent() { this.PreviewPage() }
-            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
-          TabContent() { this.EditPage() }
-            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
-          // Only formats that declare an outline get the tab; plain text and SVG have none.
-          if (this.currentFormat().outline) {
-            TabContent() { this.OutlinePage() }
-              .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
-          }
-          if (this.wide) {
-            TabContent() { this.SplitPage() }
-              .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
-          }
-        }
-        .onChange((index: number) => {
-          this.selectedTab = index;
-          // 离开编辑页签就退出编辑态：键盘跟着收起，焦点不再挂在隐藏的 TextArea 上，
-          // 回来时也不会把光标和键盘一起带回来。
-          if (index !== TAB_EDIT && index !== this.splitTab()) this.stopEditing();
-          this.schedulePreview();
-        })
-        .barMode(BarMode.Fixed)
-        // barOverlap keeps the bar above the content, so swapping it out for the format bar
-        // does not move the text, and the system material gives the translucent look.
-        .barOverlap(true)
-        .barFloatingStyle(this.floatingBar())
-        // 打字时页签栏收起，底部只留格式栏，避免两行栏叠在一起。
-        .barHeight(this.tabBarHidden() ? 0 : 56)
-        .layoutWeight(1)
-        .width('100%')
+    HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
+      // Preview first: opening a document lands in reading view, like the system apps.
+      TabContent() { this.PreviewPage() }
+        .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
+      TabContent() { this.EditPage() }
+        .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
+      // Only formats that declare an outline get the tab; plain text and SVG have none.
+      if (this.currentFormat().outline) {
+        TabContent() { this.OutlinePage() }
+          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
       }
-      .width('100%')
-      .height('100%')
-      // 编辑区让开格式栏：栏浮在键盘上方，内容要停在栏的上沿，光标才不会藏在栏后面。
-      .padding({ bottom: this.formatBarActive() ? this.keyboardInset + 56 : 0 })
-
-      // The bar is a real component, so its own @Prop drives the rebuild. A nested @Builder
-      // would not refresh here: the official @Builder guide requires reference passing at
-      // every nesting level for the innermost builder to update.
-      FormatBarView({
-        visible: this.formatBarActive(),
-        formatId: this.formatId,
-        onInsert: (action: InsertAction): void => this.insertToken(action)
-      })
-        .margin({ bottom: this.keyboardInset })
+      if (this.wide) {
+        TabContent() { this.SplitPage() }
+          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
+      }
     }
+    .onChange((index: number) => {
+      this.selectedTab = index;
+      // 离开编辑页签就退出编辑态：键盘跟着收起，焦点不再挂在隐藏的 TextArea 上，
+      // 回来时也不会把光标和键盘一起带回来。
+      if (index !== TAB_EDIT && index !== this.splitTab()) this.stopEditing();
+      this.schedulePreview();
+    })
+    .barMode(BarMode.Fixed)
+    // barOverlap 让页签栏浮在内容之上，底部页签的沉浸光感才有内容可映。页签栏不再随键盘
+    // 收起或换行，底部始终只有这一条，动画连续。
+    .barOverlap(true)
+    .barFloatingStyle(this.floatingBar())
     .width('100%')
     .height('100%')
-    // 实测工作区底边：键盘贴屏幕底边，页面底边却在它上面一段，差多少抬多少。
-    .onAreaChange((_old: Area, now: Area) => {
-      this.pageBottomPx = this.getUIContext().vp2px(Number(now.globalPosition.y) + Number(now.height));
-      this.applyKeyboardInset();
-    })
-  }
-
-  private formatBarActive(): boolean {
-    return this.typing && this.formatBarWanted();
-  }
-
-  /** 打字时页签栏让位；没有快捷插入的格式也先收起，避免页签栏被键盘挡住。 */
-  private tabBarHidden(): boolean {
-    return this.typing && this.inEditTab();
   }
 
   /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */
   private stopEditing(): void {
     this.cursor.stopEditing();
-    this.typing = false;
-    this.keyboardInset = 0;
   }
-
 
   /** The format bar applies to the editable tab, and to the split tab which also edits. */
   private formatBarWanted(): boolean {

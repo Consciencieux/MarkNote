@@ -15,7 +15,7 @@
 
 ## 界面
 
-首页是 `HdsNavigation`，文稿页是 `HdsNavDestination`，标题栏材质跟随系统。新建和打开入口留在首页内容区，保存、查找和更多入口位于文稿页标题栏。编辑、预览、大纲和分栏由 `Tabs` 切换，宽度达到 720vp 时出现分栏。键盘避让使用 `RESIZE_WITH_CARET`。
+首页是 `HdsNavigation`，文稿页是 `HdsNavDestination`。首页列表滚到标题栏下方，标题栏材质跟随系统；文稿页内容在标题栏下方截断，所以关闭标题栏模糊、用不透明背板。新建和打开入口留在首页内容区，保存、查找和更多入口位于文稿页标题栏。编辑、预览、大纲和分栏由 `Tabs` 切换，宽度达到 720vp 时出现分栏。键盘避让使用 `RESIZE_WITH_CARET`，页面内的工具栏和页签栏都不随键盘重新定位。
 
 标题栏的四宫格菜单用 `Menu`、`MenuItemGroup` 和 `MenuItem` 实现，通过 `promptAction.openMenu` 锚定到标题栏图标，菜单项用通用的 `.onClick()` 触发动作。
 

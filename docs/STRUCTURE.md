@@ -13,7 +13,7 @@ marknote
 │   │   │   ├── Index.ets                    首页外壳、导航栈、主题、设置与关于
 │   │   │   ├── HomeView.ets                 首页列表、新建菜单、最近文稿
 │   │   │   ├── DocumentView.ets             文稿页：编辑、预览、大纲、分栏、查找、保存
-│   │   │   ├── FormatBarView.ets            键盘上方的格式栏
+│   │   │   ├── FormatBarView.ets            编辑页顶部的常驻格式栏
 │   │   │   ├── DocumentMenus.ets            首页与文稿页的菜单内容和动作桥
 │   │   │   ├── DocumentBridge.ets           首页与文稿页的未保存询问桥
 │   │   │   ├── SettingsView.ets             外观设置
