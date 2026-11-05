@@ -18,7 +18,7 @@ export struct SettingsDetail {
   scroller: Scroller = new Scroller();
   private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
   private groupStyle: SettingsGroupStyle = new SettingsGroupStyle();
-  /** 路由名，同时就是这一页的 section：appearance、privacy、project-license、licenses、about。 */
+  /** 路由名，同时就是这一页的 section。 */
   @Prop section: string = 'about';
   /** 当前主题取值，和设置首页、Index 共用同一份状态。 */
   @Link theme: string;
@@ -73,10 +73,10 @@ export struct SettingsDetail {
    * 长正文不适合设置行的列表项结构，交给 ArkUI Text 默认排版。
    */
   @Builder
-  private Paragraph(body: string, mono: boolean = false) {
+  private Paragraph(body: string, copyable: boolean = false) {
     Text(body)
       .textAlign(TextAlign.Start)
-      .copyOption(mono ? CopyOptions.LocalDevice : CopyOptions.None)
+      .copyOption(copyable ? CopyOptions.LocalDevice : CopyOptions.None)
   }
 
   build() {

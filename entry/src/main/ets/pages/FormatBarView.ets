@@ -8,7 +8,6 @@ import { FormatRegistry, InsertAction } from '../document/FormatRegistry';
  */
 @ComponentV2
 export struct FormatBarView {
-  @Param visible: boolean = false;
   @Param formatId: string = '';
   @Param horizontal: boolean = true;
   @Param onInsert: (action: InsertAction) => void = (_action: InsertAction): void => {};
@@ -40,8 +39,6 @@ export struct FormatBarView {
   }
 
   build() {
-    if (this.visible) {
-      this.ActionBar()
-    }
+    this.ActionBar()
   }
 }

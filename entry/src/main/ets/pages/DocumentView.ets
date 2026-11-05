@@ -620,8 +620,8 @@ export struct DocumentView {
   }
 
   /**
-   * 编辑页、预览页和分栏共用同一个本地预览页面，差异只有 Web 控制器和就绪标记。
-   * 合成一个构建器，避免三份重复的 Web 配置发生漂移。
+   * 预览页和分栏共用同一个本地预览页面，差异只有 Web 控制器和就绪标记。
+   * 共用构建器，避免 Web 配置发生漂移。
    */
   @Builder
   private PreviewWeb(controller: webview.WebviewController, onReady: () => void) {
@@ -681,7 +681,6 @@ export struct DocumentView {
   @Builder
   private TopFormatBar() {
     FormatBarView({
-      visible: true,
       formatId: this.formatId,
       horizontal: true,
       onInsert: (action: InsertAction): void => this.insertToken(action)
@@ -779,7 +778,6 @@ export struct DocumentView {
   private SideFormatBar() {
     if (this.toolbarPosition === 'left') {
       FormatBarView({
-        visible: true,
         formatId: this.formatId,
         horizontal: false,
         onInsert: (action: InsertAction): void => this.insertToken(action)
@@ -788,7 +786,6 @@ export struct DocumentView {
         .margin({ left: $r('sys.float.margin_left') })
     } else {
       FormatBarView({
-        visible: true,
         formatId: this.formatId,
         horizontal: false,
         onInsert: (action: InsertAction): void => this.insertToken(action)

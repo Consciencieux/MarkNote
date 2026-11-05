@@ -102,7 +102,7 @@ struct Index {
     await this.resumeDraft();
   }
 
-  /** 版本号只读一次，设置里的「关于」行和「关于」页共用。读不到就留空，由界面自己省略。 */
+  /** 版本号只读一次，供「关于」页显示；读取失败时由页面显示提示。 */
   private readVersion(): void {
     try {
       this.version = bundleManager.getBundleInfoForSelfSync(
@@ -224,7 +224,7 @@ struct Index {
   }
 
   /**
-   * 打开设置的二级页：推入设置自己的导航栈，子页从右侧滑入，半模态本身不收起。
+   * 将设置子页推入当前导航栈。
    * 许可证全文按需读一次，其余页面不碰磁盘。
    * 本项目许可证和第三方声明分开放，避免后打开的页面覆盖先打开的全文。
    */

@@ -1,14 +1,11 @@
 /**
  * Static format table. Adding a format is a new entry plus a preview renderer, not a page edit.
  *
- * Each format also owns its toolbar actions. The token, the display label, the system symbol and the
- * text that wraps the selection live together here, so adding a shortcut is one entry instead of four
- * parallel edits.
+ * Each format also owns its toolbar actions: their labels, system symbols and inserted text.
  */
 
 /** One toolbar action: what to insert, how to label it, and which system symbol represents it. */
 export class InsertAction {
-  token: string;
   label: string;
   symbol: Resource;
   /** Text placed before the selection. */
@@ -16,8 +13,7 @@ export class InsertAction {
   /** Text placed after the selection. */
   after: string;
 
-  constructor(token: string, label: string, symbol: Resource, before: string, after: string) {
-    this.token = token;
+  constructor(label: string, symbol: Resource, before: string, after: string) {
     this.label = label;
     this.symbol = symbol;
     this.before = before;
@@ -27,12 +23,12 @@ export class InsertAction {
 
 /** Inserts the token as an inline prefix and keeps the cursor inside it, e.g. bold or italic. */
 function wrap(token: string, label: string, symbol: Resource): InsertAction {
-  return new InsertAction(token, label, symbol, token, token);
+  return new InsertAction(label, symbol, token, token);
 }
 
 /** Inserts the token as a line prefix, e.g. a heading or list marker. */
 function prefix(token: string, label: string, symbol: Resource): InsertAction {
-  return new InsertAction(token, label, symbol, token, '');
+  return new InsertAction(label, symbol, token, '');
 }
 
 export class DocumentFormat {
@@ -88,11 +84,11 @@ const MARKDOWN_INSERTS: InsertAction[] = [
   wrap('**', '加粗', $r('sys.symbol.bold')),
   wrap('*', '斜体', $r('sys.symbol.italic')),
   wrap('`', '代码', $r('sys.symbol.code')),
-  new InsertAction('[]()', '链接', $r('sys.symbol.link'), '[', '](url)'),
+  new InsertAction('链接', $r('sys.symbol.link'), '[', '](url)'),
   prefix('- ', '列表', $r('sys.symbol.list_bullet')),
   prefix('- [ ] ', '待办', $r('sys.symbol.checkmark_square')),
   wrap('$', '公式', $r('sys.symbol.sum_rectangle_fill')),
-  new InsertAction('```', '代码块', $r('sys.symbol.code_square'), '```\n', '\n```')
+  new InsertAction('代码块', $r('sys.symbol.code_square'), '```\n', '\n```')
 ];
 
 const FORMATS: DocumentFormat[] = [
