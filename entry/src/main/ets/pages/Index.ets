@@ -249,8 +249,7 @@ struct Index {
   }
 
   /**
-   * 切换文稿前的保存决策由文稿页决定：已保存过且有写权限的文件直接写回，不再询问；
-   * 只有无法静默写入的情况才让用户选择。首页只负责等结果。
+   * 切换文稿前由文稿页处理未保存的修改：有改动就先询问，不直接写回。首页只负责等结果。
    */
   private confirmSwitch(proceed: () => Promise<void>): void {
     void documentBridge.saveBeforeLeaving().then((ok: boolean) => {

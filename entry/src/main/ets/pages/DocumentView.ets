@@ -244,59 +244,60 @@ export struct DocumentView {
   }
 
   /**
-   * 切换文稿前的保存决策，规则参考各平台编辑器的通行做法：
-   * 已保存过且有写权限的文件直接写回，不再询问；只有无法静默写入的情况才让用户选择，
-   * 也就是新建文稿还没有文件名、文件只读，或写回失败。
+   * 离开前只要正文和上次保存不同，就先问用户。不因为文件可写就直接写回。
    * 草稿副本只用于崩溃兜底，不再作为「未保存」的常驻入口。
    */
   private async saveBeforeLeaving(): Promise<boolean> {
-    // 编辑态只在会话里有一份，页面不再另存一份副本。
     if (!DocumentService.current().editing || !this.isDirty()) return true;
-    const canWriteInPlace = this.info.uri.length > 0 && this.info.writable;
-    if (canWriteInPlace && await this.saveFile(false)) return true;
     return await this.askSaveOrDiscard();
   }
 
   /**
-   * 未保存的退出确认。AlertDialog API 与 arkts-fixes-style-dialog 的场景说明包含“取消编辑”；
-   * 多按钮默认排布为 AUTO，按钮样式使用 DEFAULT，只有主操作“保存”使用 HIGHLIGHT。
+   * 未保存的退出确认。问句只留一句。
+   * 《警告弹窗》里两个及以下按钮在 AUTO 下水平排布，这里显式用 HORIZONTAL：
+   * 数组第一项在左，第二项在右。两边都用 DialogButtonStyle.DEFAULT（白底蓝字，
+   * 深色主题为黑底蓝字），不改字色，也不用 HIGHLIGHT（那是蓝底白字）。
+   * 没有取消按钮。onWillDismiss 拦截侧滑、返回键和点击遮罩，关闭后留在文稿。
+   * 侧滑和返回键的 reason 是 PRESS_BACK（ts-methods-alert-dialog-box，DismissReason）。
    */
   private askSaveOrDiscard(): Promise<boolean> {
-    // The reason matters: an unnamed document needs a name, a read-only one needs another
-    // location, and a failed write may be an external modification.
-    let message = '这份文稿没能写回原文件。可以先另存为，也可以放弃修改。';
-    let saveLabel = '另存为';
-    if (this.info.uri.length === 0) {
-      message = '这份文稿还没有保存到文件。可以先保存，也可以放弃修改。';
-      saveLabel = '保存';
-    } else if (!this.info.writable) {
-      message = '这个文件没有写入权限。可以另存为新文件，也可以放弃修改。';
-    }
+    const saveLabel = this.info.uri.length > 0 && !this.info.writable ? '另存为' : '保存';
     return new Promise<boolean>((resolve: (leave: boolean) => void) => {
+      let settled = false;
+      const finish = (leave: boolean): void => {
+        if (settled) return;
+        settled = true;
+        resolve(leave);
+      };
       this.getUIContext().showAlertDialog({
-        title: '未保存的修改',
-        message: message,
+        message: '是否保存更改？',
         autoCancel: true,
-        cancel: (): void => resolve(false),
+        buttonDirection: DialogButtonDirection.HORIZONTAL,
         buttons: [
           {
+            value: '不保存',
+            style: DialogButtonStyle.DEFAULT,
+            action: (): void => finish(true)
+          },
+          {
             value: saveLabel,
-            style: DialogButtonStyle.HIGHLIGHT,
+            style: DialogButtonStyle.DEFAULT,
+            primary: true,
             action: (): void => {
               this.saveFile(this.info.uri.length > 0 && !this.info.writable)
-                .then((saved: boolean) => resolve(saved))
-                .catch(() => resolve(false));
+                .then((saved: boolean) => finish(saved))
+                .catch(() => finish(false));
             }
-          },
-          {
-            value: '放弃修改',
-            action: (): void => resolve(true)
-          },
-          {
-            value: '取消',
-            action: (): void => resolve(false)
           }
-        ]
+        ],
+        cancel: (): void => finish(false),
+        onWillDismiss: (dismissDialogAction: DismissDialogAction): void => {
+          if (dismissDialogAction.reason === DismissReason.PRESS_BACK ||
+            dismissDialogAction.reason === DismissReason.TOUCH_OUTSIDE) {
+            dismissDialogAction.dismiss();
+            finish(false);
+          }
+        }
       });
     });
   }
