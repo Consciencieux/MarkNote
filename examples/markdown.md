@@ -1,4 +1,4 @@
-# Marknote 文稿示例
+# MarkNote 文稿示例
 
 这是使用 **ArkUI 原生编辑** 与 **ArkWeb 本地预览** 的 Markdown 文稿。
 

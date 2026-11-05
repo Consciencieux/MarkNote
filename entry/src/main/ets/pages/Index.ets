@@ -1,71 +1,85 @@
-import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { SymbolGlyphModifier } from '@kit.ArkUI';
-import { webview } from '@kit.ArkWeb';
+import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
+import { ComponentContent, mediaquery } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
-import { DocumentInfo, Heading, RecentDocument, RecoveryData, linesIn } from '../model/Document';
+import {
+  HdsNavigation, HdsNavigationTitleMode,
+  HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
+  HdsNavigationTitleBarOptions
+} from '@kit.UIDesignKit';
+import { RecentDocument } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
-import { DocumentFormat, FormatRegistry } from '../document/FormatRegistry';
 import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
+import { HomeView } from './HomeView';
+import { DocumentView } from './DocumentView';
+import { SettingsPage } from './SettingsPage';
+import { scrollingTitleBar } from './HdsMaterialStyles';
+import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
+import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 
-interface ActionChoice {
-  title: string;
-  action: () => void;
-}
-
+/**
+ * 首页外壳：导航栈、主题、设置与关于，以及新建/打开/恢复的编排。
+ * 文稿页自己的状态和保存逻辑在 DocumentView，两边通过 MenuBridge 和 DocumentBridge 通信。
+ */
 @Entry
 @Component
 struct Index {
-  @State private editing: boolean = false;
-  @State private showLegal: boolean = false;
   @State private legalText: string = '';
-  private preview: webview.WebviewController = new webview.WebviewController();
-  private splitPreview: webview.WebviewController = new webview.WebviewController();
-  private previewReady: boolean = false;
-  private splitReady: boolean = false;
-  private previewTimer: number = -1;
-  @State private title: string = '未命名.md';
-  @State private source: string = '';
-  @State private savedText: string = '';
-  @State private selectedTab: number = 0;
-  @State private headings: Heading[] = [];
+  @State private projectLicenseText: string = '';
   @State private recents: RecentDocument[] = [];
-  @State private recoveryAvailable: boolean = false;
   @State private theme: string = 'system';
-  @State private saving: boolean = false;
+  @State private toolbarPosition: string = 'top';
+  @State private version: string = '';
   @State private wide: boolean = false;
-  @State private searchVisible: boolean = false;
-  @State private query: string = '';
-  @State private replacement: string = '';
-  @State private currentMatch: number = -1;
+  /** 每开一篇加一，文稿页据此重新载入会话。 */
+  @State private revision: number = 0;
   private context: common.UIAbilityContext | null = null;
-  private info: DocumentInfo = new DocumentInfo();
-  private recovery: RecoveryData | null = null;
-  private cursor: TextAreaController = new TextAreaController();
-  private selectionStart: number = 0;
-  private selectionEnd: number = 0;
-  private recoveryTimer: number = -1;
+  private routes: NavPathStack = new NavPathStack();
+  private libraryScroller: Scroller = new Scroller();
+  private wideQuery: mediaquery.MediaQueryListener | null = null;
+  private homeMenu: ComponentContent<Object> | null = null;
+  private documentMenu: ComponentContent<Object> | null = null;
 
   aboutToAppear(): void {
+    menuBridge.confirmNew = (id: string): void => {
+      this.afterMenu(() => this.confirmSwitch(() => this.startNew(id)));
+    };
+    menuBridge.openFile = (): void => {
+      this.afterMenu(() => this.confirmSwitch(() => this.pickOpen()));
+    };
+    menuBridge.openSettings = (): void => {
+      this.afterMenu(() => this.routes.pushPathByName('settings', ''));
+    };
+    menuBridge.closeLibrary = (): void => {
+      this.afterMenu(() => this.leaveDocument());
+    };
+    // 文稿页的标题栏菜单由这里打开：锚点 id 是全局的，菜单关闭也由这里统一收。
+    menuBridge.openDocumentMenu = (): void => this.openDocumentMenu();
+    menuBridge.dismiss = (next: () => void): void => this.afterMenu(next);
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    this.bindWideBreakpoint();
     void this.initialize();
   }
 
   aboutToDisappear(): void {
     LaunchRequests.unbind();
-    this.flushRecovery();
-    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
-    if (this.previewTimer >= 0) clearTimeout(this.previewTimer);
+    if (this.wideQuery !== null) {
+      this.wideQuery.off('change');
+      this.wideQuery = null;
+    }
   }
 
   onBackPress(): boolean {
-    if (this.showLegal) {
-      this.showLegal = false;
-      return true;
-    }
-    if (this.editing) {
-      this.closeToLibrary();
+    if (this.routes.size() > 0) {
+      const names = this.routes.getAllPathName();
+      const top = names.length > 0 ? names[names.length - 1] : '';
+      if (top !== 'document') {
+        // 设置首页和它的子页都属于普通页面，返回键直接退栈。
+        this.routes.pop();
+        return true;
+      }
+      this.leaveDocument();
       return true;
     }
     return false;
@@ -73,16 +87,57 @@ struct Index {
 
   private async initialize(): Promise<void> {
     if (!this.context) return;
+    this.readVersion();
     try {
       this.recents = await LocalState.readRecent(this.context);
       this.changeTheme(await LocalState.readTheme(this.context), false);
+      this.toolbarPosition = await LocalState.readToolbarPosition(this.context);
     } catch {
       this.toast('读取设置失败，已使用系统默认值');
     }
-    this.recovery = LocalState.readDraft(this.context);
-    this.recoveryAvailable = this.recovery !== null;
     LaunchRequests.bind((request: OpenRequest) => {
       this.confirmSwitch(() => this.openExternal(request));
+    });
+    await this.resumeDraft();
+  }
+
+  /** 版本号只读一次，设置里的「关于」行和「关于」页共用。读不到就留空，由界面自己省略。 */
+  private readVersion(): void {
+    try {
+      this.version = bundleManager.getBundleInfoForSelfSync(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT).versionName;
+    } catch {
+      this.version = '';
+    }
+  }
+
+  /**
+   * 正常离开会清掉草稿，所以启动时还存在的草稿只可能是上次异常退出留下的。
+   * 直接接着编辑，不再让用户去首页找一张恢复卡片。
+   */
+  private async resumeDraft(): Promise<void> {
+    if (!this.context || this.routes.size() > 0) return;
+    const draft = LocalState.readDraft(this.context);
+    if (draft === null) return;
+    try {
+      await DocumentService.restore(draft);
+      this.presentOpened();
+      this.toast('已恢复上次未保存的编辑');
+    } catch {
+      if (this.context) LocalState.clearDraft(this.context);
+      this.toast('上次的编辑无法恢复，已丢弃');
+    }
+  }
+
+  /**
+   * 分栏阈值使用 ArkUI 典型 WIDTH_LG 断点（API 枚举文档 ts-appendix-enums）：窗口宽度达到 840vp。
+   * 监听仍由官方媒体查询 API 完成，避免在页面区域变化事件里自行计算宽度。
+   */
+  private bindWideBreakpoint(): void {
+    this.wideQuery = this.getUIContext().getMediaQuery().matchMediaSync('(width >= 840vp)');
+    this.wide = this.wideQuery.matches;
+    this.wideQuery.on('change', (result: mediaquery.MediaQueryResult) => {
+      this.wide = result.matches;
     });
   }
 
@@ -92,7 +147,6 @@ struct Index {
 
   private changeTheme(choice: string, persist: boolean = true): void {
     this.theme = choice;
-    this.schedulePreview();
     if (this.context) {
       let mode = ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
       if (choice === 'light') mode = ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT;
@@ -104,178 +158,124 @@ struct Index {
     }
   }
 
-  private showThemeMenu(): void {
-    ActionSheet.show({
-      title: '外观',
-      message: '应用与文档预览同步设置',
-      sheets: [
-        { title: '跟随系统', action: () => this.changeTheme('system') },
-        { title: '浅色', action: () => this.changeTheme('light') },
-        { title: '深色', action: () => this.changeTheme('dark') }
-      ]
-    });
-  }
-
-  private creationChoices(moreMenu: boolean): ActionChoice[] {
-    const formats = FormatRegistry.all();
-    const choices: ActionChoice[] = [];
-    for (let index = 0; index < formats.length; index++) {
-      const item = formats[index];
-      const id = item.id;
-      choices.push({
-        title: moreMenu ? item.moreTitle : item.sheetTitle,
-        action: () => this.confirmSwitch(() => this.startNew(id))
-      });
-    }
-    return choices;
-  }
-
-  private showMoreMenu(): void {
-    const sheets = this.creationChoices(true);
-    sheets.push({ title: '打开文件', action: () => this.confirmSwitch(() => this.pickOpen()) });
-    sheets.push({ title: '另存为', action: () => { void this.saveFile(true); } });
-    sheets.push({ title: '外观', action: () => this.showThemeMenu() });
-    sheets.push({ title: '开源许可证与隐私说明', action: () => this.openLegal() });
-    sheets.push({ title: '返回文稿列表', action: () => this.closeToLibrary() });
-    ActionSheet.show({ title: '更多操作', message: '文稿与应用设置', sheets: sheets });
-  }
-
-  private menuItem(label: string, symbol: Resource, action: () => void): NavigationMenuItem {
-    const icon: SymbolGlyphModifier = new SymbolGlyphModifier(symbol);
-    icon.fontColor([$r('sys.color.font_primary')]);
-    return { value: label, symbolIcon: icon, action: action };
-  }
-
-  private navigationMenus(): NavigationMenuItem[] {
-    if (this.showLegal) {
-      return [this.menuItem('返回', $r('sys.symbol.chevron_left'), () => { this.showLegal = false; })];
-    }
-    if (this.editing) {
-      return [
-        this.menuItem('保存', $r('sys.symbol.square_and_arrow_down'), () => { void this.saveFile(false); }),
-        this.menuItem('查找', $r('sys.symbol.magnifyingglass'), () => { this.searchVisible = true; this.selectedTab = 0; }),
-        this.menuItem('更多', $r('sys.symbol.more'), () => this.showMoreMenu())
-      ];
-    }
-    return [];
-  }
-
-  private showNewMenu(): void {
-    ActionSheet.show({
-      title: '新建文稿',
-      message: '选择要创建的文稿类型',
-      sheets: this.creationChoices(false)
-    });
-  }
-
-  private showHomeMenu(): void {
-    ActionSheet.show({
-      title: '设置与说明',
-      message: '外观与许可说明',
-      sheets: [
-        { title: '外观', action: () => this.showThemeMenu() },
-        { title: '开源许可证与隐私说明', action: () => this.openLegal() }
-      ]
-    });
-  }
-
-  private openLegal(): void {
-    if (!this.context) return;
-    try {
-      const bytes = this.context.resourceManager.getRawFileContentSync('licenses/THIRD_PARTY_NOTICES.txt');
-      this.legalText = util.TextDecoder.create('utf-8').decodeToString(bytes);
-    } catch {
-      this.legalText = '未能读取第三方许可证，请确保已运行 renderer 的构建命令。';
-    }
-    this.showLegal = true;
-  }
-
-  private schedulePreview(): void {
-    if (this.previewTimer >= 0) clearTimeout(this.previewTimer);
-    this.previewTimer = setTimeout(() => {
-      this.previewTimer = -1;
-      if (this.previewReady) this.sendPreview(this.preview);
-      if (this.splitReady) this.sendPreview(this.splitPreview);
-    }, 120);
-  }
-
-  private currentFormat(): DocumentFormat {
-    return DocumentService.formatFor(this.info);
-  }
-
-  private sendPreview(controller: webview.WebviewController): void {
-    const kind = this.currentFormat().id;
-    const command = 'window.MarknotePreview.update(' + JSON.stringify({
-      kind: kind,
-      source: this.source,
-      theme: this.theme
-    }) + ')';
-    try {
-      controller.runJavaScript(command);
-    } catch {
-      // The Web surface may have been disposed while switching tabs.
+  private changeToolbarPosition(position: string): void {
+    this.toolbarPosition = position === 'left' || position === 'right' ? position : 'top';
+    if (this.context) {
+      void LocalState.writeToolbarPosition(this.context, this.toolbarPosition)
+        .catch(() => this.toast('编辑工具栏位置未能保存'));
     }
   }
 
-  private isDirty(): boolean {
-    return this.source !== this.savedText;
+  private menuIcon(label: string, symbol: Resource, id: string,
+    action: () => void): HdsNavigationMenuItemOptions {
+    // 只配必要的字段；isEnabled 默认 true、type 默认 IconStyleMode.NORMAL，不再重复写。
+    // componentId 是 openMenu 的锚点 id（见《不依赖UI组件的全局菜单》），必须保留。
+    const content: HdsNavigationIconOptions = {
+      label: label,
+      icon: symbol,
+      action: action,
+      componentId: id
+    };
+    const item: HdsNavigationMenuItemOptions = { content: content };
+    return item;
   }
 
-  private confirmSwitch(proceed: () => Promise<void>): void {
-    if (!this.editing && this.recoveryAvailable) {
-      AlertDialog.show({
-        title: '还有未恢复的草稿',
-        message: '新建或打开其他文件会丢弃这份草稿。可以先恢复草稿并保存。',
-        primaryButton: { value: '取消', action: () => {} },
-        secondaryButton: { value: '放弃草稿继续', action: () => { void proceed(); } }
-      });
-      return;
-    }
-    if (!this.editing || !this.isDirty()) {
-      void proceed();
-      return;
-    }
-    this.getUIContext().getPromptAction().showDialog({
-      title: '未保存的修改',
-      message: '可以保存当前文稿后再打开，也可以放弃修改。取消则留在当前文稿。',
-      buttons: [
-        { text: '保存并打开', color: $r('sys.color.font_primary') },
-        { text: '放弃修改并打开', color: $r('sys.color.font_primary') },
-        { text: '取消', color: $r('sys.color.font_secondary') }
-      ]
-    }).then((result) => {
-      if (result.index === 0) {
-        void this.saveFile(false).then((opened: boolean) => {
-          if (opened) void proceed();
-        });
-      } else if (result.index === 1) {
-        void proceed();
+  private homeTitle(): HdsNavigationTitleBarOptions {
+    return scrollingTitleBar({
+      title: { mainTitle: '全部' },
+      menu: {
+        value: [
+          this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
+            (): void => this.openHomeMenu())
+        ]
       }
-    }).catch(() => {
-      // Dismissing the dialog keeps the current document and its draft.
     });
   }
 
-  private syncFromService(): void {
-    const session = DocumentService.current();
-    this.info = session.info;
-    this.title = session.info.name;
-    this.source = session.source;
-    this.savedText = session.savedText;
-    this.editing = session.editing;
-    this.headings = DocumentService.headingsFor(this.info, this.source);
-    this.schedulePreview();
+  private openHomeMenu(): void {
+    const uiContext = this.getUIContext();
+    this.homeMenu = new ComponentContent<Object>(uiContext, wrapBuilder(HomeMenuContent));
+    uiContext.getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }).catch(() => {
+      // The menu stays closed when its anchor is not on screen.
+    });
   }
 
+  private openDocumentMenu(): void {
+    const uiContext = this.getUIContext();
+    this.documentMenu = new ComponentContent<Object>(uiContext, wrapBuilder(DocumentMenuContent));
+    uiContext.getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }).catch(() => {
+      // The menu stays closed when its anchor is not on screen.
+    });
+  }
+
+  private afterMenu(next: () => void): void {
+    const prompt = this.getUIContext().getPromptAction();
+    const closeOne = (menu: ComponentContent<Object> | null, done: () => void): void => {
+      if (menu === null) {
+        done();
+        return;
+      }
+      prompt.closeMenu(menu).then(() => done()).catch(() => done());
+    };
+    closeOne(this.homeMenu, () => {
+      closeOne(this.documentMenu, next);
+    });
+  }
+
+  /**
+   * 打开设置的二级页：推入设置自己的导航栈，子页从右侧滑入，半模态本身不收起。
+   * 许可证全文按需读一次，其余页面不碰磁盘。
+   * 本项目许可证和第三方声明分开放，避免后打开的页面覆盖先打开的全文。
+   */
+  private openSetting(section: string): void {
+    if (section === 'project-license' && this.projectLicenseText.length === 0) {
+      this.projectLicenseText = this.readRawLicense('licenses/LICENSE', '未能读取本项目许可证。');
+    }
+    if (section === 'licenses' && this.legalText.length === 0) {
+      this.legalText = this.readRawLicense('licenses/THIRD_PARTY_NOTICES.txt',
+        '未能读取第三方许可证，请确保已运行 renderer 的构建命令。');
+    }
+    this.routes.pushPathByName(section, '');
+  }
+
+  private readRawLicense(path: string, failure: string): string {
+    if (!this.context) return failure;
+    try {
+      const bytes = this.context.resourceManager.getRawFileContentSync(path);
+      return util.TextDecoder.create('utf-8').decodeToString(bytes);
+    } catch {
+      return failure;
+    }
+  }
+
+  /**
+   * 切换文稿前的保存决策由文稿页决定：已保存过且有写权限的文件直接写回，不再询问；
+   * 只有无法静默写入的情况才让用户选择。首页只负责等结果。
+   */
+  private confirmSwitch(proceed: () => Promise<void>): void {
+    void documentBridge.saveBeforeLeaving().then((ok: boolean) => {
+      if (ok) void proceed();
+    });
+  }
+
+  private showDocumentRoute(): void {
+    const names = this.routes.getAllPathName();
+    for (let index = 0; index < names.length; index++) {
+      if (names[index] === 'document') return;
+    }
+    this.routes.pushPathByName('document', '');
+  }
+
+  private leaveDocument(): void {
+    if (this.routes.size() > 0) documentBridge.requestLeave();
+  }
+
+  /** 会话已经在 DocumentService 里了，这里只推进 revision 让文稿页重新载入。 */
   private presentOpened(): void {
-    this.syncFromService();
-    this.currentMatch = -1;
-    this.selectionStart = 0;
-    this.selectionEnd = 0;
-    this.selectedTab = 0;
-    this.searchVisible = false;
-    this.clearRecovery();
-    if (this.info.uri.length > 0) void this.rememberRecent(this.info.uri, this.info.name);
+    this.revision++;
+    this.showDocumentRoute();
+    const info = DocumentService.current().info;
+    if (info.uri.length > 0) void this.rememberRecent(info.uri, info.name);
   }
 
   private async startNew(kind: string): Promise<void> {
@@ -337,453 +337,73 @@ struct Index {
     }
   }
 
-  private async saveFile(asNewFile: boolean): Promise<boolean> {
-    if (!this.context || !this.editing || this.saving) return false;
-    this.saving = true;
-    try {
-      const result = await DocumentService.save(this.context, asNewFile);
-      this.syncFromService();
-      if (!result.saved) return false;
-      this.toast(result.message);
-      if (!this.isDirty()) this.clearRecovery();
-      else this.scheduleRecovery();
-      await this.rememberRecent(this.info.uri, this.title);
-      return !result.stillDirty;
-    } catch (error) {
-      this.scheduleRecovery();
-      this.toast('保存失败：' + String(error));
-      return false;
-    } finally {
-      this.saving = false;
-    }
-  }
-
-  private clearRecovery(): void {
-    if (this.recoveryTimer >= 0) {
-      clearTimeout(this.recoveryTimer);
-      this.recoveryTimer = -1;
-    }
-    if (this.context) LocalState.clearDraft(this.context);
-    this.recovery = null;
-    this.recoveryAvailable = false;
-  }
-
-  private scheduleRecovery(): void {
-    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
-    this.recoveryTimer = setTimeout(() => this.flushRecovery(), 450);
-  }
-
-  private flushRecovery(): void {
-    this.recoveryTimer = -1;
-    if (!this.context || !this.editing) return;
-    if (!this.isDirty()) {
-      this.clearRecovery();
-      return;
-    }
-    const draft = new RecoveryData();
-    draft.name = this.title;
-    draft.uri = this.info.uri;
-    draft.text = this.source;
-    draft.savedText = this.savedText;
-    draft.newline = this.info.newline;
-    draft.lineEndings = this.info.lineEndings;
-    draft.encoding = this.info.encoding;
-    draft.hasBom = this.info.hasBom;
-    draft.fingerprint = this.info.fingerprint;
-    draft.formatId = this.info.formatId;
-    draft.writable = this.info.writable;
-    draft.persistent = this.info.persistent;
-    try {
-      LocalState.writeDraft(this.context, draft);
-      this.recovery = draft;
-      this.recoveryAvailable = true;
-    } catch {
-      this.toast('草稿恢复副本写入失败，请尽快保存文件');
-    }
-  }
-
-  private async restoreRecovery(): Promise<void> {
-    if (!this.recovery) return;
-    await DocumentService.restore(this.recovery);
-    this.syncFromService();
-    this.currentMatch = -1;
-    this.selectionStart = 0;
-    this.selectionEnd = 0;
-    this.selectedTab = 0;
-    this.searchVisible = false;
-  }
-
-  private closeToLibrary(): void {
-    this.flushRecovery();
-    DocumentService.close();
-    this.editing = false;
-  }
-
-  private updateSource(text: string): void {
-    DocumentService.edit(text);
-    this.source = text;
-    this.currentMatch = -1;
-    this.headings = DocumentService.headingsFor(this.info, text);
-    this.scheduleRecovery();
-    this.schedulePreview();
-  }
-
-  private findNext(): void {
-    if (!this.query) return;
-    this.selectedTab = 0;
-    const from = this.currentMatch >= 0 ? this.currentMatch + this.query.length : 0;
-    let pos = this.source.indexOf(this.query, from);
-    if (pos < 0) pos = this.source.indexOf(this.query);
-    this.currentMatch = pos;
-    if (pos < 0) {
-      this.toast('没有找到匹配内容');
-    } else {
-      setTimeout(() => this.cursor.setTextSelection(pos, pos + this.query.length), 20);
-    }
-  }
-
-  private replaceMatch(): void {
-    if (!this.query) return;
-    const start = this.currentMatch;
-    if (start < 0 || this.source.slice(start, start + this.query.length) !== this.query) {
-      this.findNext();
-      return;
-    }
-    const changed = this.source.slice(0, start) + this.replacement + this.source.slice(start + this.query.length);
-    this.updateSource(changed);
-    this.currentMatch = -1;
-    setTimeout(() => this.cursor.caretPosition(start + this.replacement.length), 20);
-  }
-
-  private insertToken(token: string): void {
-    const start = Math.min(this.selectionStart, this.selectionEnd);
-    const end = Math.max(this.selectionStart, this.selectionEnd);
-    const selected = this.source.slice(start, end);
-    let prefix = token;
-    let suffix = '';
-    if (token === '**' || token === '*' || token === '`' || token === '$') suffix = token;
-    if (token === '[]()') { prefix = '['; suffix = '](url)'; }
-    if (token === '```') { prefix = '```\n'; suffix = '\n```'; }
-    this.updateSource(this.source.slice(0, start) + prefix + selected + suffix + this.source.slice(end));
-    const position = start + prefix.length + selected.length;
-    setTimeout(() => this.cursor.caretPosition(position), 20);
-  }
-
-  private focusHeading(heading: Heading): void {
-    this.selectedTab = 0;
-    setTimeout(() => this.cursor.caretPosition(heading.offset), 20);
-  }
-
   @Builder
   private LibraryPage() {
-    Scroll() {
-      Column({ space: 24 }) {
-        Column({ space: 12 }) {
-          Text('离线编辑，随时保存到自己的文件。')
-            .fontSize(16)
-            .fontColor($r('sys.color.font_secondary'))
-            .width('100%')
-          Row({ space: 12 }) {
-            Button('新建文稿', { type: ButtonType.Capsule })
-              .layoutWeight(1)
-              .onClick(() => this.showNewMenu())
-            Button('打开文件', { type: ButtonType.Capsule })
-              .buttonStyle(ButtonStyleMode.NORMAL)
-              .layoutWeight(1)
-              .onClick(() => this.confirmSwitch(() => this.pickOpen()))
-          }
-          .width('100%')
-          Button('外观与说明', { type: ButtonType.Normal })
-            .buttonStyle(ButtonStyleMode.TEXTUAL)
-            .fontColor($r('sys.color.font_secondary'))
-            .onClick(() => this.showHomeMenu())
-        }
-        .width('100%')
-
-        if (this.recoveryAvailable) {
-          Column({ space: 10 }) {
-            Text('未保存的文稿')
-              .fontSize(20)
-              .fontWeight(FontWeight.Medium)
-              .width('100%')
-            Button('恢复上次的编辑', { type: ButtonType.Normal })
-              .width('100%')
-              .onClick(() => { void this.restoreRecovery(); })
-          }
-          .width('100%')
-        }
-
-        Column({ space: 12 }) {
-          Text('最近文稿')
-            .fontSize(20)
-            .fontWeight(FontWeight.Medium)
-            .width('100%')
-          if (this.recents.length === 0) {
-            Text('最近打开的文件会显示在这里')
-              .fontColor($r('sys.color.font_secondary'))
-              .width('100%')
-              .padding({ top: 8, bottom: 8 })
-          } else {
-            ForEach(this.recents, (item: RecentDocument) => {
-              Column() {
-                Row({ space: 12 }) {
-                  Column({ space: 4 }) {
-                    Text(item.name)
-                      .fontSize(16)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    Text('点击继续编辑')
-                      .fontSize(12)
-                      .fontColor($r('sys.color.font_secondary'))
-                  }
-                  .layoutWeight(1)
-                  Text('›').fontColor($r('sys.color.font_secondary'))
-                }
-                .width('100%')
-                .padding({ top: 10, bottom: 10 })
-                .onClick(() => this.openRecent(item))
-                Divider()
-              }
-            }, (item: RecentDocument) => item.uri)
-          }
-        }
-        .width('100%')
-      }
-      .alignItems(HorizontalAlign.Start)
-      .padding({ left: 20, right: 20, top: 16, bottom: 40 })
-      .width('100%')
-    }
-    .width('100%')
-    .height('100%')
-  }
-
-  @Builder
-  private FindBar() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
-        Search({ value: this.query, placeholder: '查找文稿内容' })
-          .onChange((value: string) => { this.query = value; this.currentMatch = -1; })
-          .layoutWeight(1)
-        Button('下一处').onClick(() => this.findNext())
-        Button('关闭', { type: ButtonType.Normal })
-          .buttonStyle(ButtonStyleMode.NORMAL)
-          .onClick(() => this.searchVisible = false)
-      }
-      Row({ space: 8 }) {
-        TextInput({ text: this.replacement, placeholder: '替换为' })
-          .onChange((value: string) => { this.replacement = value; })
-          .layoutWeight(1)
-        Button('替换').onClick(() => this.replaceMatch())
-      }
-    }
-    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-    .width('100%')
-  }
-
-  @Builder
-  private QuickKeys() {
-    Scroll() {
-      Row({ space: 8 }) {
-        ForEach(this.currentFormat().inserts, (token: string) => {
-          Button(token, { type: ButtonType.Normal })
-            .buttonStyle(ButtonStyleMode.NORMAL)
-            .onClick(() => this.insertToken(token))
-        }, (token: string) => token)
-      }
-      .padding({ left: 12, right: 12, top: 4, bottom: 4 })
-    }
-    .scrollable(ScrollDirection.Horizontal)
-    .scrollBar(BarState.Off)
-    .width('100%')
-  }
-
-  @Builder
-  private EditPage() {
-    Column({ space: 0 }) {
-      if (this.searchVisible) {
-        this.FindBar()
-      }
-      TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: this.cursor })
-        .fontSize(16)
-        .fontFamily('monospace')
-        .width('100%')
-        .layoutWeight(1)
-        .onChange((value: string) => this.updateSource(value))
-        .onTextSelectionChange((start: number, end: number) => {
-          this.selectionStart = start;
-          this.selectionEnd = end;
-        })
-      if (this.currentFormat().inserts.length > 0) {
-        this.QuickKeys()
-      }
-      Row({ space: 12 }) {
-        Text(`${linesIn(this.source)} 行 · ${this.source.length} 字符`)
-          .fontSize(12)
-          .fontColor($r('sys.color.font_secondary'))
-        Blank()
-        if (this.saving) {
-          Text('正在保存…').fontSize(12)
-        } else if (this.isDirty() || !this.info.uri) {
-          Text('未保存').fontSize(12)
-        } else if (!this.info.writable) {
-          Text('只读').fontSize(12)
-        } else {
-          Text('已保存').fontSize(12)
-        }
-      }
-      .padding({ left: 16, right: 16, bottom: 8 })
-      .width('100%')
-    }
-    .width('100%')
-    .height('100%')
-  }
-
-  @Builder
-  private PreviewPage() {
-    Web({ src: $rawfile('preview/index.html'), controller: this.preview })
-      .javaScriptAccess(true)
-      .domStorageAccess(false)
-      .onPageEnd(() => { this.previewReady = true; this.sendPreview(this.preview); })
-      .width('100%')
-      .height('100%')
-  }
-
-  @Builder
-  private SplitPreviewPage() {
-    Web({ src: $rawfile('preview/index.html'), controller: this.splitPreview })
-      .javaScriptAccess(true)
-      .domStorageAccess(false)
-      .onPageEnd(() => { this.splitReady = true; this.sendPreview(this.splitPreview); })
-      .width('100%')
-      .height('100%')
-  }
-
-  @Builder
-  private LegalPage() {
-    Scroll() {
-      Column({ space: 18 }) {
-        Text('隐私说明').fontSize(22).fontWeight(FontWeight.Medium)
-        Text('文稿在设备本地编辑。应用没有账号、广告、遥测或联网接口，也不上传文稿。文件由系统文件选择器授权，草稿保存在应用私有目录。')
-          .fontSize(15)
-        Text('第三方开源许可证').fontSize(22).fontWeight(FontWeight.Medium)
-        Text(this.legalText).fontSize(12).fontFamily('monospace')
-          .width('100%')
-          .copyOption(CopyOptions.LocalDevice)
-      }
-      .alignItems(HorizontalAlign.Start)
-      .padding(20)
-    }
-    .width('100%')
-    .height('100%')
-  }
-
-  @Builder
-  private OutlinePage() {
-    if (this.headings.length === 0) {
-      Column({ space: 10 }) {
-        Text('暂无大纲').fontSize(18)
-        Text('在编辑页使用 #、## 等 Markdown 标题语法即可生成大纲。')
-          .fontColor($r('sys.color.font_secondary'))
-      }
-      .padding(24)
-      .width('100%')
-    } else {
-      List() {
-        ForEach(this.headings, (heading: Heading) => {
-          ListItem() {
-            Row({ space: 8 }) {
-              Text(heading.text)
-                .fontSize(16)
-                .maxLines(2)
-                .layoutWeight(1)
-              Text(`第 ${heading.line} 行`)
-                .fontSize(12)
-                .fontColor($r('sys.color.font_secondary'))
-            }
-            .padding({ left: 16 + (heading.level - 1) * 12, right: 16, top: 14, bottom: 14 })
-            .width('100%')
-            .onClick(() => this.focusHeading(heading))
-          }
-        }, (heading: Heading) => heading.offset.toString())
-      }
-      .width('100%')
-      .height('100%')
-      .divider({ strokeWidth: 1, startMargin: 16, endMargin: 16 })
-    }
-  }
-
-  private splitTab(): number {
-    return this.currentFormat().outline ? 3 : 2;
-  }
-
-  private adjustLayout(width: number): void {
-    const next = width >= 720;
-    if (this.wide !== next) {
-      this.wide = next;
-      if (!next && this.selectedTab === this.splitTab()) this.selectedTab = 0;
-    }
-  }
-
-  @Builder
-  private SplitPage() {
-    Row({ space: 0 }) {
-      Column() { this.EditPage() }
-        .layoutWeight(1)
-        .height('100%')
-      Divider().vertical(true).height('100%')
-      Column() { this.SplitPreviewPage() }
-        .layoutWeight(1)
-        .height('100%')
-    }
-    .height('100%')
-    .width('100%')
-  }
-
-  @Builder
-  private WorkspacePage() {
-    Tabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
-      TabContent() {
-        this.EditPage()
-      }.tabBar('编辑')
-      TabContent() {
-        this.PreviewPage()
-      }.tabBar('预览')
-      if (this.currentFormat().outline) {
-        TabContent() {
-          this.OutlinePage()
-        }.tabBar('大纲')
-      }
-      if (this.wide) {
-        TabContent() {
-          this.SplitPage()
-        }.tabBar('分栏')
-      }
-    }
-    .onChange((index: number) => { this.selectedTab = index; this.schedulePreview(); })
-    .barMode(BarMode.Fixed)
-    .width('100%')
-    .height('100%')
-    .onAreaChange((oldValue: Area, value: Area) => {
-      const width = parseFloat(value.width.toString());
-      if (!isNaN(width)) this.adjustLayout(width);
+    HomeView({
+      recents: this.recents,
+      scroller: this.libraryScroller,
+      onNew: (id: string): void => { this.confirmSwitch(() => this.startNew(id)); },
+      onOpen: (): void => this.confirmSwitch(() => this.pickOpen()),
+      onRecent: (item: RecentDocument): void => this.openRecent(item)
     })
   }
 
+  /**
+   * 设置走全屏页面：官方《多设备设置界面》把设置拆成导航页和内容页两段，
+   * 导航页用 HdsNavigation、内容页用 HdsNavDestination，标题栏都用小标题模式，
+   * 跳转靠 NavPathStack。这里两类页面都推在同一个主栈里，返回键由导航组件给。
+   *
+   * 不用半模态：官方《绑定半模态页面》写的是「适用于展示简单的任务或信息面板」，
+   * 设置这种带二级页的层级结构不属于这个场景；半模态和全屏页面混在一起，
+   * 会出现从底部弹起却占满整屏的形态。
+   */
+  @Builder
+  Destination(name: string, _pageInfos: Object) {
+    if (name === 'document') {
+      DocumentView({
+        theme: this.theme,
+        toolbarPosition: this.toolbarPosition,
+        wide: this.wide,
+        revision: this.revision,
+        onLeave: (): void => {
+          if (this.routes.size() > 0) this.routes.pop();
+        },
+        onSaved: (uri: string, name: string): void => {
+          void this.rememberRecent(uri, name);
+        }
+      })
+    } else {
+      SettingsPage({
+        section: name,
+        theme: $theme,
+        toolbarPosition: this.toolbarPosition,
+        version: this.version,
+        text: name === 'project-license' ? this.projectLicenseText : this.legalText,
+        onOpen: (section: string): void => this.openSetting(section),
+        onChooseTheme: (choice: string): void => this.changeTheme(choice),
+        onChooseToolbarPosition: (position: string): void => this.changeToolbarPosition(position)
+      })
+    }
+  }
+
   build() {
-    Navigation() {
-      if (this.showLegal) {
-        this.LegalPage()
-      } else if (this.editing) {
-        this.WorkspacePage()
-      } else {
+    Column() {
+      HdsNavigation(this.routes) {
         this.LibraryPage()
       }
+      .navDestination(this.Destination)
+      .titleBar(this.homeTitle())
+      // HdsNavigationTitleMode.MINI 固定为 56vp（ui-design-hdsnavigation）。
+      .titleMode(HdsNavigationTitleMode.MINI)
+      // Leave mode unset: HdsNavigation defaults to NavigationMode.Auto (ui-design-hdsnavigation).
+      .hideBackButton(true)
+      .bindToScrollable([this.libraryScroller])
+      .width('100%')
+      .layoutWeight(1)
     }
-    .title(this.showLegal ? '开源许可证与隐私' : this.editing ? this.title : '文稿')
-    .titleMode(this.showLegal || this.editing ? NavigationTitleMode.Mini : NavigationTitleMode.Full)
-    .mode(NavigationMode.Stack)
-    .menus(this.navigationMenus())
     .width('100%')
     .height('100%')
+    // 页面底色只在这里给一次，整页（含标题栏所在区域）都是同一个系统底色。
+    .backgroundColor($r('sys.color.ohos_id_color_background'))
   }
 }

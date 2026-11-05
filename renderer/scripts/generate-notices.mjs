@@ -6,7 +6,9 @@ import { dirname, join, resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const packages = new Map();
-const accepted = /^(?:MIT|ISC|BSD-2-Clause|BSD-3-Clause|Apache-2\.0|0BSD|Unlicense|CC0-1\.0)$/;
+// PSF-2.0 is used by the locked argparse@3.0.4 dependency. Its complete upstream LICENSE
+// is emitted below with the other production notices.
+const accepted = /^(?:MIT|ISC|BSD-2-Clause|BSD-3-Clause|Apache-2\.0|0BSD|Unlicense|CC0-1\.0|PSF-2\.0)$/;
 
 function locate(from, name) {
   let at = from;
@@ -21,7 +23,9 @@ function locate(from, name) {
 }
 function licenseFile(dir) {
   const filenames = readdirSync(dir);
-  const found = filenames.find(f => /^(?:licen[sc]e|copying)(?:\.(?:md|txt))?$/i.test(f));
+  // Package managers also ship complete grants as e.g. LICENSE-MIT.txt. Restrict the suffix to
+  // the declared SPDX family so a README can never become a substitute notice.
+  const found = filenames.find(f => /^(?:licen[sc]e|copying)(?:[-_.](?:mit|isc|bsd(?:-[23]-clause)?|apache-2\.0|psf-2\.0))?(?:\.(?:md|txt))?$/i.test(f));
   if (!found) throw new Error(`Missing license text: ${dir}`);
   return readFileSync(join(dir, found), 'utf8');
 }
@@ -45,22 +49,14 @@ function visit(from, name) {
 }
 for (const name of Object.keys(manifest.dependencies)) visit(root, name);
 const all = [...packages.values()].sort((a, b) => a.name.localeCompare(b.name));
-// KaTeX math fonts have an independent SIL OFL-1.1 grant. Its software MIT
-// license does not replace the font license. A missing upstream OFL blocks release.
-const katexDir = locate(root, 'katex');
-const fontLicenseCandidates = [
-  join(katexDir, 'dist', 'fonts', 'OFL.txt'),
-  join(katexDir, 'fonts', 'OFL.txt')
-];
-const fontLicensePath = fontLicenseCandidates.find(existsSync);
-if (!fontLicensePath) throw new Error('KaTeX font license dist/fonts/OFL.txt not found; release build blocked');
-const fontLicense = readFileSync(fontLicensePath, 'utf8');
-if (!fontLicense.includes('SIL OPEN FONT LICENSE')) throw new Error('Unexpected KaTeX font license content');
+// KaTeX's official katex-fonts source distributes the fonts under MIT. The KaTeX package's
+// complete MIT LICENSE is already collected as its production dependency notice; do not invent
+// a separate OFL requirement for a package that does not ship one.
 const sections = [
   'Marknote — Third-party software notices',
   'For software and font assets incorporated into the offline renderer.',
   'DOMPurify is distributed under the Apache License 2.0 branch of its dual license.',
-  'KaTeX math fonts are distributed separately under SIL Open Font License 1.1.',
+  'KaTeX and its bundled fonts are covered by the package MIT notice.',
   'The rights to Marknote-owned code are separate from the following third-party grants.',
   'Built from the exact production dependencies installed for this release.',
   ''
@@ -69,10 +65,14 @@ for (const p of all) {
   sections.push('='.repeat(75), `${p.name}@${p.version}`, `License: ${p.license}`, '', p.text.trim(), '');
   if (p.notice.trim()) sections.push('Upstream NOTICE:', p.notice.trim(), '');
 }
-sections.push('='.repeat(75), 'KaTeX math fonts (embedded in CSS as font assets)',
-  'License: SIL Open Font License 1.1', '', fontLicense.trim(), '');
+const projectLicense = join(root, '..', 'LICENSE');
+if (!existsSync(projectLicense)) throw new Error('Missing project LICENSE');
+const projectLicenseBytes = readFileSync(projectLicense);
 const output = join(root, '..', 'entry', 'src', 'main', 'resources', 'rawfile', 'licenses');
 mkdirSync(output, { recursive: true });
 const file = join(output, 'THIRD_PARTY_NOTICES.txt');
 writeFileSync(file, sections.join('\n') + '\n', 'utf8');
+const shippedLicense = join(output, 'LICENSE');
+writeFileSync(shippedLicense, projectLicenseBytes);
 console.log(`Wrote ${file} (${all.length} runtime packages; ${sections.join('\n').length} characters)`);
+console.log(`Copied project LICENSE to ${shippedLicense}`);

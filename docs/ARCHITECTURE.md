@@ -1,15 +1,36 @@
-# Marknote 当前架构
+# 架构
 
-界面仍在 ArkUI。文稿格式不由页面自行判断扩展名，文稿会话也不再散落在页面里。
+界面由 ArkUI 实现。文稿的格式判断、编码处理和文件读写集中在独立模块，页面只负责呈现和调度。各模块的具体行为边界见[功能目录](FEATURES.md)。
 
-- **EntryAbility**：singleton。桌面启动进入首页；`ohos.want.action.viewData` 的文件请求交给 `LaunchRequests`。页面还没创建时先留住这一次请求，准备好后再打开，避免冷启动丢文件。
-- **DocumentService**：当前文稿的身份、正文、格式、来源和修订状态。新建、选择器、最近文稿和系统打开都从这里进入。保存、另存为、草稿恢复和外部冲突也在这里决定。
-- **FormatRegistry**：扩展名、UTD、MIME、默认文件名、大纲和快捷插入。文件名能对上已注册后缀时用文件名；否则用系统声明的类型。对不上的系统类型不会当成 Markdown。
-- **TextEncoding**：把字节还原成编辑器用的 `\n` 文本，保存时写回原来的编码、BOM 和换行。支持 UTF-8、UTF-16 LE/BE 和 GB18030。写回后若字符对不上，拒绝写入。混合换行只在行数不变时按原样写回。
-- **DocumentFiles**：选择、读取、按实际打开结果判断能否写入、持久授权、冲突检查和写回。冲突对比的是打开或上次保存时的 SHA-256 字节指纹。只读授权可以编辑，保存时走另存为。
-- **ArkWeb**：`renderer/src/renderers/` 里按格式 ID 分开渲染 `plain`、`markdown`、`svg`、`tex-math`。页面只把格式 ID 和正文交给预览。120ms 合并更新保留。
-- **桥接**：单向 `MarknotePreview.update`。预览页不注册 ArkTS 接口，也没有联网权限。
+## 模块职责
 
-系统文件关联注册在 `module.json5`：`file` scheme、`FileOpen`，类型是 `general.markdown`、`general.plain-text`、`general.svg-image`、`org.tug.tex`。SDK 里的 TeX 统一类型是 `general.tex`，所以一并注册，避免文件管理器对不上。不注册 `general.file` 或 `general.text`。
+| 模块 | 职责 |
+| --- | --- |
+| `EntryAbility` | 以 singleton 启动。桌面启动进入首页，`ohos.want.action.viewData` 的文件请求交给 `LaunchRequests`。页面尚未创建时先保留这次请求，页面就绪后再打开，避免冷启动丢失文件。 |
+| `DocumentService` | 当前文稿的会话状态，包括身份、正文、格式、来源和修订状态。新建、系统选择器、最近文稿和系统打开都从这里进入；保存、另存为、草稿恢复和外部冲突判断也在此决定。 |
+| `FormatRegistry` | 扩展名、UTD、MIME、默认文件名、大纲支持和快捷插入。文件名能匹配已注册后缀时以文件名为准，否则使用系统声明的类型。无法识别的系统类型不会被当成 Markdown。 |
+| `TextEncoding` | 把字节还原成编辑器使用的 `\n` 文本，保存时写回原编码、BOM 和换行，支持 UTF-8、UTF-16 LE/BE 和 GB18030。写回后字符对不上时拒绝写入。 |
+| `DocumentFiles` | 文件选择、读取、写入授权判断、持久授权、冲突检测和写回。冲突检测比对打开时或上次保存成功时的 SHA-256 字节指纹。只有读取授权时，保存改为另存为。 |
+| `LocalState` | 最近文稿列表、未保存草稿、外观偏好和编辑工具栏位置的本机存储。 |
 
-SVG 仍去掉脚本、动画、外链和 `foreignObject`。内部 `url(#id)`、片段引用和 `data:` 图片保留。`.txt` 不再按 Markdown 排版。完整 TeX 文档编译还没有做。大文件的读写仍在主线程。分享到其他应用不在这次范围内。
+## 界面
+
+首页是 `HdsNavigation`，文稿页和设置子页是 `HdsNavDestination`。各页面通过 `HdsMaterialStyles` 共用标题栏配置，`PageScrollPolicy` 负责原生 Scroll/List 的公共行为；设置路由及其滚动控制器由 `SettingsPage` 持有。文稿页签共用 `DocumentScrollLayer`，各页签保留独立滚动位置。具体安全区、裁剪、材质、滚动条和边缘效果见[功能目录](FEATURES.md)的「公共页面滚动」。
+
+顶栏、编辑工具栏和底部页签位于滚动内容上层。文稿用 `HdsActionBar` 提供快捷插入，`HdsTabs` 切换预览、编辑、大纲及宽屏分栏。页面特有内容与公共滚动策略分开维护。键盘避让使用 `RESIZE_WITH_CARET`。
+
+标题栏的四宫格菜单用 `Menu`、`MenuItemGroup` 和 `MenuItem` 实现，通过 `promptAction.openMenu` 锚定到标题栏图标，菜单项用通用的 `.onClick()` 触发动作。一级菜单只放当前页面能执行的动作，不放「关于」这类说明性入口。
+
+设置是全屏页面，推在首页同一个 `NavPathStack` 上：导航页和内容页都用 `HdsNavDestinationTitleMode.MINI`，并开 `enableComponentSafeArea` 让内容避让标题栏，返回键由导航组件提供。设置不走半模态——`bindSheet` 的文档把它的场景限定为「简单的任务或信息面板」，带二级页的设置属于导航层级，两者混用会出现从底部弹起却占满整屏的形态。
+
+带 `ListItemGroupStyle.CARD` 的页面必须自己给页面底色（`sys.color.ohos_id_color_sub_background`），卡片是有抬升的一层，页面底不设色就会贴在窗口底上，浅色模式下卡片和页面同色。结构照官方《如何设置分组列表的圆角和间距》：外层容器给底色，卡片保持组件默认。
+
+## 预览
+
+预览资源由 `renderer/` 构建后放入 HAP。`renderer/src/renderers/` 按格式 ID 分为 `plain`、`markdown`、`svg` 和 `tex-math`，页面只把格式 ID 和正文交给预览，连续编辑产生的更新合并为约 120ms 一次。
+
+预览与 ArkUI 之间只有单向的 `MarknotePreview.update` 调用。预览页不注册 ArkTS 接口，也不具备联网能力。
+
+## 系统文件关联
+
+文件关联注册在 `module.json5`：`file` scheme 搭配 `FileOpen`，类型为 `general.markdown`、`general.plain-text`、`general.svg-image`、`org.tug.tex` 和 `general.tex`。SDK 中的 TeX 统一类型是 `general.tex`，因此一并注册，避免文件管理器匹配不到。不注册 `general.file` 和 `general.text`。

@@ -1,4 +1,40 @@
-/** Static format table. Adding a format is a new entry plus a preview renderer, not a page edit. */
+/**
+ * Static format table. Adding a format is a new entry plus a preview renderer, not a page edit.
+ *
+ * Each format also owns its toolbar actions. The token, the display label, the system symbol and the
+ * text that wraps the selection live together here, so adding a shortcut is one entry instead of four
+ * parallel edits.
+ */
+
+/** One toolbar action: what to insert, how to label it, and which system symbol represents it. */
+export class InsertAction {
+  token: string;
+  label: string;
+  symbol: Resource;
+  /** Text placed before the selection. */
+  before: string;
+  /** Text placed after the selection. */
+  after: string;
+
+  constructor(token: string, label: string, symbol: Resource, before: string, after: string) {
+    this.token = token;
+    this.label = label;
+    this.symbol = symbol;
+    this.before = before;
+    this.after = after;
+  }
+}
+
+/** Inserts the token as an inline prefix and keeps the cursor inside it, e.g. bold or italic. */
+function wrap(token: string, label: string, symbol: Resource): InsertAction {
+  return new InsertAction(token, label, symbol, token, token);
+}
+
+/** Inserts the token as a line prefix, e.g. a heading or list marker. */
+function prefix(token: string, label: string, symbol: Resource): InsertAction {
+  return new InsertAction(token, label, symbol, token, '');
+}
+
 export class DocumentFormat {
   id: string = '';
   sheetTitle: string = '';
@@ -9,48 +45,114 @@ export class DocumentFormat {
   defaultFilename: string = '';
   starter: string = '';
   outline: boolean = false;
-  inserts: string[] = [];
+  inserts: InsertAction[] = [];
   openFilter: string = '';
   saveChoice: string = '';
 }
 
-const MARKDOWN_INSERTS: string[] = ['# ', '**', '*', '`', '[]()', '- ', '- [ ] ', '$', '```'];
+/** Named fields for a format entry. Positional arguments were too easy to misorder. */
+interface FormatSpec {
+  id: string;
+  sheetTitle: string;
+  moreTitle: string;
+  extensions: string[];
+  utds: string[];
+  mimes: string[];
+  defaultFilename: string;
+  starter: string;
+  outline: boolean;
+  inserts: InsertAction[];
+  openFilter: string;
+  saveChoice: string;
+}
 
-function format(id: string, sheetTitle: string, moreTitle: string, extensions: string[],
-  utds: string[], mimes: string[], defaultFilename: string, starter: string, outline: boolean,
-  inserts: string[], openFilter: string, saveChoice: string): DocumentFormat {
+function defineFormat(spec: FormatSpec): DocumentFormat {
   const item = new DocumentFormat();
-  item.id = id;
-  item.sheetTitle = sheetTitle;
-  item.moreTitle = moreTitle;
-  item.extensions = extensions;
-  item.utds = utds;
-  item.mimes = mimes;
-  item.defaultFilename = defaultFilename;
-  item.starter = starter;
-  item.outline = outline;
-  item.inserts = inserts;
-  item.openFilter = openFilter;
-  item.saveChoice = saveChoice;
+  item.id = spec.id;
+  item.sheetTitle = spec.sheetTitle;
+  item.moreTitle = spec.moreTitle;
+  item.extensions = spec.extensions;
+  item.utds = spec.utds;
+  item.mimes = spec.mimes;
+  item.defaultFilename = spec.defaultFilename;
+  item.starter = spec.starter;
+  item.outline = spec.outline;
+  item.inserts = spec.inserts;
+  item.openFilter = spec.openFilter;
+  item.saveChoice = spec.saveChoice;
   return item;
 }
 
+const MARKDOWN_INSERTS: InsertAction[] = [
+  prefix('# ', '标题', $r('sys.symbol.textformat')),
+  wrap('**', '加粗', $r('sys.symbol.bold')),
+  wrap('*', '斜体', $r('sys.symbol.italic')),
+  wrap('`', '代码', $r('sys.symbol.code')),
+  new InsertAction('[]()', '链接', $r('sys.symbol.link'), '[', '](url)'),
+  prefix('- ', '列表', $r('sys.symbol.list_bullet')),
+  prefix('- [ ] ', '待办', $r('sys.symbol.checkmark_square')),
+  wrap('$', '公式', $r('sys.symbol.sum_rectangle_fill')),
+  new InsertAction('```', '代码块', $r('sys.symbol.code_square'), '```\n', '\n```')
+];
+
 const FORMATS: DocumentFormat[] = [
-  format('markdown', 'Markdown 文稿', '新建 Markdown', ['.md', '.markdown'],
-    ['general.markdown'], ['text/markdown', 'text/x-markdown'],
-    '未命名.md', '', true, MARKDOWN_INSERTS, 'Markdown|.md,.markdown', 'Markdown|.md'),
-  format('plain', '纯文本', '新建纯文本', ['.txt'],
-    ['general.plain-text'], ['text/plain'],
-    '未命名.txt', '', false, [], '文本|.txt', '文本|.txt'),
-  format('svg', 'SVG 图形', '新建 SVG', ['.svg'],
-    ['general.svg-image'], ['image/svg+xml'],
-    '未命名.svg',
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 160">\n  <circle cx="160" cy="80" r="52" fill="#628ac7"/>\n</svg>',
-    false, [], 'SVG|.svg', 'SVG|.svg'),
-  format('tex-math', 'LaTeX 数学公式', '新建 LaTeX 公式', ['.tex'],
-    ['org.tug.tex', 'general.tex'], ['application/x-tex', 'text/x-tex'],
-    '未命名.tex', '\\frac{a}{b} + \\sqrt{x^2 + y^2}',
-    false, [], 'LaTeX|.tex', 'LaTeX|.tex')
+  defineFormat({
+    id: 'markdown',
+    sheetTitle: 'Markdown 文稿',
+    moreTitle: '新建 Markdown',
+    extensions: ['.md', '.markdown'],
+    utds: ['general.markdown'],
+    mimes: ['text/markdown', 'text/x-markdown'],
+    defaultFilename: '未命名.md',
+    starter: '',
+    outline: true,
+    inserts: MARKDOWN_INSERTS,
+    openFilter: 'Markdown|.md,.markdown',
+    saveChoice: 'Markdown|.md'
+  }),
+  defineFormat({
+    id: 'plain',
+    sheetTitle: '纯文本',
+    moreTitle: '新建纯文本',
+    extensions: ['.txt'],
+    utds: ['general.plain-text'],
+    mimes: ['text/plain'],
+    defaultFilename: '未命名.txt',
+    starter: '',
+    outline: false,
+    inserts: [],
+    openFilter: '文本|.txt',
+    saveChoice: '文本|.txt'
+  }),
+  defineFormat({
+    id: 'svg',
+    sheetTitle: 'SVG 图形',
+    moreTitle: '新建 SVG',
+    extensions: ['.svg'],
+    utds: ['general.svg-image'],
+    mimes: ['image/svg+xml'],
+    defaultFilename: '未命名.svg',
+    starter: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 160">\n' +
+      '  <circle cx="160" cy="80" r="52" fill="#628ac7"/>\n</svg>',
+    outline: false,
+    inserts: [],
+    openFilter: 'SVG|.svg',
+    saveChoice: 'SVG|.svg'
+  }),
+  defineFormat({
+    id: 'tex-math',
+    sheetTitle: 'LaTeX 数学公式',
+    moreTitle: '新建 LaTeX 公式',
+    extensions: ['.tex'],
+    utds: ['org.tug.tex', 'general.tex'],
+    mimes: ['application/x-tex', 'text/x-tex'],
+    defaultFilename: '未命名.tex',
+    starter: '\\frac{a}{b} + \\sqrt{x^2 + y^2}',
+    outline: false,
+    inserts: [],
+    openFilter: 'LaTeX|.tex',
+    saveChoice: 'LaTeX|.tex'
+  })
 ];
 
 function extensionOf(filename: string): string {
