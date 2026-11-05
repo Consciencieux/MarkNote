@@ -239,6 +239,16 @@ struct Index {
     this.routes.pushPathByName(section, '');
   }
 
+  /** 华为 FAQ faqs-ability-58：通过隐式 Want 打开默认浏览器。 */
+  private openProjectHome(): void {
+    if (!this.context) return;
+    this.context.startAbility({
+      action: 'ohos.want.action.viewData',
+      entities: ['entity.system.browsable'],
+      uri: 'https://github.com/Consciencieux/marknote'
+    }).catch(() => this.toast('无法打开项目主页'));
+  }
+
   private readRawLicense(path: string, failure: string): string {
     if (!this.context) return failure;
     try {
@@ -380,6 +390,8 @@ struct Index {
         version: this.version,
         text: name === 'project-license' ? this.projectLicenseText : this.legalText,
         onOpen: (section: string): void => this.openSetting(section),
+        onOpenProject: (): void => this.openProjectHome(),
+        onBack: (): void => { this.routes.pop(); },
         onChooseTheme: (choice: string): void => this.changeTheme(choice),
         onChooseToolbarPosition: (position: string): void => this.changeToolbarPosition(position)
       })

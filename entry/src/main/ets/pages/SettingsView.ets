@@ -11,6 +11,7 @@ export function settingTitle(section: string): string {
   if (section === 'appearance') return '外观';
   if (section === 'toolbar') return '编辑工具栏位置';
   if (section === 'privacy') return '隐私说明';
+  if (section === 'license-list') return '开源许可证';
   if (section === 'project-license') return '本项目开源许可证';
   if (section === 'licenses') return '第三方开源许可证';
   return '关于';
@@ -38,7 +39,6 @@ export struct SettingsView {
   /** @Link keeps the displayed theme in sync with the owner when returning from its detail page. */
   @Link theme: string;
   @Prop toolbarPosition: string = 'top';
-  @Prop version: string = '';
   onOpen: (section: string) => void = (_section: string): void => {};
 
   @Builder
@@ -58,9 +58,8 @@ export struct SettingsView {
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
         this.LinkRow('隐私说明', '', 'privacy')
-        this.LinkRow('本项目开源许可证', '', 'project-license')
-        this.LinkRow('第三方开源许可证', '', 'licenses')
-        this.LinkRow('关于', this.version.length > 0 ? `版本 ${this.version}` : '', 'about')
+        this.LinkRow('开源许可证', '', 'license-list')
+        this.LinkRow('关于', '', 'about')
       }.attributeModifier(this.groupStyle)
     }
     .attributeModifier(this.scrollPolicy)

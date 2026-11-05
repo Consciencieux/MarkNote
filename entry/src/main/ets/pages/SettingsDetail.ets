@@ -25,6 +25,8 @@ export struct SettingsDetail {
   @Prop toolbarPosition: string = 'top';
   @Prop version: string = '';
   @Prop text: string = '';
+  onOpen: (section: string) => void = (_section: string): void => {};
+  onOpenProject: () => void = (): void => {};
   onChooseTheme: (choice: string) => void = (_choice: string): void => {};
   onChooseToolbarPosition: (position: string) => void = (_position: string): void => {};
 
@@ -45,6 +47,14 @@ export struct SettingsDetail {
     ListItem({ style: ListItemStyle.CARD }) {
       SettingsListRow({ title: title, value: status })
     }
+  }
+
+  @Builder
+  private LinkRow(title: string, action: () => void) {
+    ListItem({ style: ListItemStyle.CARD }) {
+      SettingsListRow({ title: title, showArrow: true })
+    }
+    .onClick(action)
   }
 
   @Builder
@@ -83,10 +93,16 @@ export struct SettingsDetail {
             this.ToolbarPositionRow(TOOLBAR_POSITION_LABELS[TOOLBAR_POSITION_VALUES.indexOf(position)], position)
           }, (position: string) => position)
         }.attributeModifier(this.groupStyle)
+      } else if (this.section === 'license-list') {
+        ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+          this.LinkRow('本项目开源许可证', () => this.onOpen('project-license'))
+          this.LinkRow('第三方开源许可证', () => this.onOpen('licenses'))
+        }.attributeModifier(this.groupStyle)
       } else if (this.section === 'about') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           this.InfoRow('应用名称', 'MarkNote')
           this.InfoRow('版本', this.version.length > 0 ? this.version : '版本信息不可用')
+          this.LinkRow('GitHub 项目主页', () => this.onOpenProject())
         }.attributeModifier(this.groupStyle)
       } else {
         ListItem() {
