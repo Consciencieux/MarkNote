@@ -24,6 +24,8 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 
 `HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，各自保留滚动控制器。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
 
+`DocumentView` 持有文稿编辑和保存状态，并协调页签；`DocumentPreviewView` 管理各自的 Web 控制器和预览更新，`DocumentOutlineView` 管理大纲展示与展开状态。
+
 首页和文稿页的标题栏菜单使用系统菜单组件；`DocumentMenus` 和 `DocumentBridge` 负责跨页面的菜单动作与离开确认。
 
 ## 离线预览

@@ -20,7 +20,7 @@
 | 编辑 | 使用 ArkUI `TextArea` 编辑源文本，支持光标和选区。切换到编辑页签不会主动弹出键盘；点击文本后才进入输入状态。不支持多光标、语法折叠或行级语法高亮 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 快捷插入 | Markdown 编辑页提供标题、强调、链接、列表、待办、代码和公式等快捷操作。工具栏位于顶部标题栏下方，空间不足时可横向滚动。其他格式不显示格式工具栏 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[FormatBarView.ets](../entry/src/main/ets/pages/FormatBarView.ets) |
 | 查找与替换 | 按字面文本查找，可跳到下一处并替换单处；不支持正则表达式和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
-| Markdown 大纲 | 提取代码围栏以外的 ATX 标题，按标题级别分层；可展开、折叠并跳转到相应位置。暂不解析 Setext 标题 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
+| Markdown 大纲 | 提取代码围栏以外的 ATX 标题，按标题级别分层；可展开、折叠并跳转到相应位置。暂不解析 Setext 标题 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[DocumentOutlineView.ets](../entry/src/main/ets/pages/DocumentOutlineView.ets) |
 | 撤销与重做 | 编辑历史保存在内存中，连续输入在 600 毫秒内合并，最多保留 200 步；切换文稿时清空 | [EditHistory.ets](../entry/src/main/ets/document/EditHistory.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。宽度达到 `WIDTH_LG` 断点时增加编辑与预览分栏 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
 
@@ -41,7 +41,7 @@
 
 “开源许可证”页分别提供本项目和第三方许可证全文。“关于”页显示应用名称、版本及 GitHub 项目主页入口；主页交给系统浏览器打开。
 
-标题栏使用 HDS 导航组件，菜单使用系统菜单组件。对不支持沉浸材质或处于 `SMOOTH` 材质档位的设备，菜单关闭沉浸材质并使用系统默认背板。
+标题栏使用 HDS 导航组件，菜单使用系统菜单组件。文稿标题栏显示文件名，不显示行数、字符数或保存状态。对不支持沉浸材质或处于 `SMOOTH` 材质档位的设备，菜单关闭沉浸材质并使用系统默认背板。
 
 主要代码：[SettingsView.ets](../entry/src/main/ets/pages/SettingsView.ets)、[SettingsDetail.ets](../entry/src/main/ets/pages/SettingsDetail.ets)、[SettingsPage.ets](../entry/src/main/ets/pages/SettingsPage.ets)、[MenuMaterialOptions.ets](../entry/src/main/ets/pages/MenuMaterialOptions.ets)。
 

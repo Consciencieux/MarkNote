@@ -1,17 +1,18 @@
 import { common } from '@kit.AbilityKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
-import { webview } from '@kit.ArkWeb';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
   TitleBarContentOptions, HdsNavigationTitleBarOptions, HdsTabs, hdsMaterial
 } from '@kit.UIDesignKit';
-import { DocumentInfo, Heading, RecoveryData, linesIn } from '../model/Document';
+import { DocumentInfo, Heading, RecoveryData } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
 import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
 import { EditHistory, EditStep } from '../document/EditHistory';
 import { FormatBarView } from './FormatBarView';
+import { DocumentOutlineView } from './DocumentOutlineView';
+import { DocumentPreviewView } from './DocumentPreviewView';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
 import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { menuBridge } from './DocumentMenus';
@@ -27,15 +28,6 @@ const TAB_PREVIEW: number = 0;
 const TAB_EDIT: number = 1;
 const TAB_OUTLINE: number = 2;
 const TAB_SPLIT: number = 3;
-/** Flat row model used by the documented ArkUI List-based tree pattern. */
-class OutlineRow {
-  id: number = 0;
-  heading: Heading = new Heading(1, '', 0, 0);
-  depth: number = 0;
-  isFolder: boolean = false;
-  expanded: boolean = false;
-}
-
 /**
  * 文稿页：预览、编辑、大纲和分栏，以及它们的悬浮操作栏和保存/草稿逻辑。
  * 文稿会话由 DocumentService 持有，这里只镜像一份给 UI；首页通过 revision 通知换篇，
@@ -44,7 +36,7 @@ class OutlineRow {
 @Component
 export struct DocumentView {
   // 由首页传入。
-  @Prop @Watch('onThemeChange') theme: string = 'system';
+  @Prop theme: string = 'system';
   @Prop @Watch('onWideChange') wide: boolean = false;
   /** 每打开一篇就加一，用来在路由已经存在时重新载入会话。 */
   @Prop @Watch('loadSession') revision: number = 0;
@@ -52,8 +44,6 @@ export struct DocumentView {
   /** 保存成功后把文件记进最近文稿，列表由首页持有。 */
   onSaved: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
 
-  private preview: webview.WebviewController = new webview.WebviewController();
-  private splitPreview: webview.WebviewController = new webview.WebviewController();
   private tabContentPolicy: PageTabContentPolicy = new PageTabContentPolicy();
   private tabsPolicy: PageTabsPolicy = new PageTabsPolicy();
   private previewScroller: Scroller = new Scroller();
@@ -61,9 +51,6 @@ export struct DocumentView {
   private outlineScroller: Scroller = new Scroller();
   private splitEditScroller: Scroller = new Scroller();
   private splitPreviewScroller: Scroller = new Scroller();
-  private previewReady: boolean = false;
-  private splitReady: boolean = false;
-  private previewTimer: number = -1;
   @State private title: string = '未命名.md';
   @State private source: string = '';
   @State private savedText: string = '';
@@ -71,7 +58,6 @@ export struct DocumentView {
   /** Format id of the open document, kept as state so the format bar rebuilds on switch. */
   @State private formatId: string = '';
   @State private headings: Heading[] = [];
-  @State private expandedOutline: number[] = [];
   @State private saving: boolean = false;
   @State private searchVisible: boolean = false;
   @State private query: string = '';
@@ -111,10 +97,6 @@ export struct DocumentView {
     if (!this.wide && this.selectedTab === this.splitTab()) this.selectedTab = TAB_PREVIEW;
   }
 
-  private onThemeChange(): void {
-    this.schedulePreview();
-  }
-
   /** 载入当前会话。首次进入和首页换篇（revision 变）都走这里。 */
   private loadSession(): void {
     this.syncFromService();
@@ -136,7 +118,6 @@ export struct DocumentView {
   aboutToDisappear(): void {
     this.flushRecovery();
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
-    if (this.previewTimer >= 0) clearTimeout(this.previewTimer);
     menuBridge.saveAs = (): void => {};
     menuBridge.find = (): void => {};
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
@@ -168,7 +149,7 @@ export struct DocumentView {
   }
 
   private documentTitle(): HdsNavigationTitleBarOptions {
-    const heading: HdsNavigationTitle = { mainTitle: this.title, subTitle: this.statusLine() };
+    const heading: HdsNavigationTitle = { mainTitle: this.title };
     const menu: HdsNavigationMenuContentOptions = {
       maxCount: 4,
       value: [
@@ -196,15 +177,6 @@ export struct DocumentView {
     menuBridge.openDocumentMenu();
   }
 
-  private schedulePreview(): void {
-    if (this.previewTimer >= 0) clearTimeout(this.previewTimer);
-    this.previewTimer = setTimeout(() => {
-      this.previewTimer = -1;
-      if (this.previewReady) this.sendPreview(this.preview);
-      if (this.splitReady) this.sendPreview(this.splitPreview);
-    }, 120);
-  }
-
   private currentFormat(): DocumentFormat {
     return DocumentService.formatFor(this.info);
   }
@@ -217,20 +189,6 @@ export struct DocumentView {
     if (this.currentFormat().outline && this.selectedTab === TAB_OUTLINE) return [this.outlineScroller];
     if (this.selectedTab === TAB_EDIT) return [this.editScroller];
     return [this.previewScroller];
-  }
-
-  private sendPreview(controller: webview.WebviewController): void {
-    const kind = this.currentFormat().id;
-    const command = 'window.MarknotePreview.update(' + JSON.stringify({
-      kind: kind,
-      source: this.source,
-      theme: this.theme
-    }) + ')';
-    try {
-      controller.runJavaScript(command);
-    } catch {
-      // The Web surface may have been disposed while switching tabs.
-    }
   }
 
   private isDirty(): boolean {
@@ -304,68 +262,12 @@ export struct DocumentView {
     this.source = session.source;
     this.savedText = session.savedText;
     this.updateHeadings();
-    this.schedulePreview();
   }
 
   /** Build outline rows with the FAQ's List/ListItem tree pattern. TreeView has no documented
    * content-start offset and its API warns against generic attributes, so List owns this viewport. */
   private updateHeadings(): void {
     this.headings = DocumentService.headingsFor(this.info, this.source);
-    const expanded: number[] = [];
-    for (let index = 0; index + 1 < this.headings.length; index++) {
-      if (this.headings[index + 1].level > this.headings[index].level) expanded.push(index + 1);
-    }
-    this.expandedOutline = expanded;
-  }
-
-  private visibleOutlineRows(): OutlineRow[] {
-    const rows: OutlineRow[] = [];
-    const ancestors: OutlineRow[] = [];
-    for (let index = 0; index < this.headings.length; index++) {
-      const heading = this.headings[index];
-      while (ancestors.length > 0 && ancestors[ancestors.length - 1].heading.level >= heading.level) {
-        ancestors.pop();
-      }
-      const nextHeading = index + 1 < this.headings.length ? this.headings[index + 1] : undefined;
-      const row = new OutlineRow();
-      row.id = index + 1;
-      row.heading = heading;
-      row.depth = ancestors.length;
-      row.isFolder = nextHeading !== undefined && nextHeading.level > heading.level;
-      row.expanded = row.isFolder && this.expandedOutline.indexOf(row.id) >= 0;
-      if (ancestors.every((ancestor: OutlineRow) => ancestor.expanded)) rows.push(row);
-      if (row.isFolder) ancestors.push(row);
-    }
-    return rows;
-  }
-
-  private toggleOutline(row: OutlineRow): void {
-    const expanded = this.expandedOutline.slice();
-    const index = expanded.indexOf(row.id);
-    if (index >= 0) expanded.splice(index, 1);
-    else expanded.push(row.id);
-    this.expandedOutline = expanded;
-  }
-
-  @Builder
-  private OutlineRowContent(row: OutlineRow) {
-    Row() {
-      // Indentation uses the system spacing resource; no row dimensions or colors are invented.
-      if (row.depth > 0) Blank().width($r('sys.float.padding_level4'))
-      if (row.depth > 1) Blank().width($r('sys.float.padding_level4'))
-      if (row.depth > 2) Blank().width($r('sys.float.padding_level4'))
-      if (row.depth > 3) Blank().width($r('sys.float.padding_level4'))
-      if (row.depth > 4) Blank().width($r('sys.float.padding_level4'))
-      if (row.depth > 5) Blank().width($r('sys.float.padding_level4'))
-      if (row.isFolder) {
-        SymbolGlyph(row.expanded ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_right'))
-          .onClick(() => this.toggleOutline(row))
-      }
-      Text(row.heading.text)
-        .layoutWeight(1)
-        .onClick(() => this.focusHeading(row.heading))
-    }
-    .width('100%')
   }
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
@@ -455,7 +357,6 @@ export struct DocumentView {
     this.history.record(text, position, Date.now());
     this.refreshHistoryState();
     this.scheduleRecovery();
-    this.schedulePreview();
   }
 
   private refreshHistoryState(): void {
@@ -485,7 +386,6 @@ export struct DocumentView {
     this.updateHeadings();
     this.refreshHistoryState();
     this.scheduleRecovery();
-    this.schedulePreview();
     const caret = Math.min(step.caret, step.text.length);
     this.selectionStart = caret;
     this.selectionEnd = caret;
@@ -533,14 +433,6 @@ export struct DocumentView {
   private focusHeading(heading: Heading): void {
     this.selectedTab = TAB_EDIT;
     setTimeout(() => this.cursor.caretPosition(heading.offset), 20);
-  }
-
-  private statusLine(): string {
-    const count = `${linesIn(this.source)} 行 · ${this.source.length} 字符`;
-    if (this.saving) return `${count} · 正在保存…`;
-    if (this.isDirty() || this.info.uri.length === 0) return `${count} · 未保存`;
-    if (!this.info.writable) return `${count} · 只读`;
-    return `${count} · 已保存`;
   }
 
   /**
@@ -620,61 +512,6 @@ export struct DocumentView {
     }
   }
 
-  /**
-   * 预览页和分栏共用同一个本地预览页面，差异只有 Web 控制器和就绪标记。
-   * 共用构建器，避免 Web 配置发生漂移。
-   */
-  @Builder
-  private PreviewWeb(controller: webview.WebviewController, onReady: () => void) {
-    // renderMode 是 Web 构造参数（web.d.ts 的 WebOptions，API 12 起），没有同名链式属性。
-    // SYNC_RENDER 让 Web 作为画布节点和 ArkUI 一起绘制，FIT_CONTENT 才能按内容撑高。
-    Web({ src: $rawfile('preview/index.html'), controller: controller, renderMode: RenderMode.SYNC_RENDER })
-      .javaScriptAccess(true)
-      .domStorageAccess(false)
-      // ArkWeb 默认关闭深色模式；须在首次加载前设置，网页的 prefers-color-scheme 才能生效。
-      // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/web-set-dark-mode
-      .darkMode(this.theme === 'system' ? WebDarkMode.Auto :
-        (this.theme === 'dark' ? WebDarkMode.On : WebDarkMode.Off))
-      // 兜底底色跟随页面底色（同一个系统 token），不写死黑白两色；
-      // 预览正文的底色由 renderer 的样式表按主题决定。
-      .backgroundColor($r('sys.color.ohos_id_color_background'))
-      .onPageEnd(() => {
-        onReady();
-        this.sendPreview(controller);
-      })
-      .width('100%')
-      // 《Web组件大小自适应页面内容布局》：Web 按内容撑高，滚动交给外层 Scroll；
-      // NEVER 关掉 Web 自己的过滚动，避免和 Scroll 抢边缘效果。
-      .layoutMode(WebLayoutMode.FIT_CONTENT)
-      .overScrollMode(OverScrollMode.NEVER)
-  }
-
-  @Builder
-  private PreviewPage(controller: webview.WebviewController, scroller: Scroller, onReady: () => void) {
-    DocumentScrollLayer({ scroller: scroller }) {
-      this.PreviewWeb(controller, onReady)
-    }
-  }
-
-  /** The unbounded List contributes rows; the shared parent Scroll owns page movement. */
-  @Builder
-  private OutlinePage() {
-    DocumentScrollLayer({ scroller: this.outlineScroller }) {
-      List({ initialIndex: 0 }) {
-        ForEach(this.visibleOutlineRows(), (row: OutlineRow) => {
-          ListItem() {
-            this.OutlineRowContent(row)
-          }
-        }, (row: OutlineRow) => `${row.id}`)
-      }
-      // FAQ faqs-arkui-295: an unbounded List inside Scroll expands with its rows and lets the
-      // outer Scroll move the layout. ForEach already eagerly builds this outline's rows.
-      .width('100%')
-      .edgeEffect(EdgeEffect.None)
-      .scrollBar(BarState.Off)
-    }
-  }
-
   private splitTab(): number {
     return this.currentFormat().outline ? TAB_SPLIT : TAB_OUTLINE;
   }
@@ -710,7 +547,10 @@ export struct DocumentView {
         .width('50%')
         .height('100%')
       Column() {
-        this.PreviewPage(this.splitPreview, this.splitPreviewScroller, () => { this.splitReady = true; })
+        DocumentPreviewView({
+          scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
+          kind: this.currentFormat().id
+        })
       }
         .width('50%')
         .height('100%')
@@ -733,7 +573,10 @@ export struct DocumentView {
       HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
         // Preview is first so a newly opened document lands on its rendered content.
         TabContent() {
-          this.PreviewPage(this.preview, this.previewScroller, () => { this.previewReady = true; })
+          DocumentPreviewView({
+            scroller: this.previewScroller, theme: this.theme, source: this.source,
+            kind: this.currentFormat().id
+          })
         }
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.eye'), '预览'))
@@ -742,7 +585,12 @@ export struct DocumentView {
           .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), '编辑'))
         // Only formats that declare an outline get the tab; plain text and SVG have none.
         if (this.currentFormat().outline) {
-          TabContent() { this.OutlinePage() }
+          TabContent() {
+            DocumentOutlineView({
+              headings: this.headings, scroller: this.outlineScroller,
+              onSelect: (heading: Heading): void => this.focusHeading(heading)
+            })
+          }
             .attributeModifier(this.tabContentPolicy)
             .tabBar(this.bottomTab($r('sys.symbol.list_bullet'), '大纲'))
         }
@@ -758,8 +606,7 @@ export struct DocumentView {
         // 离开编辑页签就退出编辑态：键盘跟着收起，焦点不再挂在隐藏的 TextArea 上，
         // 回来时也不会把光标和键盘一起带回来。
         if (index !== TAB_EDIT && index !== this.splitTab()) this.stopEditing();
-        this.schedulePreview();
-      })
+          })
       .barMode(BarMode.Fixed)
       // 按华为《沉浸光感》(ui-design-hds-component-material) 推荐值启用系统自适应材质。
       .barOverlap(true)
