@@ -33,3 +33,11 @@ MarkNote 是 HarmonyOS 上的本地文稿编辑器。界面、导航、编辑、
 | [docs/PRIVACY.md](docs/PRIVACY.md) | 本机数据行为，以及发行者需要补齐的隐私政策字段 |
 | [third_party/README.md](third_party/README.md) | 直接依赖及其许可证 |
 | [AGENTS.md](AGENTS.md) | 修改代码时需要遵守的项目边界 |
+
+## 开源许可证
+
+MarkNote 采用 GNU General Public License v3.0（GPL-3.0-only）许可证开源。
+
+Copyright (C) 2026 Zhou Yi.
+
+详见 [LICENSE](LICENSE)。
