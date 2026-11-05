@@ -65,6 +65,8 @@ export struct HomeView {
             .layoutWeight(1)
             .margin({ right: $r('sys.float.padding_level6') })
           Button('打开文件')
+            // Button API (ts-basic-components-button)：打开文件采用普通操作的 NORMAL 样式。
+            .buttonStyle(ButtonStyleMode.NORMAL)
             .layoutWeight(1)
             .onClick(() => this.onOpen())
         }

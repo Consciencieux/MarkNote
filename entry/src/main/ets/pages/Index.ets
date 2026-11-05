@@ -14,6 +14,7 @@ import { HomeView } from './HomeView';
 import { DocumentView } from './DocumentView';
 import { SettingsView, settingTitle } from './SettingsView';
 import { SettingsDetail } from './SettingsDetail';
+import { adaptiveBlurredHdsTitleBarStyle, adaptiveHdsTitleBarStyle } from './HdsMaterialStyles';
 import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
@@ -29,6 +30,7 @@ struct Index {
   @State private legalText: string = '';
   @State private recents: RecentDocument[] = [];
   @State private theme: string = 'system';
+  @State private toolbarPosition: string = 'top';
   @State private version: string = '';
   @State private wide: boolean = false;
   /** 每开一篇加一，文稿页据此重新载入会话。 */
@@ -90,6 +92,7 @@ struct Index {
     try {
       this.recents = await LocalState.readRecent(this.context);
       this.changeTheme(await LocalState.readTheme(this.context), false);
+      this.toolbarPosition = await LocalState.readToolbarPosition(this.context);
     } catch {
       this.toast('读取设置失败，已使用系统默认值');
     }
@@ -156,6 +159,14 @@ struct Index {
     }
   }
 
+  private changeToolbarPosition(position: string): void {
+    this.toolbarPosition = position === 'side' ? 'side' : 'top';
+    if (this.context) {
+      void LocalState.writeToolbarPosition(this.context, this.toolbarPosition)
+        .catch(() => this.toast('编辑工具栏位置未能保存'));
+    }
+  }
+
   private menuIcon(label: string, symbol: Resource, id: string,
     action: () => void): HdsNavigationMenuItemOptions {
     // 只配必要的字段；isEnabled 默认 true、type 默认 IconStyleMode.NORMAL，不再重复写。
@@ -171,21 +182,22 @@ struct Index {
   }
 
   /**
-   * 首页标题栏使用 HdsNavigation API 默认样式，因此不配置 style：
+   * 首页保留 HdsNavigation 默认的 COMMON_BLUR 动态模糊样式，并为标题栏按钮配置官方 HDS 自适应沉浸材质：
    * - HdsNavigation API (ui-design-hdsnavigation)：`scrollEffectType` 默认 ScrollEffectType.COMMON_BLUR，
    *   `enableScrollEffect` 默认 true，文档对 COMMON_BLUR 的说明是「适用于列表型非沉浸式场景」。
    * - 同一 API 的 HdsNavigationBackgroundStyle.backgroundColor：模糊样式为 COMMON_BLUR 时
    *   「背景色默认值均为透明色」；COMMON_BLUR 的说明是「滑动内容进入/离开标题栏区域过程中，
    *   模糊背板和分割线透明渐变出现/消失」。所以顶栏没有常驻色块，标题和菜单悬浮在内容上，
    *   内容滑到下面时才浮出模糊蒙板。
-   * - 标题文字没有背板；菜单图标在 COMMON_BLUR 下默认带 comp_background_tertiary 背板
-   *   （HdsNavigationIconItemStyle.backgroundColor），不覆盖。
+   * - HDS《沉浸光感》(ui-design-hds-component-material) 指定通过
+   *   TitleBarStyleOptions.systemMaterialEffect 配置标题栏按钮材质；不手动补背景色。
    * `titleMode` 用 MINI（56vp），标题与右侧菜单同一行。
    */
   private homeTitle(): HdsNavigationTitleBarOptions {
     return {
       // 标题栏是组件级安全区（默认 false），内容区据此避让标题栏。
       enableComponentSafeArea: true,
+      style: adaptiveHdsTitleBarStyle(),
       content: {
         title: { mainTitle: '全部' },
         menu: {
@@ -359,6 +371,7 @@ struct Index {
     if (name === 'document') {
       DocumentView({
         theme: this.theme,
+        toolbarPosition: this.toolbarPosition,
         wide: this.wide,
         revision: this.revision,
         onLeave: (): void => {
@@ -372,6 +385,7 @@ struct Index {
       HdsNavDestination() {
         SettingsView({
           theme: $theme,
+          toolbarPosition: this.toolbarPosition,
           version: this.version,
           onOpen: (section: string): void => this.openSetting(section)
         })
@@ -379,13 +393,13 @@ struct Index {
       .titleBar({
         // 标题栏是组件级安全区，内容区才会避让标题栏。
         enableComponentSafeArea: true,
+        style: adaptiveBlurredHdsTitleBarStyle(),
         content: {
           title: { mainTitle: '设置' }
         }
       })
       .titleMode(HdsNavDestinationTitleMode.MINI)
-      // 页面底色挂在目的页根节点上：标题栏背板在 COMMON_BLUR 下默认透明，
-      // 透出来的就是这里的底色，所以标题栏与内容同色，不会多出一条色带。
+      // 设置页使用 HDS 固定渐变模糊标题栏和系统自适应材质。
       // 设置页用分组卡片，卡片是抬升的一层，页面底取 sub_background 以便和卡片分层。
       .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
     } else {
@@ -393,19 +407,22 @@ struct Index {
         SettingsDetail({
           section: name,
           theme: $theme,
+          toolbarPosition: this.toolbarPosition,
           version: this.version,
           text: this.legalText,
-          onChooseTheme: (choice: string): void => this.changeTheme(choice)
+          onChooseTheme: (choice: string): void => this.changeTheme(choice),
+          onChooseToolbarPosition: (position: string): void => this.changeToolbarPosition(position)
         })
       }
       .titleBar({
         enableComponentSafeArea: true,
+        style: adaptiveBlurredHdsTitleBarStyle(),
         content: {
           title: { mainTitle: settingTitle(name) }
         }
       })
       .titleMode(HdsNavDestinationTitleMode.MINI)
-      // 与设置首页同一底色，见上面关于标题栏透明背板的说明。
+      // 与设置首页使用相同的 HDS 标题栏模糊和页面底色。
       .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
     }
   }

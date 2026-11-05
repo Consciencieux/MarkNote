@@ -1,8 +1,10 @@
 import { HdsListItemCard, SuffixRadio, SuffixText } from '@kit.UIDesignKit';
-import { THEME_LABELS, THEME_VALUES } from './SettingsView';
+import {
+  THEME_LABELS, THEME_VALUES, TOOLBAR_POSITION_LABELS, TOOLBAR_POSITION_VALUES
+} from './SettingsView';
 
 /**
- * 设置的内容页，按 section 渲染四段内容之一：外观、隐私说明、第三方开源许可证、关于。
+ * 设置的内容页，按 section 渲染外观、编辑工具栏位置、隐私说明、第三方开源许可证或关于。
  *
  * 标题栏和返回键由外层 HdsNavDestination 提供，这里只排内容。设置通过 HdsNavigation 路由展示，
  * 见 Index 里 Destination 的说明。
@@ -18,9 +20,11 @@ export struct SettingsDetail {
   @Prop section: string = 'about';
   /** 当前主题取值，和设置首页、Index 共用同一份状态。 */
   @Link theme: string;
+  @Prop toolbarPosition: string = 'top';
   @Prop version: string = '';
   @Prop text: string = '';
   onChooseTheme: (choice: string) => void = (_choice: string): void => {};
+  onChooseToolbarPosition: (position: string) => void = (_position: string): void => {};
 
   @Builder
   private RadioRow(title: string, choice: string) {
@@ -52,6 +56,24 @@ export struct SettingsDetail {
     }
   }
 
+  @Builder
+  private ToolbarPositionRow(title: string, position: string) {
+    ListItem() {
+      HdsListItemCard({
+        textItem: {
+          primaryText: { text: title }
+        },
+        suffixItem: new SuffixRadio({
+          isCheck: this.toolbarPosition === position,
+          onChange: (isChecked: boolean): void => {
+            if (isChecked) this.onChooseToolbarPosition(position);
+          }
+        }),
+        onClick: (): void => this.onChooseToolbarPosition(position)
+      })
+    }
+  }
+
   /**
    * 长正文不适合 HdsListItemCard 的列表项结构，交给 ArkUI Text 默认排版。
    */
@@ -69,14 +91,22 @@ export struct SettingsDetail {
     // 正文会跑到页面中间；List 的条目从顶部开始排列。
     Column() {
       if (this.section === 'appearance') {
-        List() {
+        List({ space: 10 }) {
           ForEach(THEME_VALUES, (choice: string) => {
             this.RadioRow(THEME_LABELS[THEME_VALUES.indexOf(choice)], choice)
           }, (choice: string) => choice)
         }
         .layoutWeight(1)
+      } else if (this.section === 'toolbar') {
+        List({ space: 10 }) {
+          ForEach(TOOLBAR_POSITION_VALUES, (position: string) => {
+            this.ToolbarPositionRow(
+              TOOLBAR_POSITION_LABELS[TOOLBAR_POSITION_VALUES.indexOf(position)], position)
+          }, (position: string) => position)
+        }
+        .layoutWeight(1)
       } else if (this.section === 'about') {
-        List() {
+        List({ space: 10 }) {
           this.InfoRow('应用名称', 'MarkNote')
           this.InfoRow('版本', this.version.length > 0 ? this.version : '版本信息不可用')
         }

@@ -2,10 +2,13 @@ import { HdsListItemCard, SuffixArrow, SuffixTextAndArrow } from '@kit.UIDesignK
 
 export const THEME_VALUES: string[] = ['system', 'light', 'dark'];
 export const THEME_LABELS: string[] = ['跟随系统', '浅色', '深色'];
+export const TOOLBAR_POSITION_VALUES: string[] = ['top', 'side'];
+export const TOOLBAR_POSITION_LABELS: string[] = ['顶部', '右侧'];
 
 /** 二级页标题，和设置首页的行名一致。 */
 export function settingTitle(section: string): string {
   if (section === 'appearance') return '外观';
+  if (section === 'toolbar') return '编辑工具栏位置';
   if (section === 'privacy') return '隐私说明';
   if (section === 'licenses') return '第三方开源许可证';
   return '关于';
@@ -29,6 +32,7 @@ export function themeLabel(choice: string): string {
 export struct SettingsView {
   /** @Link keeps the displayed theme in sync with the owner when returning from its detail page. */
   @Link theme: string;
+  @Prop toolbarPosition: string = 'top';
   @Prop version: string = '';
   onOpen: (section: string) => void = (_section: string): void => {};
 
@@ -59,10 +63,11 @@ export struct SettingsView {
   }
 
   build() {
-    // Leave the card layout and list spacing at their component defaults.
+    // 按官方《设置列表卡片样式》(ui-design-set-listitem-style) 示例设置卡片行间距。
     Column() {
-      List() {
+      List({ space: 10 }) {
         this.LinkRow('外观', themeLabel(this.theme), 'appearance')
+        this.LinkRow('编辑工具栏位置', this.toolbarPosition === 'side' ? '右侧' : '顶部', 'toolbar')
         this.LinkRow('隐私说明', '', 'privacy')
         this.LinkRow('第三方开源许可证', '', 'licenses')
         this.LinkRow('关于', this.version.length > 0 ? `版本 ${this.version}` : '', 'about')

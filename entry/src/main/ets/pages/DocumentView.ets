@@ -1,13 +1,10 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import {
-  CallbackParam, NodeParam, SymbolGlyphModifier, TreeController, TreeListenType, TreeListener,
-  TreeListenerManager, TreeView
-} from '@kit.ArkUI';
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
-  TitleBarContentOptions, HdsNavigationTitleBarOptions, HdsTabs
+  TitleBarContentOptions, HdsNavigationTitleBarOptions, HdsTabs, hdsMaterial
 } from '@kit.UIDesignKit';
 import { DocumentInfo, Heading, RecoveryData, linesIn } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
@@ -17,6 +14,7 @@ import { EditHistory, EditStep } from '../document/EditHistory';
 import { FormatBarView } from './FormatBarView';
 import { menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
+import { adaptiveFloatingHdsTitleBarStyle } from './HdsMaterialStyles';
 import { LocalState } from '../storage/LocalState';
 
 /**
@@ -27,15 +25,22 @@ const TAB_PREVIEW: number = 0;
 const TAB_EDIT: number = 1;
 const TAB_OUTLINE: number = 2;
 const TAB_SPLIT: number = 3;
+/** HdsNavDestination MINI title-bar height documented by the UI Design Kit API. */
+const MINI_TITLE_BAR_HEIGHT: number = 56;
+/** HdsNavigation bottomBuilder default height documented by the UI Design Kit API. */
+const BOTTOM_BUILDER_HEIGHT: number = 56;
 
-/** 大纲树的父节点。ArkTS 不允许把对象字面量当成类型，所以单独声明。 */
-class OutlineParent {
-  id: number = -1;
-  level: number = 0;
+/** Flat row model used by the documented ArkUI List-based tree pattern. */
+class OutlineRow {
+  id: number = 0;
+  heading: Heading = new Heading(1, '', 0, 0);
+  depth: number = 0;
+  isFolder: boolean = false;
+  expanded: boolean = false;
 }
 
 /**
- * 文稿页：预览、编辑、大纲和分栏，以及它们的标题栏、格式栏和保存/草稿逻辑。
+ * 文稿页：预览、编辑、大纲和分栏，以及它们的悬浮操作栏和保存/草稿逻辑。
  * 文稿会话由 DocumentService 持有，这里只镜像一份给 UI；首页通过 revision 通知换篇，
  * 通过两种桥（menuBridge、documentBridge）发起菜单动作和「能否离开」的询问。
  */
@@ -43,6 +48,7 @@ class OutlineParent {
 export struct DocumentView {
   // 由首页传入。
   @Prop @Watch('onThemeChange') theme: string = 'system';
+  @Prop toolbarPosition: string = 'top';
   @Prop @Watch('onWideChange') wide: boolean = false;
   /** 每打开一篇就加一，用来在路由已经存在时重新载入会话。 */
   @Prop @Watch('loadSession') revision: number = 0;
@@ -62,13 +68,7 @@ export struct DocumentView {
   /** Format id of the open document, kept as state so the format bar rebuilds on switch. */
   @State private formatId: string = '';
   @State private headings: Heading[] = [];
-  private outlineTree: TreeController = new TreeController();
-  private outlineNodeHeadings: Map<number, Heading> = new Map<number, Heading>();
-  private outlineTreeListener: TreeListener | null = null;
-  private outlineNodeClick: (param: CallbackParam) => void = (param: CallbackParam): void => {
-    const heading = this.outlineNodeHeadings.get(param.currentNodeId);
-    if (heading) this.focusHeading(heading);
-  };
+  @State private expandedOutline: number[] = [];
   @State private saving: boolean = false;
   @State private searchVisible: boolean = false;
   @State private query: string = '';
@@ -86,8 +86,6 @@ export struct DocumentView {
   private recoveryTimer: number = -1;
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    this.outlineTreeListener = TreeListenerManager.getInstance().getTreeListener();
-    this.outlineTreeListener.on(TreeListenType.NODE_CLICK, this.outlineNodeClick);
     // 文稿页自己的菜单项：另存为和查找只对当前文稿有意义。
     menuBridge.saveAs = (): void => {
       menuBridge.dismiss((): void => { void this.saveFile(true); });
@@ -136,10 +134,6 @@ export struct DocumentView {
     this.flushRecovery();
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     if (this.previewTimer >= 0) clearTimeout(this.previewTimer);
-    if (this.outlineTreeListener !== null) {
-      this.outlineTreeListener.off(TreeListenType.NODE_CLICK, this.outlineNodeClick);
-      this.outlineTreeListener = null;
-    }
     menuBridge.saveAs = (): void => {};
     menuBridge.find = (): void => {};
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
@@ -187,8 +181,18 @@ export struct DocumentView {
       ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
+    if (this.toolbarPosition === 'top' && this.formatBarWanted()) {
+      // ui-design-navigation-customized-area: put the edit actions in HDS's titlebar bottomBuilder,
+      // so the API 26 immersive material is applied within its documented Navigation titlebar scope.
+      content.bottomBuilder = {
+        builder: (): void => this.TopFormatBar(),
+        height: BOTTOM_BUILDER_HEIGHT
+      };
+    }
     const options: HdsNavigationTitleBarOptions = {
-      enableComponentSafeArea: true,
+      avoidLayoutSafeArea: false,
+      enableComponentSafeArea: false,
+      style: adaptiveFloatingHdsTitleBarStyle(),
       content: content
     };
     return options;
@@ -223,7 +227,8 @@ export struct DocumentView {
     const command = 'window.MarknotePreview.update(' + JSON.stringify({
       kind: kind,
       source: this.source,
-      theme: theme
+      theme: theme,
+      topInset: this.contentTopInset()
     }) + ')';
     try {
       controller.runJavaScript(command);
@@ -305,41 +310,73 @@ export struct DocumentView {
     this.schedulePreview();
   }
 
-  /** TreeView (ohos-arkui-advanced-treeview) is the system component for nested structures. */
+  /** Build outline rows with the FAQ's List/ListItem tree pattern. TreeView has no documented
+   * content-start offset and its API warns against generic attributes, so List owns this viewport. */
   private updateHeadings(): void {
     this.headings = DocumentService.headingsFor(this.info, this.source);
-    this.outlineNodeHeadings = new Map<number, Heading>();
-    const controller = new TreeController();
-    const parents: OutlineParent[] = [];
+    const expanded: number[] = [];
+    for (let index = 0; index + 1 < this.headings.length; index++) {
+      if (this.headings[index + 1].level > this.headings[index].level) expanded.push(index + 1);
+    }
+    this.expandedOutline = expanded;
+  }
 
+  private contentTopInset(): number {
+    // HdsNavDestination API (ui-design-hdsnavdestination): MINI is 56vp. HdsNavigation API
+    // (ui-design-hdsnavigation) documents bottomBuilder's default as another 56vp when present.
+    return MINI_TITLE_BAR_HEIGHT +
+      (this.toolbarPosition === 'top' && this.formatBarWanted() ? BOTTOM_BUILDER_HEIGHT : 0);
+  }
+
+  private visibleOutlineRows(): OutlineRow[] {
+    const rows: OutlineRow[] = [];
+    const ancestors: OutlineRow[] = [];
     for (let index = 0; index < this.headings.length; index++) {
       const heading = this.headings[index];
-      while (parents.length > 0 && parents[parents.length - 1].level >= heading.level) {
-        parents.pop();
+      while (ancestors.length > 0 && ancestors[ancestors.length - 1].heading.level >= heading.level) {
+        ancestors.pop();
       }
-      const parentNodeId = parents.length > 0 ? parents[parents.length - 1].id : -1;
       const nextHeading = index + 1 < this.headings.length ? this.headings[index + 1] : undefined;
-      const isFolder = nextHeading !== undefined && nextHeading.level > heading.level;
-      const currentNodeId = index + 1;
-      const node: NodeParam = {
-        parentNodeId: parentNodeId,
-        currentNodeId: currentNodeId,
-        isFolder: isFolder,
-        primaryTitle: heading.text,
-        secondaryTitle: `第 ${heading.line} 行`
-      };
-      controller.addNode(node);
-      this.outlineNodeHeadings.set(currentNodeId, heading);
-      if (isFolder) {
-        const parent = new OutlineParent();
-        parent.id = currentNodeId;
-        parent.level = heading.level;
-        parents.push(parent);
-      }
+      const row = new OutlineRow();
+      row.id = index + 1;
+      row.heading = heading;
+      row.depth = ancestors.length;
+      row.isFolder = nextHeading !== undefined && nextHeading.level > heading.level;
+      row.expanded = row.isFolder && this.expandedOutline.indexOf(row.id) >= 0;
+      if (ancestors.every((ancestor: OutlineRow) => ancestor.expanded)) rows.push(row);
+      if (row.isFolder) ancestors.push(row);
     }
+    return rows;
+  }
 
-    controller.buildDone();
-    this.outlineTree = controller;
+  private toggleOutline(row: OutlineRow): void {
+    const expanded = this.expandedOutline.slice();
+    const index = expanded.indexOf(row.id);
+    if (index >= 0) expanded.splice(index, 1);
+    else expanded.push(row.id);
+    this.expandedOutline = expanded;
+  }
+
+  @Builder
+  private OutlineRowContent(row: OutlineRow) {
+    Row() {
+      // Indentation uses the system spacing resource; no row dimensions or colors are invented.
+      if (row.depth > 0) Blank().width($r('sys.float.padding_level4'))
+      if (row.depth > 1) Blank().width($r('sys.float.padding_level4'))
+      if (row.depth > 2) Blank().width($r('sys.float.padding_level4'))
+      if (row.depth > 3) Blank().width($r('sys.float.padding_level4'))
+      if (row.depth > 4) Blank().width($r('sys.float.padding_level4'))
+      if (row.depth > 5) Blank().width($r('sys.float.padding_level4'))
+      if (row.isFolder) {
+        SymbolGlyph(row.expanded ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_right'))
+          .onClick(() => this.toggleOutline(row))
+      }
+      Text(row.heading.text)
+        .layoutWeight(1)
+        .onClick(() => this.focusHeading(row.heading))
+      Text(`第 ${row.heading.line} 行`)
+    }
+    .width('100%')
   }
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
@@ -563,18 +600,25 @@ export struct DocumentView {
   @Builder
   private EditPage() {
     Column() {
-      // The official action bar stays in the edit page layout above the text editor.
-      FormatBarView({
-        visible: this.formatBarWanted(),
-        formatId: this.formatId,
-        onInsert: (action: InsertAction): void => this.insertToken(action)
-      })
       if (this.searchVisible) {
         this.FindBar()
       }
       TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: this.cursor })
         .width('100%')
         .layoutWeight(1)
+        // TextArea's documented default padding is 8/16/8/16vp. Keep those defaults and add
+        // the HDS title-bar region inside the scrollable text content so its first line begins
+        // below the floating controls and can scroll behind them afterward.
+        .padding({
+          top: this.contentTopInset() + 8,
+          right: 16,
+          bottom: 8,
+          left: 16
+        })
+        // Keep the official ArkUI TextArea, with a transparent fill and the system no-corner resource
+        // so the editor surface remains the same page background instead of a separate card.
+        .backgroundColor(Color.Transparent)
+        .borderRadius($r('sys.float.corner_radius_none'))
         // 切回编辑页签时 Tabs 会把焦点还给上次编辑的 TextArea，光标停在原处并直接拉起键盘，
         // 手感被打断。enableKeyboardOnFocus(false) 让点击以外的获焦不弹键盘，只有点击文字才弹。
         // 这是官方「管理软键盘」和 faqs-arkui-932 推荐的写法。
@@ -620,18 +664,36 @@ export struct DocumentView {
     this.PreviewWeb(this.splitPreview, () => { this.splitReady = true; })
   }
 
-  /** TreeView is the official ArkUI component for displaying nested structures. */
+  /** Official List/ListItem tree pattern; List owns the full-height scroll viewport. */
   @Builder
   private OutlinePage() {
-    Column() {
-      TreeView({ treeController: this.outlineTree })
+    List({ initialIndex: 0 }) {
+      ForEach(this.visibleOutlineRows(), (row: OutlineRow) => {
+        ListItem() {
+          this.OutlineRowContent(row)
+        }
+      }, (row: OutlineRow) => `${row.id}`)
     }
+    // List API (ts-container-list): contentStartOffset reserves the start gap while keeping the
+    // viewport full-height. The tree structure follows FAQ faqs-arkui-758.
+    .contentStartOffset(this.contentTopInset())
     .width('100%')
     .height('100%')
   }
 
   private splitTab(): number {
     return this.currentFormat().outline ? TAB_SPLIT : TAB_OUTLINE;
+  }
+
+  @Builder
+  private TopFormatBar() {
+    FormatBarView({
+      visible: true,
+      formatId: this.formatId,
+      horizontal: true,
+      immersive: true,
+      onInsert: (action: InsertAction): void => this.insertToken(action)
+    })
   }
 
   /** 页签图标沿用系统符号，选中态由系统页签样式给出。 */
@@ -659,37 +721,58 @@ export struct DocumentView {
    * and a plain nested @Builder does not keep the state parent-child relationship, so that
    * branch would not rebuild when the state changes.
    *
-   * 内容在标题栏下方截断，页签栏固定在底部，两者都不随键盘移动，所以这里只是一列普通布局。
+   * 正文铺到标题栏和底部页签下面；两层控件悬浮在正文之上，且都不随键盘移动。
    */
   @LocalBuilder
   private WorkspacePage() {
-    HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
-      // Preview is first so a newly opened document lands on its rendered content.
-      TabContent() { this.PreviewPage() }
-        .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
-      TabContent() { this.EditPage() }
-        .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
-      // Only formats that declare an outline get the tab; plain text and SVG have none.
-      if (this.currentFormat().outline) {
-        TabContent() { this.OutlinePage() }
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
+    Stack() {
+      HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
+        // Preview is first so a newly opened document lands on its rendered content.
+        TabContent() { this.PreviewPage() }
+          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
+        TabContent() { this.EditPage() }
+          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
+        // Only formats that declare an outline get the tab; plain text and SVG have none.
+        if (this.currentFormat().outline) {
+          TabContent() { this.OutlinePage() }
+            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
+        }
+        if (this.wide) {
+          TabContent() { this.SplitPage() }
+            .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
+        }
       }
-      if (this.wide) {
-        TabContent() { this.SplitPage() }
-          .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
+      // HdsTabs (ui-design-hdstabs)：存在 BottomTabBarStyle 时，未设置动画时长即使用官方默认值。
+      .onChange((index: number) => {
+        this.selectedTab = index;
+        // 离开编辑页签就退出编辑态：键盘跟着收起，焦点不再挂在隐藏的 TextArea 上，
+        // 回来时也不会把光标和键盘一起带回来。
+        if (index !== TAB_EDIT && index !== this.splitTab()) this.stopEditing();
+        this.schedulePreview();
+      })
+      .barMode(BarMode.Fixed)
+      // 按华为《沉浸光感》(ui-design-hds-component-material) 推荐值启用系统自适应材质。
+      .barOverlap(true)
+      .barFloatingStyle({
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        }
+      })
+      .width('100%')
+      .height('100%')
+      if (this.toolbarPosition === 'side' && this.formatBarWanted()) {
+        FormatBarView({
+          visible: true,
+          formatId: this.formatId,
+          horizontal: false,
+          immersive: false,
+          onInsert: (action: InsertAction): void => this.insertToken(action)
+        })
+          .align(Alignment.End)
+          .margin({ right: $r('sys.float.margin_right') })
       }
     }
-    .onChange((index: number) => {
-      this.selectedTab = index;
-      // 离开编辑页签就退出编辑态：键盘跟着收起，焦点不再挂在隐藏的 TextArea 上，
-      // 回来时也不会把光标和键盘一起带回来。
-      if (index !== TAB_EDIT && index !== this.splitTab()) this.stopEditing();
-      this.schedulePreview();
-    })
-    .barMode(BarMode.Fixed)
-    // HdsTabs (ui-design-hdstabs) documents barOverlap plus barFloatingStyle for the floating bar.
-    .barOverlap(true)
-    .barFloatingStyle({})
     .width('100%')
     .height('100%')
   }
@@ -716,11 +799,12 @@ export struct DocumentView {
     }
     .titleBar(this.documentTitle())
     .titleMode(HdsNavDestinationTitleMode.MINI)
-    // 页面底色挂在目的页根节点上，标题栏不配置样式：COMMON_BLUR 下标题栏背板默认透明
-    // （API 参考 HdsNavigationBackgroundStyle.backgroundColor），透出来就是这里的底色，
-    // 顶栏和内容同色。内容区在标题栏下方截断（enableComponentSafeArea），
-    // 不会有内容滑到标题栏下面，所以也不需要再关模糊或给它单独铺背板。
+    // HdsNavDestination API 的 ignoreLayoutSafeArea 与 HDS 沉浸光感示例一起使用，
+    // 让正文延伸到系统上下避让区；只给标题栏按钮加系统材质，不铺全宽模糊背板。
     .backgroundColor($r('sys.color.ohos_id_color_background'))
+    // HDS Navigation safe-area settings let the scrolling surfaces occupy the full destination
+    // beneath the titlebar and floating tabs; the controls remain above them.
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .onBackPressed(() => {
       this.requestLeave();
       return true;

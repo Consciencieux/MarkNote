@@ -5,7 +5,8 @@
 * { box-sizing: border-box; }
 html, body { width:100%; min-height:100%; margin:0; padding:0; background:var(--background); color:var(--foreground); }
 body { font: 16px/1.72 system-ui,-apple-system,'HarmonyOS Sans',sans-serif; -webkit-text-size-adjust:100%; overflow-x:hidden; }
-.preview { padding:18px 18px 36px; overflow-wrap:break-word; }
+/* ArkWeb guide bpta-web-adaptation documents CSS px as visually equivalent to HarmonyOS vp. */
+.preview { padding:calc(var(--content-top-inset, 56px) + 18px) 18px 36px; overflow-wrap:break-word; }
 .preview > :first-child { margin-top:0; }
 .placeholder { color:var(--secondary); padding:22px 0; }
 h1,h2,h3,h4,h5,h6 { line-height:1.35; margin:1.4em 0 .7em; }
