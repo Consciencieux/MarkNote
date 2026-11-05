@@ -12,6 +12,9 @@ export struct FormatBarView {
     new uiMaterial.ImmersiveMaterial({
       style: uiMaterial.ImmersiveStyle.ULTRA_THIN,
       colorInvert: true,
+      // 横向滚动容器会裁切胶囊自带阴影；关闭材质阴影，保留系统材质和光感反馈。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-immersive-light-sense-common-capability
+      applyShadow: false,
       lightEffect: {}
     }) : undefined;
 
