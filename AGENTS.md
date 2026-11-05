@@ -2,6 +2,10 @@
 
 开始修改前，阅读 [架构](docs/ARCHITECTURE.md) 和 [功能目录](docs/FEATURES.md)，确认相关模块的职责和现有行为。构建与验证方法见 [CONTRIBUTING.md](CONTRIBUTING.md)。同一项事实应有一个主要维护位置，其他文档按需链接。
 
+## 开发工具
+
+处理鸿蒙工程的构建、运行、设备和模拟器操作、界面检查及调试时，Agent 应优先使用 DevEco CLI 提供的命令，不建议通过 computer use 等通用图形界面自动化方式操作。DevEco CLI 不支持所需操作时，再选择其他合适的工具。安装方法见[构建与贡献](CONTRIBUTING.md)。
+
 ## 界面与交互
 
 修改页面结构、导航、弹窗或组件样式前，先查阅华为对应的开发指南、最佳实践、UI Design Kit 和 API 参考。确认组件适用的容器、属性、事件和 API 版本；涉及的 SDK 声明也可作为依据。

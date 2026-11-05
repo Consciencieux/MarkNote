@@ -7,6 +7,15 @@
 
 项目约束见 [AGENTS.md](AGENTS.md)，功能与已知限制见[功能目录](docs/FEATURES.md)。
 
+建议在开发电脑上安装 DevEco CLI，以便从命令行构建、运行和调试应用，以及查询鸿蒙开发文档。安装前请准备好上述 DevEco Studio 和 Node.js 环境，然后在终端安装稳定版并检查版本：
+
+```sh
+npm install -g @deveco/deveco-cli@stable
+devecocli --version
+```
+
+已安装的 DevEco CLI 可通过 `devecocli update` 更新。Linux 环境还需要配置工具链路径；安装条件、环境配置及其他安装方式见华为的 [DevEco CLI 快速入门](https://developer.huawei.com/consumer/cn/doc/doccenter-deveco-studio/ide-deveco-cli-install)。
+
 ## 构建离线预览
 
 在仓库根目录执行：
