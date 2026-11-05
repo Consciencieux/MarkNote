@@ -45,7 +45,6 @@ export struct DocumentView {
   /** 保存成功后把文件记进最近文稿，列表由首页持有。 */
   onSaved: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
 
-  @State private editing: boolean = false;
   private preview: webview.WebviewController = new webview.WebviewController();
   private splitPreview: webview.WebviewController = new webview.WebviewController();
   private previewReady: boolean = false;
@@ -224,10 +223,6 @@ export struct DocumentView {
     menuBridge.openDocumentMenu();
   }
 
-  private afterMenu(next: () => void): void {
-    menuBridge.dismiss(next);
-  }
-
   private schedulePreview(): void {
     if (this.previewTimer >= 0) clearTimeout(this.previewTimer);
     this.previewTimer = setTimeout(() => {
@@ -273,7 +268,8 @@ export struct DocumentView {
    * 草稿副本只用于崩溃兜底，不再作为「未保存」的常驻入口。
    */
   private async saveBeforeLeaving(): Promise<boolean> {
-    if (!this.editing || !this.isDirty()) return true;
+    // 编辑态只在会话里有一份，页面不再另存一份副本。
+    if (!DocumentService.current().editing || !this.isDirty()) return true;
     const canWriteInPlace = this.info.uri.length > 0 && this.info.writable;
     if (canWriteInPlace && await this.saveFile(false)) return true;
     return await this.askSaveOrDiscard();
@@ -317,13 +313,12 @@ export struct DocumentView {
     this.formatId = session.info.formatId;
     this.source = session.source;
     this.savedText = session.savedText;
-    this.editing = session.editing;
     this.headings = DocumentService.headingsFor(this.info, this.source);
     this.schedulePreview();
   }
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
-    if (!this.context || !this.editing || this.saving) return false;
+    if (!this.context || this.saving) return false;
     this.saving = true;
     try {
       const result = await DocumentService.save(this.context, asNewFile);
@@ -359,7 +354,7 @@ export struct DocumentView {
 
   private flushRecovery(): void {
     this.recoveryTimer = -1;
-    if (!this.context || !this.editing) return;
+    if (!this.context || !DocumentService.current().editing) return;
     if (!this.isDirty()) {
       this.clearRecovery();
       return;
@@ -391,8 +386,8 @@ export struct DocumentView {
   private async closeToLibrary(): Promise<boolean> {
     if (!await this.saveBeforeLeaving()) return false;
     this.clearRecovery();
+    // close() 同时把会话的编辑态置为 false，页面不再维护第二份。
     DocumentService.close();
-    this.editing = false;
     return true;
   }
 
@@ -719,7 +714,7 @@ export struct DocumentView {
     return this.inEditTab();
   }
 
-  /** 编辑页签和分栏页签都能写，格式栏和「退出编辑态」的判断都用它。 */
+  /** 编辑页签和分栏页签都能写；格式栏只在能写的页签出现。 */
   private inEditTab(): boolean {
     return this.selectedTab === TAB_EDIT || this.selectedTab === this.splitTab();
   }

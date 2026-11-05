@@ -163,12 +163,12 @@ struct Index {
     return 0;
   }
 
-  private menuIcon(label: string, symbol: Resource, id: string, action: () => void,
-    enabled: boolean = true): HdsNavigationMenuItemOptions {
+  private menuIcon(label: string, symbol: Resource, id: string,
+    action: () => void): HdsNavigationMenuItemOptions {
     const content: HdsNavigationIconOptions = {
       label: label,
       icon: symbol,
-      isEnabled: enabled,
+      isEnabled: true,
       action: action,
       componentId: id,
       type: IconStyleMode.NORMAL
@@ -177,9 +177,13 @@ struct Index {
     return item;
   }
 
-  private titleStyle(scrolls: boolean): TitleBarStyleOptions {
+  /**
+   * 首页列表会滚到标题栏下方，所以这里保留官方的渐变模糊（`GRADIENT_BLUR`）。
+   * 文稿页内容在标题栏下方截断，那一页已经关掉模糊。
+   */
+  private titleStyle(): TitleBarStyleOptions {
     const scroll: ScrollEffectOptions = {
-      enableScrollEffect: scrolls,
+      enableScrollEffect: true,
       scrollEffectType: ScrollEffectType.GRADIENT_BLUR
     };
     const material: SystemMaterialParams = {
@@ -203,7 +207,7 @@ struct Index {
     const content: TitleBarContentOptions = { title: heading, menu: menu };
     const options: HdsNavigationTitleBarOptions = {
       enableComponentSafeArea: true,
-      style: this.titleStyle(true),
+      style: this.titleStyle(),
       content: content
     };
     return options;

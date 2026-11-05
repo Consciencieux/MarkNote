@@ -21,6 +21,8 @@ marknote
 │   │   ├── document/
 │   │   │   ├── DocumentService.ets         文稿会话、打开、保存、冲突
 │   │   │   ├── FormatRegistry.ets          扩展名、UTD、MIME、大纲、快捷插入
+│   │   │   ├── EditHistory.ets             编辑缓冲的撤销与重做
+│   │   │   ├── TextSearch.ets              字面文本查找与替换
 │   │   │   ├── LaunchRequests.ets          冷启动时暂存外部文件请求
 │   │   │   └── TextEncoding.ets            编码、BOM、换行
 │   │   ├── model/Document.ets              文稿字段与大纲标题偏移

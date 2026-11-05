@@ -46,11 +46,6 @@ export class DocumentService {
     return documentOutline(source);
   }
 
-  static isDirty(): boolean {
-    const session = DocumentService.session;
-    return session.editing && session.source !== session.savedText;
-  }
-
   static edit(text: string): void {
     DocumentService.session.source = text;
   }
