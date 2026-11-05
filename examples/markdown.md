@@ -1,6 +1,6 @@
 # MarkNote 文稿示例
 
-这是使用 **ArkUI 原生编辑** 与 **ArkWeb 本地预览** 的 Markdown 文稿。
+这个示例用于检查 Markdown 编辑和离线预览。
 
 | 格式 | 支持 |
 | --- | --- |

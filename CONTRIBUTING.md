@@ -1,12 +1,15 @@
-# 参与构建
+# 构建与贡献
 
-## 环境
+## 开发环境
 
-- DevEco Studio 26
-- HarmonyOS SDK API 26
-- Node.js 22.12 或更新版本，以及 npm
+- DevEco Studio 26 和 HarmonyOS SDK API 26。
+- Node.js 22.12 或更新版本，以及 npm。
 
-## 构建预览页
+项目约束见 [AGENTS.md](AGENTS.md)，功能与已知限制见[功能目录](docs/FEATURES.md)。
+
+## 构建离线预览
+
+在仓库根目录执行：
 
 ```sh
 cd renderer
@@ -15,37 +18,34 @@ npm run check
 npm run build
 ```
 
-`npm run build` 生成单文件预览页，同时从当前安装的生产依赖中收集许可证，写入以下位置：
+构建生成单文件预览页，并从已安装的生产依赖中收集许可证：
 
-```text
-entry/src/main/resources/rawfile/preview/index.html
-entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt
-entry/src/main/resources/rawfile/licenses/LICENSE
-```
+- `entry/src/main/resources/rawfile/preview/index.html`
+- `entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt`
+- `entry/src/main/resources/rawfile/licenses/LICENSE`：仓库根目录 `LICENSE` 的副本。
 
-`licenses/LICENSE` 是仓库根目录 `LICENSE` 的原样副本，供设置里的「本项目开源许可证」离线阅读。不要改这份副本，也不要把它写进 `THIRD_PARTY_NOTICES.txt`。
-
-许可证缺失，或者许可证类型不在允许范围内时，构建会失败。不要手工编写 `THIRD_PARTY_NOTICES.txt` 来绕过这一步。`package-lock.json` 随依赖变更一起提交，之后用 `npm ci` 还原同一棵依赖树。
+不要手工修改这些生成文件来绕过构建。依赖的许可证缺失或不在脚本允许的范围内时，构建会失败；应先检查依赖及其许可证。依赖变更时一并更新 `package-lock.json`。
 
 ## 构建应用
 
-用 DevEco Studio 打开仓库根目录，同步 OHPM 后构建 `entry` 模块。包名为 `com.zhouyi.marknote`，定义在 `AppScope/app.json5`。
+用 DevEco Studio 打开仓库根目录，同步 OHPM 并构建 `entry` 模块。也可以在仓库根目录使用 DevEco CLI：
 
-## 本地构建配置与签名
+```sh
+devecocli build --modules entry
+```
 
-仓库只提交公共构建配置模板 `build-profile.example.json5`，实际使用的 `build-profile.json5` 已被 `.gitignore` 排除。首次克隆后执行：
+## 本地配置与签名
+
+首次克隆后，从模板创建本地构建配置：
 
 ```sh
 cp build-profile.example.json5 build-profile.json5
 ```
 
-然后在 DevEco Studio 中配置本机调试签名。修改 SDK、产品等公共构建配置时，同步更新模板。
+在 DevEco Studio 中配置本机调试签名。真机安装需要为 `default` 产品配置可用的签名。公共构建配置发生变化时，同步更新模板。不要提交本机的签名证书、Profile、密钥库或口令。
 
-签名证书、Profile、密钥库和口令不得提交。真机安装前，产品 `default` 需要引用本地签名，否则产物是未签名 HAP。
+## 验证
 
-## 提交前
+修改预览代码后，执行本页的预览检查与构建；修改 ArkTS 后，构建 `entry`。涉及界面或设备行为时，按改动范围进行运行验证，并在说明中区分已验证和未验证的部分。
 
-- 改动涉及预览时，在 `renderer/` 执行 `npm run check`，再执行 `npm run build`。
-- 改动涉及 ArkTS 时，用 DevEco Studio 或 hvigor 编译 `entry`。
-- 新增、修改或移除用户功能时，在同一次改动里更新[功能目录](docs/FEATURES.md)的对应条目。
-- 不要把 `.hap`、`renderer/node_modules/`、`renderer/dist/` 或本机签名材料放进提交。
+用户功能发生变化时，同步更新[功能目录](docs/FEATURES.md)。不要提交 HAP、构建缓存、`renderer/node_modules/` 或 `renderer/dist/`。
