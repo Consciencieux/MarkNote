@@ -1,4 +1,4 @@
-import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import {
@@ -218,19 +218,12 @@ export struct DocumentView {
     return [this.previewScroller];
   }
 
-  private previewIsDark(): boolean {
-    if (this.theme === 'dark') return true;
-    if (this.theme === 'light') return false;
-    return this.context?.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
-  }
-
   private sendPreview(controller: webview.WebviewController): void {
     const kind = this.currentFormat().id;
-    const theme = this.previewIsDark() ? 'dark' : (this.theme === 'light' ? 'light' : 'system');
     const command = 'window.MarknotePreview.update(' + JSON.stringify({
       kind: kind,
       source: this.source,
-      theme: theme
+      theme: this.theme
     }) + ')';
     try {
       controller.runJavaScript(command);
@@ -637,6 +630,10 @@ export struct DocumentView {
     Web({ src: $rawfile('preview/index.html'), controller: controller, renderMode: RenderMode.SYNC_RENDER })
       .javaScriptAccess(true)
       .domStorageAccess(false)
+      // ArkWeb 默认关闭深色模式；须在首次加载前设置，网页的 prefers-color-scheme 才能生效。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/web-set-dark-mode
+      .darkMode(this.theme === 'system' ? WebDarkMode.Auto :
+        (this.theme === 'dark' ? WebDarkMode.On : WebDarkMode.Off))
       // 兜底底色跟随页面底色（同一个系统 token），不写死黑白两色；
       // 预览正文的底色由 renderer 的样式表按主题决定。
       .backgroundColor($r('sys.color.ohos_id_color_background'))
