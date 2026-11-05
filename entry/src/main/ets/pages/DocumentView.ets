@@ -1,12 +1,10 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { SymbolGlyphModifier } from '@kit.ArkUI';
+import { ComposeListItem, SymbolGlyphModifier } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import {
-  HdsNavDestination, HdsNavDestinationTitleMode, BlurStrategy,
-  ScrollEffectType, IconStyleMode, hdsMaterial, HdsNavigationTitle, HdsNavigationIconOptions,
-  HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions, TitleBarContentOptions,
-  TitleBarStyleOptions, HdsNavigationTitleBarOptions, ScrollEffectOptions, SystemMaterialParams,
-  HdsNavigationTitleBarStyle, HdsNavigationBackgroundStyle,
+  HdsNavDestination, HdsNavDestinationTitleMode, hdsMaterial, HdsNavigationTitle,
+  HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
+  TitleBarContentOptions, HdsNavigationTitleBarOptions, SystemMaterialParams,
   HdsTabs, HdsTabsFloatingStyle
 } from '@kit.UIDesignKit';
 import { DocumentInfo, Heading, RecoveryData, linesIn } from '../model/Document';
@@ -162,35 +160,10 @@ export struct DocumentView {
       icon: symbol,
       isEnabled: enabled,
       action: action,
-      componentId: id,
-      type: IconStyleMode.NORMAL
+      componentId: id
     };
     const item: HdsNavigationMenuItemOptions = { content: content };
     return item;
-  }
-
-  /**
-   * 文稿页用「内容在标题栏下方截断」的布局，和系统「备忘录」一致：编辑区不延伸到按钮下面，
-   * 所以这里不需要标题栏模糊。模糊的官方适用场景都是「内容滚动到标题栏下方」——沉浸式图文
-   * （照片、运动健康）用 GRADIENT_BLUR，列表型用 COMMON_BLUR。编辑页上面是可编辑的
-   * TextArea，内容若压到按钮和工具栏后面，光标与选区手柄都会错位，所以直接关掉模糊，
-   * 用不透明背板。BlurStrategy.DISABLE 是官方关闭模糊的开关。
-   */
-  private titleStyle(): TitleBarStyleOptions {
-    const scroll: ScrollEffectOptions = {
-      enableScrollEffect: false,
-      scrollEffectType: ScrollEffectType.COMMON_BLUR
-    };
-    const background: HdsNavigationBackgroundStyle = {
-      backgroundColor: $r('sys.color.ohos_id_color_background')
-    };
-    const original: HdsNavigationTitleBarStyle = { backgroundStyle: background };
-    const style: TitleBarStyleOptions = {
-      scrollEffectOpts: scroll,
-      originalStyle: original,
-      blurStrategy: BlurStrategy.DISABLE
-    };
-    return style;
   }
 
   private documentTitle(): HdsNavigationTitleBarOptions {
@@ -213,7 +186,6 @@ export struct DocumentView {
     const content: TitleBarContentOptions = { title: heading, menu: menu };
     const options: HdsNavigationTitleBarOptions = {
       enableComponentSafeArea: true,
-      style: this.titleStyle(),
       content: content
     };
     return options;
@@ -547,11 +519,10 @@ export struct DocumentView {
       }
       TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: this.cursor })
         .fontSize($r('sys.float.ohos_id_text_size_body1'))
-        .fontFamily('monospace')
         .width('100%')
         .layoutWeight(1)
-        // TextArea 默认带一层灰底和圆角。编辑区应该就是页面本身，所以底色透明、圆角归零，
-        // 只在上面留格式栏的次级底色和一条分隔线，看上去和预览页是同一张纸。
+        // TextArea 默认带一层灰底和圆角。编辑区应该就是页面本身，所以底色取透明（不做新颜色），
+        // 圆角归零，正文直接落在页面底色上，和预览页是同一张纸。
         .backgroundColor(Color.Transparent)
         .borderRadius(0)
         // 切回编辑页签时 Tabs 会把焦点还给上次编辑的 TextArea，光标停在原处并直接拉起键盘，
@@ -578,7 +549,9 @@ export struct DocumentView {
     Web({ src: $rawfile('preview/index.html'), controller: controller })
       .javaScriptAccess(true)
       .domStorageAccess(false)
-      .backgroundColor(this.previewIsDark() ? '#000000' : '#FFFFFF')
+      // 兜底底色跟随页面底色（同一个系统 token），不写死黑白两色；
+      // 预览正文的底色由 renderer 的样式表按主题决定。
+      .backgroundColor($r('sys.color.ohos_id_color_background'))
       .onPageEnd(() => {
         onReady();
         this.sendPreview(controller);
@@ -600,7 +573,9 @@ export struct DocumentView {
   /**
    * 大纲是只读的扁平标题列表，层级只用于缩进，没有折叠和重命名。
    * 官方的 TreeView 面向带目录图标、增删改入口的文件树，套在这里会多出用不到的操作，
-   * 因此沿用 List 承载，行内容用系统字号和颜色变量。
+   * 因此沿用 List 承载行，行内容交给官方 ComposeListItem：主标题是标题文字，
+   * 副标题是行号，行高、内边距和字号都由组件按系统规范给出。
+   * 层级缩进没有对应的系统 token，是这一处唯一的兜底值。
    */
   @Builder
   private OutlinePage() {
@@ -610,31 +585,34 @@ export struct DocumentView {
         Text('在编辑页使用 #、## 等 Markdown 标题语法即可生成大纲。')
           .fontColor($r('sys.color.font_secondary'))
       }
-      .padding(24)
+      // TabContent 默认把不撑满的子组件居中，这里撑满后文字才会从顶部开始排。
+      // 留白取系统 margin 资源，不写死数值。
+      .padding({
+        left: $r('sys.float.margin_left'),
+        right: $r('sys.float.margin_right'),
+        top: $r('sys.float.padding_level16')
+      })
+      .alignItems(HorizontalAlign.Start)
       .width('100%')
+      .height('100%')
     } else {
       List() {
         ForEach(this.headings, (heading: Heading) => {
           ListItem() {
-            Row({ space: 8 }) {
-              Text(heading.text)
-                .fontSize($r('sys.float.ohos_id_text_size_body1'))
-                .maxLines(2)
-                .layoutWeight(1)
-              Text(`第 ${heading.line} 行`)
-                .fontSize($r('sys.float.ohos_id_text_size_body2'))
-                .fontColor($r('sys.color.font_secondary'))
-            }
-            .padding({ left: 16 + (heading.level - 1) * 12, right: 16, top: 14, bottom: 14 })
-            .width('100%')
-            .onClick(() => this.focusHeading(heading))
+            ComposeListItem({
+              contentItem: {
+                primaryText: heading.text,
+                secondaryText: `第 ${heading.line} 行`
+              }
+            })
           }
+          // 缩进表示 Markdown 标题层级，没有系统 token 可依，是兜底值。
+          .margin({ left: (heading.level - 1) * 12 })
+          .onClick(() => this.focusHeading(heading))
         }, (heading: Heading) => heading.offset.toString())
       }
       .width('100%')
       .height('100%')
-      .edgeEffect(EdgeEffect.Spring)
-      .divider({ strokeWidth: 1, startMargin: 16, endMargin: 16 })
     }
   }
 
@@ -740,6 +718,11 @@ export struct DocumentView {
     }
     .titleBar(this.documentTitle())
     .titleMode(HdsNavDestinationTitleMode.MINI)
+    // 页面底色挂在目的页根节点上，标题栏不配置样式：COMMON_BLUR 下标题栏背板默认透明
+    // （API 参考 HdsNavigationBackgroundStyle.backgroundColor），透出来就是这里的底色，
+    // 顶栏和内容同色。内容区在标题栏下方截断（enableComponentSafeArea），
+    // 不会有内容滑到标题栏下面，所以也不需要再关模糊或给它单独铺背板。
+    .backgroundColor($r('sys.color.ohos_id_color_background'))
     .onBackPressed(() => {
       this.requestLeave();
       return true;

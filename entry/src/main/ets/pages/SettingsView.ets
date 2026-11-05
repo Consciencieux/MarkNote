@@ -60,22 +60,26 @@ export struct SettingsView {
     // 卡片之间没有分组标题：官方设置页里，分组标题是小号的次要色文字，
     // 而且只在这组需要一个概括词时才出现。这里两组条目都是自解释的，
     // 加标题既没有文档依据，用 SubHeader 又比官方的字号大一倍多，所以不加。
-    List({ space: 12 }) {
-      ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow('外观', themeLabel(this.theme), 'appearance')
+    // 卡片是抬升的一层，页面底比它低一层，结构同《如何设置分组列表的圆角和间距》
+    // (faqs-arkui-28)：外层容器给底色，卡片保持默认。底色由 HdsNavDestination
+    // 根节点统一提供（见 Index 的 Destination），这里不再铺一层。
+    Column() {
+      List({ space: 12 }) {
+        ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+          this.LinkRow('外观', themeLabel(this.theme), 'appearance')
+        }
+        ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+          this.LinkRow('隐私说明', '', 'privacy')
+          this.LinkRow('第三方开源许可证', '', 'licenses')
+        }
+        ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+          this.LinkRow('关于', this.version.length > 0 ? `版本 ${this.version}` : '', 'about')
+        }
       }
-      ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow('隐私说明', '', 'privacy')
-        this.LinkRow('第三方开源许可证', '', 'licenses')
-      }
-      ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow('关于', this.version.length > 0 ? `版本 ${this.version}` : '', 'about')
-      }
+      .layoutWeight(1)
+      // 边缘效果用 List 的默认值（滚动组件通用接口：List 默认 EdgeEffect.Spring）。
     }
     .width('100%')
     .height('100%')
-    // 页面底比卡片低一层，结构同《如何设置分组列表的圆角和间距》(faqs-arkui-28)。
-    .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
-    .edgeEffect(EdgeEffect.Spring)
   }
 }

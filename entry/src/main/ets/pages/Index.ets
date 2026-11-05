@@ -3,10 +3,9 @@ import { ComponentContent, mediaquery } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import {
   HdsNavigation, HdsNavigationTitleMode, HdsNavDestination, HdsNavDestinationTitleMode,
-  ScrollEffectType, IconStyleMode,
   HdsNavigationTitle, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
-  HdsNavigationMenuContentOptions, TitleBarContentOptions, TitleBarStyleOptions,
-  HdsNavigationTitleBarOptions, ScrollEffectOptions
+  HdsNavigationMenuContentOptions, TitleBarContentOptions,
+  HdsNavigationTitleBarOptions
 } from '@kit.UIDesignKit';
 import { RecentDocument } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
@@ -159,45 +158,44 @@ struct Index {
 
   private menuIcon(label: string, symbol: Resource, id: string,
     action: () => void): HdsNavigationMenuItemOptions {
+    // 只配必要的字段；isEnabled 默认 true、type 默认 IconStyleMode.NORMAL，不再重复写。
+    // componentId 是 openMenu 的锚点 id（见《不依赖UI组件的全局菜单》），必须保留。
     const content: HdsNavigationIconOptions = {
       label: label,
       icon: symbol,
-      isEnabled: true,
       action: action,
-      componentId: id,
-      type: IconStyleMode.NORMAL
+      componentId: id
     };
     const item: HdsNavigationMenuItemOptions = { content: content };
     return item;
   }
 
   /**
-   * 首页标题栏。按官方《开发实例》(ui-design-navigation-dynamic-blur-demo) 的一级页面写法：
-   * `titleMode` 用 HdsNavigationTitleMode.MINI，标题与右侧菜单在同一行，
-   * 模糊样式显式写 ScrollEffectType.COMMON_BLUR（该示例同样这么配置），
-   * 文档对 COMMON_BLUR 的说明是「用于强调控件与内容的层级分隔……适用于非沉浸式场景」，
-   * 其标题栏背景默认透明，和页面同一底色。
-   * 不用 FULL/FREE 的大标题形态：那两种模式下标题单独排在菜单下面，不在同一行。
+   * 首页标题栏。默认行为就够用，因此不配置 style：
+   * - API 参考 ScrollEffectOptions：`scrollEffectType` 默认 ScrollEffectType.COMMON_BLUR，
+   *   `enableScrollEffect` 默认 true，文档对 COMMON_BLUR 的说明是「适用于列表型非沉浸式场景」。
+   * - API 参考 HdsNavigationBackgroundStyle.backgroundColor：模糊样式为 COMMON_BLUR 时
+   *   「背景色默认值均为透明色」；COMMON_BLUR 的说明是「滑动内容进入/离开标题栏区域过程中，
+   *   模糊背板和分割线透明渐变出现/消失」。所以顶栏没有常驻色块，标题和菜单悬浮在内容上，
+   *   内容滑到下面时才浮出模糊蒙板。
+   * - 标题文字没有背板；菜单图标在 COMMON_BLUR 下默认带 comp_background_tertiary 背板
+   *   （HdsNavigationIconItemStyle.backgroundColor），不覆盖。
+   * `titleMode` 用 MINI（56vp），标题与右侧菜单同一行。
    */
   private homeTitle(): HdsNavigationTitleBarOptions {
-    const heading: HdsNavigationTitle = { mainTitle: '全部' };
-    const menu: HdsNavigationMenuContentOptions = {
-      value: [
-        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more', (): void => this.openHomeMenu())
-      ]
-    };
-    const scroll: ScrollEffectOptions = {
-      enableScrollEffect: true,
-      scrollEffectType: ScrollEffectType.COMMON_BLUR
-    };
-    const style: TitleBarStyleOptions = { scrollEffectOpts: scroll };
-    const content: TitleBarContentOptions = { title: heading, menu: menu };
-    const options: HdsNavigationTitleBarOptions = {
+    return {
+      // 标题栏是组件级安全区（默认 false），内容区据此避让标题栏。
       enableComponentSafeArea: true,
-      style: style,
-      content: content
+      content: {
+        title: { mainTitle: '全部' },
+        menu: {
+          value: [
+            this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
+              (): void => this.openHomeMenu())
+          ]
+        }
+      }
     };
-    return options;
   }
 
   private openHomeMenu(): void {
@@ -386,6 +384,10 @@ struct Index {
         }
       })
       .titleMode(HdsNavDestinationTitleMode.MINI)
+      // 页面底色挂在目的页根节点上：标题栏背板在 COMMON_BLUR 下默认透明，
+      // 透出来的就是这里的底色，所以标题栏与内容同色，不会多出一条色带。
+      // 设置页用分组卡片，卡片是抬升的一层，页面底取 sub_background 以便和卡片分层。
+      .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
     } else {
       HdsNavDestination() {
         SettingsDetail({
@@ -403,6 +405,8 @@ struct Index {
         }
       })
       .titleMode(HdsNavDestinationTitleMode.MINI)
+      // 与设置首页同一底色，见上面关于标题栏透明背板的说明。
+      .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
     }
   }
 
@@ -420,9 +424,11 @@ struct Index {
       .hideBackButton(true)
       .bindToScrollable([this.libraryScroller])
       .width('100%')
-      .height('100%')
+      .layoutWeight(1)
     }
     .width('100%')
     .height('100%')
+    // 页面底色只在这里给一次，整页（含标题栏所在区域）都是同一个系统底色。
+    .backgroundColor($r('sys.color.ohos_id_color_background'))
   }
 }

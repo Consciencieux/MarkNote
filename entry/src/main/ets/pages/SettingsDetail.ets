@@ -37,7 +37,6 @@ export struct SettingsDetail {
         }
       })
     }
-    .width('100%')
     .onClick(() => this.onChooseTheme(choice))
   }
 
@@ -51,17 +50,32 @@ export struct SettingsDetail {
     }
   }
 
+  /**
+   * 长正文没有对应的官方组件（ComposeListItem 只放主副标题），这里用普通 Text。
+   * 外边距取系统 margin 资源，不写死数值。
+   */
   @Builder
   private Paragraph(body: string, mono: boolean = false) {
     Text(body)
       .fontSize(mono ? $r('sys.float.ohos_id_text_size_body2') : $r('sys.float.ohos_id_text_size_body1'))
       .fontColor($r('sys.color.font_primary'))
       .width('100%')
-      .padding({ left: 16, right: 16, bottom: 16 })
+      .padding({
+        left: $r('sys.float.margin_left'),
+        right: $r('sys.float.margin_right'),
+        top: $r('sys.float.padding_level16'),
+        bottom: $r('sys.float.padding_level16')
+      })
       .copyOption(mono ? CopyOptions.LocalDevice : CopyOptions.None)
   }
 
   build() {
+    // 与设置首页同样的分层：页面底由 HdsNavDestination 根节点提供（sub_background），
+    // 卡片保持系统默认。
+    // 三个分支都是 List：边缘效果用默认值（List 默认 EdgeEffect.Spring），
+    // 不写 width('100%')（滚动容器默认就填满父容器）。
+    // 长正文也用 List 承载而不是 Scroll：Scroll 只有一个子组件时会把它居中，
+    // 正文会跑到页面中间；List 的条目从顶部开始排列。
     Column() {
       if (this.section === 'appearance') {
         List() {
@@ -71,9 +85,7 @@ export struct SettingsDetail {
             }, (choice: string) => choice)
           }
         }
-        .width('100%')
         .layoutWeight(1)
-        .edgeEffect(EdgeEffect.Spring)
       } else if (this.section === 'about') {
         List() {
           ListItemGroup({ style: ListItemGroupStyle.CARD }) {
@@ -81,26 +93,22 @@ export struct SettingsDetail {
             this.InfoRow('版本', this.version.length > 0 ? this.version : '版本信息不可用')
           }
         }
-        .width('100%')
         .layoutWeight(1)
-        .edgeEffect(EdgeEffect.Spring)
       } else {
-        Scroll() {
-          if (this.section === 'licenses') {
-            this.Paragraph(this.text, true)
-          } else {
-            this.Paragraph('文稿在设备本地编辑。应用没有账号、广告、遥测或联网接口，也不上传文稿。' +
-              '文件由系统文件选择器授权，草稿保存在应用私有目录。')
+        List() {
+          ListItem() {
+            if (this.section === 'licenses') {
+              this.Paragraph(this.text, true)
+            } else {
+              this.Paragraph('文稿在设备本地编辑。应用没有账号、广告、遥测或联网接口，也不上传文稿。' +
+                '文件由系统文件选择器授权，草稿保存在应用私有目录。')
+            }
           }
         }
-        .width('100%')
         .layoutWeight(1)
-        .edgeEffect(EdgeEffect.Spring)
       }
     }
     .width('100%')
     .height('100%')
-    // 与设置首页一致：页面底比卡片低一层，结构同 faqs-arkui-28。
-    .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
   }
 }

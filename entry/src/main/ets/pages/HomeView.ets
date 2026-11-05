@@ -54,39 +54,32 @@ export struct HomeView {
   build() {
     // 首页只承担两件事：开始一篇新文稿/打开已有文件，和回到最近打开过的文稿。
     // 标题「全部」由导航标题栏给出，页面里不再写标语和分组标题。
-    Column() {
-      Row({ space: 12 }) {
-        Button('新建文稿')
-          .bindMenu(this.newDocumentMenu())
-          .layoutWeight(1)
-        Button('打开文件')
-          .buttonStyle(ButtonStyleMode.NORMAL)
-          .layoutWeight(1)
-          .onClick(() => this.onOpen())
+    // 列表配置照官方《设置动态模糊样式》示例：space 12、左右 margin 16、
+    // clip(false) 让列表项能画到标题栏下方、cachedCount 保证穿透出去的项不被回收。
+    List({ scroller: this.scroller, space: 12 }) {
+      ListItem() {
+        Row({ space: 12 }) {
+          Button('新建文稿')
+            .bindMenu(this.newDocumentMenu())
+            .layoutWeight(1)
+          Button('打开文件')
+            .buttonStyle(ButtonStyleMode.NORMAL)
+            .layoutWeight(1)
+            .onClick(() => this.onOpen())
+        }
+        .width('100%')
       }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 8, bottom: 8 })
 
-      // 整页是一块列表，不再用 ListItemGroup 的卡片样式分块：
-      // 卡片会抬升一层底色，和页面底色形成两块颜色，浅色深色下都显得割裂。
-      // 行与行之间交给 List 的 divider（API 参考 List > divider），
-      // 颜色用系统组件分割线色，深浅色模式自动适配。
-      List({ scroller: this.scroller }) {
-        ForEach(this.recents, (item: RecentDocument) => {
-          this.RecentRow(item)
-        }, (item: RecentDocument) => item.uri)
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .divider({
-        strokeWidth: 1,
-        color: $r('sys.color.comp_divider')
-      })
-      .edgeEffect(EdgeEffect.Spring)
+      ForEach(this.recents, (item: RecentDocument) => {
+        this.RecentRow(item)
+      }, (item: RecentDocument) => item.uri)
     }
-    .width('100%')
-    .height('100%')
-    // 整页使用系统的一级页面底色，标题栏保持透明叠在同一底色上，不再有第二层颜色。
-    .backgroundColor($r('sys.color.ohos_id_color_background'))
+    // 左右留白交给列表的 margin（官方示例的写法）；不要同时写 width('100%')，
+    // 否则 100% 会把 margin 撑到父容器外面，列表仍然贴边。
+    .layoutWeight(1)
+    .margin({ left: 16, right: 16 })
+    // 不对子组件超出当前范围的区域裁剪，使内容区可以穿透到标题栏下方（官方示例注释）。
+    .clip(false)
+    .cachedCount(3, true)
   }
 }

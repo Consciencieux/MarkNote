@@ -44,12 +44,18 @@ export struct FormatBarView {
     return items;
   }
 
+  /**
+   * 插入栏的图标按钮。图标尺寸和行高都是兜底值：
+   * 文档没有为「自定义插入栏」给出图标尺寸，SymbolGlyph 默认 16fp 偏小，
+   * 因此图标取 24vp、行高取 56vp（与 MINI 标题栏同高）。
+   * 颜色用系统图标色，不额外铺底：按钮本身只是整行里的可点区域。
+   */
   @Builder
   private IconButton(symbol: Resource, label: string, action: () => void) {
     Column() {
       SymbolGlyph(symbol)
-        .fontSize($r('sys.float.ohos_id_text_size_headline7'))
-        .fontColor([$r('sys.color.font_primary')])
+        .fontSize(24)
+        .fontColor([$r('sys.color.icon_primary')])
     }
     .layoutWeight(1)
     .height('100%')
@@ -68,8 +74,8 @@ export struct FormatBarView {
         if (this.inserts().length > 4) {
           Column() {
             SymbolGlyph($r('sys.symbol.more'))
-              .fontSize($r('sys.float.ohos_id_text_size_headline7'))
-              .fontColor([$r('sys.color.font_primary')])
+              .fontSize(24)
+              .fontColor([$r('sys.color.icon_primary')])
           }
           .layoutWeight(1)
           .height('100%')
@@ -81,9 +87,8 @@ export struct FormatBarView {
       .width('100%')
       .height(56)
       .id('marknote-format-bar')
-      // 实心底色：这一行是固定布局的一部分，不叠加在正文上，所以不需要模糊背板。
-      .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
-      .border({ width: { bottom: 1 }, color: $r('sys.color.comp_divider') })
+      // 不铺背板、不画分割线：这一行只是图标按钮，和正文同属页面底色。
+      // 之前手写的 sub_background 底板和 1vp 下边框都是自造的分隔样式。
     }
   }
 }
