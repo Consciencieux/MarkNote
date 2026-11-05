@@ -2,6 +2,12 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { FormatRegistry, InsertAction } from '../document/FormatRegistry';
 
 /**
+ * 图标按钮的可点热区。出处：Code Linter 规则 @cross-device-app-dev/touch-target-size
+ * ——「主要交互元素或控件的可点击热区至少为 48vp×48vp（推荐），不得小于 40vp×40vp」。
+ */
+const TOUCH_TARGET: number = 48;
+
+/**
  * The insert bar that sits under the title bar on the edit tab.
  *
  * It is a fixed row, not an accessory view that follows the keyboard: the page keeps its
@@ -45,21 +51,25 @@ export struct FormatBarView {
   }
 
   /**
-   * 插入栏的图标按钮。图标尺寸和行高都是兜底值：
-   * 文档没有为「自定义插入栏」给出图标尺寸，SymbolGlyph 默认 16fp 偏小，
-   * 因此图标取 24vp、行高取 56vp（与 MINI 标题栏同高）。
-   * 颜色用系统图标色，不额外铺底：按钮本身只是整行里的可点区域。
+   * 插入栏的图标按钮。
+   *
+   * 这一行在官方组件里没有对应项：HdsNavigation 的菜单只属于标题栏，HdsActionBar 是带背板的
+   * 圆形按钮胶囊（会在编辑区重新多出一块颜色）。因此按兜底处理，但尽量不自己写样式：
+   * - 按钮用系统 Button，样式取 ButtonStyleMode.TEXTUAL（枚举说明：纯文本、无背景颜色，
+   *   适用于次要操作），按压态由组件给出；
+   * - 高度取文档规定的可点热区（见 TOUCH_TARGET），不自己编一个行高；
+   * - 图标大小是唯一没有文档依据的值：SymbolGlyph 默认 16fp（API 参考 SymbolGlyph > fontSize）
+   *   在按钮里偏小，这里取 24。
    */
   @Builder
   private IconButton(symbol: Resource, label: string, action: () => void) {
-    Column() {
+    Button({ type: ButtonType.Circle, buttonStyle: ButtonStyleMode.TEXTUAL }) {
       SymbolGlyph(symbol)
         .fontSize(24)
         .fontColor([$r('sys.color.icon_primary')])
     }
     .layoutWeight(1)
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
+    .height(TOUCH_TARGET)
     .accessibilityText(label)
     .onClick(action)
   }
@@ -72,23 +82,20 @@ export struct FormatBarView {
         }, (action: InsertAction) => action.token)
 
         if (this.inserts().length > 4) {
-          Column() {
+          Button({ type: ButtonType.Circle, buttonStyle: ButtonStyleMode.TEXTUAL }) {
             SymbolGlyph($r('sys.symbol.more'))
               .fontSize(24)
               .fontColor([$r('sys.color.icon_primary')])
           }
           .layoutWeight(1)
-          .height('100%')
-          .justifyContent(FlexAlign.Center)
+          .height(TOUCH_TARGET)
           .accessibilityText('更多格式')
           .bindMenu(this.moreInserts())
         }
       }
       .width('100%')
-      .height(56)
       .id('marknote-format-bar')
       // 不铺背板、不画分割线：这一行只是图标按钮，和正文同属页面底色。
-      // 之前手写的 sub_background 底板和 1vp 下边框都是自造的分隔样式。
     }
   }
 }
