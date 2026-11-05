@@ -98,6 +98,9 @@ export struct HomeView {
     }
     .width('100%')
     .height('100%')
+    // 分组列表的卡片是有抬升的一层，页面底必须比卡片低一层，否则浅色模式下卡片与页面同色。
+    // 结构照《如何设置分组列表的圆角和间距》(faqs-arkui-28)：外层容器给底色，卡片保持默认。
+    .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
     .edgeEffect(EdgeEffect.Spring)
   }
 }

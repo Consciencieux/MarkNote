@@ -1,8 +1,9 @@
-import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
 import { ComponentContent, mediaquery } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import {
-  HdsNavigation, HdsNavigationTitleMode, ScrollEffectType, IconStyleMode, hdsMaterial,
+  HdsNavigation, HdsNavigationTitleMode, HdsNavDestination, HdsNavDestinationTitleMode,
+  ScrollEffectType, IconStyleMode, hdsMaterial,
   HdsNavigationTitle, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationMenuContentOptions, TitleBarContentOptions, TitleBarStyleOptions,
   HdsNavigationTitleBarOptions, ScrollEffectOptions, SystemMaterialParams
@@ -12,8 +13,8 @@ import { DocumentService } from '../document/DocumentService';
 import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
 import { HomeView } from './HomeView';
 import { DocumentView } from './DocumentView';
-import { LegalView } from './LegalView';
-import { SettingsView, THEME_VALUES } from './SettingsView';
+import { SettingsView, settingTitle } from './SettingsView';
+import { SettingsDetail } from './SettingsDetail';
 import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
@@ -26,12 +27,10 @@ import { LocalState } from '../storage/LocalState';
 @Entry
 @Component
 struct Index {
-  @State private settingsOpen: boolean = false;
-  @State private legalOpen: boolean = false;
   @State private legalText: string = '';
   @State private recents: RecentDocument[] = [];
   @State private theme: string = 'system';
-  @State private themeSelected: number[] = [0];
+  @State private version: string = '';
   @State private wide: boolean = false;
   /** 每开一篇加一，文稿页据此重新载入会话。 */
   @State private revision: number = 0;
@@ -50,13 +49,7 @@ struct Index {
       this.afterMenu(() => this.confirmSwitch(() => this.pickOpen()));
     };
     menuBridge.openSettings = (): void => {
-      this.afterMenu(() => {
-        this.legalOpen = false;
-        this.settingsOpen = true;
-      });
-    };
-    menuBridge.showLegal = (): void => {
-      this.afterMenu(() => this.openLegal());
+      this.afterMenu(() => this.routes.pushPathByName('settings', ''));
     };
     menuBridge.closeLibrary = (): void => {
       this.afterMenu(() => this.leaveDocument());
@@ -78,15 +71,14 @@ struct Index {
   }
 
   onBackPress(): boolean {
-    if (this.settingsOpen) {
-      this.settingsOpen = false;
-      return true;
-    }
-    if (this.legalOpen) {
-      this.legalOpen = false;
-      return true;
-    }
     if (this.routes.size() > 0) {
+      const names = this.routes.getAllPathName();
+      const top = names.length > 0 ? names[names.length - 1] : '';
+      if (top !== 'document') {
+        // 设置首页和它的子页都属于普通页面，返回键直接退栈。
+        this.routes.pop();
+        return true;
+      }
       this.leaveDocument();
       return true;
     }
@@ -95,6 +87,7 @@ struct Index {
 
   private async initialize(): Promise<void> {
     if (!this.context) return;
+    this.readVersion();
     try {
       this.recents = await LocalState.readRecent(this.context);
       this.changeTheme(await LocalState.readTheme(this.context), false);
@@ -105,6 +98,16 @@ struct Index {
       this.confirmSwitch(() => this.openExternal(request));
     });
     await this.resumeDraft();
+  }
+
+  /** 版本号只读一次，设置里的「关于」行和「关于」页共用。读不到就留空，由界面自己省略。 */
+  private readVersion(): void {
+    try {
+      this.version = bundleManager.getBundleInfoForSelfSync(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT).versionName;
+    } catch {
+      this.version = '';
+    }
   }
 
   /**
@@ -143,7 +146,6 @@ struct Index {
 
   private changeTheme(choice: string, persist: boolean = true): void {
     this.theme = choice;
-    this.themeSelected = [this.themeIndex()];
     if (this.context) {
       let mode = ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
       if (choice === 'light') mode = ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT;
@@ -153,14 +155,6 @@ struct Index {
         void LocalState.writeTheme(this.context, choice).catch(() => this.toast('主题设置未能保存'));
       }
     }
-  }
-
-  /** Index of the current theme in THEME_VALUES, shared by the label table and the segmented control. */
-  private themeIndex(): number {
-    for (let index = 0; index < THEME_VALUES.length; index++) {
-      if (THEME_VALUES[index] === this.theme) return index;
-    }
-    return 0;
   }
 
   private menuIcon(label: string, symbol: Resource, id: string,
@@ -197,6 +191,10 @@ struct Index {
     return style;
   }
 
+  /**
+   * 首页标题栏。四宫格菜单只放「设置」：首页内容区已经有「新建文稿」和「打开文件」，
+   * 菜单里不再重复。「关于」是设置页里的第二级入口，也不在这里。
+   */
   private homeTitle(): HdsNavigationTitleBarOptions {
     const heading: HdsNavigationTitle = { mainTitle: '文稿' };
     const menu: HdsNavigationMenuContentOptions = {
@@ -243,16 +241,21 @@ struct Index {
     });
   }
 
-  private openLegal(): void {
-    if (!this.context) return;
-    try {
-      const bytes = this.context.resourceManager.getRawFileContentSync('licenses/THIRD_PARTY_NOTICES.txt');
-      this.legalText = util.TextDecoder.create('utf-8').decodeToString(bytes);
-    } catch {
-      this.legalText = '未能读取第三方许可证，请确保已运行 renderer 的构建命令。';
+  /**
+   * 打开设置的二级页：推入设置自己的导航栈，子页从右侧滑入，半模态本身不收起。
+   * 许可证全文按需读一次，其余页面不碰磁盘。
+   */
+  private openSetting(section: string): void {
+    if (section === 'licenses' && this.legalText.length === 0) {
+      if (!this.context) return;
+      try {
+        const bytes = this.context.resourceManager.getRawFileContentSync('licenses/THIRD_PARTY_NOTICES.txt');
+        this.legalText = util.TextDecoder.create('utf-8').decodeToString(bytes);
+      } catch {
+        this.legalText = '未能读取第三方许可证，请确保已运行 renderer 的构建命令。';
+      }
     }
-    this.settingsOpen = false;
-    this.legalOpen = true;
+    this.routes.pushPathByName(section, '');
   }
 
   /**
@@ -280,8 +283,6 @@ struct Index {
   /** 会话已经在 DocumentService 里了，这里只推进 revision 让文稿页重新载入。 */
   private presentOpened(): void {
     this.revision++;
-    this.settingsOpen = false;
-    this.legalOpen = false;
     this.showDocumentRoute();
     const info = DocumentService.current().info;
     if (info.uri.length > 0) void this.rememberRecent(info.uri, info.name);
@@ -357,6 +358,15 @@ struct Index {
     })
   }
 
+  /**
+   * 设置走全屏页面：官方《多设备设置界面》把设置拆成导航页和内容页两段，
+   * 导航页用 HdsNavigation、内容页用 HdsNavDestination，标题栏都用小标题模式，
+   * 跳转靠 NavPathStack。这里两类页面都推在同一个主栈里，返回键由导航组件给。
+   *
+   * 不用半模态：官方《绑定半模态页面》写的是「适用于展示简单的任务或信息面板」，
+   * 设置这种带二级页的层级结构不属于这个场景；半模态和全屏页面混在一起，
+   * 会出现从底部弹起却占满整屏的形态。
+   */
   @Builder
   Destination(name: string, _pageInfos: Object) {
     if (name === 'document') {
@@ -371,21 +381,40 @@ struct Index {
           void this.rememberRecent(uri, name);
         }
       })
+    } else if (name === 'settings') {
+      HdsNavDestination() {
+        SettingsView({
+          theme: $theme,
+          version: this.version,
+          onOpen: (section: string): void => this.openSetting(section)
+        })
+      }
+      .titleBar({
+        // 标题栏是组件级安全区，内容区才会避让标题栏。
+        enableComponentSafeArea: true,
+        content: {
+          title: { mainTitle: '设置' }
+        }
+      })
+      .titleMode(HdsNavDestinationTitleMode.MINI)
+    } else {
+      HdsNavDestination() {
+        SettingsDetail({
+          section: name,
+          theme: $theme,
+          version: this.version,
+          text: this.legalText,
+          onChooseTheme: (choice: string): void => this.changeTheme(choice)
+        })
+      }
+      .titleBar({
+        enableComponentSafeArea: true,
+        content: {
+          title: { mainTitle: settingTitle(name) }
+        }
+      })
+      .titleMode(HdsNavDestinationTitleMode.MINI)
     }
-  }
-
-  @Builder
-  private LegalPage() {
-    LegalView({ text: this.legalText })
-  }
-
-  @Builder
-  private SettingsPage() {
-    // 选中态用 @Link 共享，页面切主题时设置里的高亮跟着变。
-    SettingsView({
-      selected: $themeSelected,
-      onChoose: (choice: string): void => this.changeTheme(choice)
-    })
   }
 
   build() {
@@ -399,27 +428,9 @@ struct Index {
       .mode(NavigationMode.Stack)
       .hideBackButton(true)
       .bindToScrollable([this.libraryScroller])
-      .bindSheet(this.legalOpen, this.LegalPage(), {
-        title: { title: '关于' },
-        showClose: true,
-        height: SheetSize.LARGE,
-        preferType: SheetType.BOTTOM,
-        onDisappear: (): void => {
-          this.legalOpen = false;
-        }
-      })
       .width('100%')
       .height('100%')
     }
-    .bindSheet(this.settingsOpen, this.SettingsPage(), {
-      title: { title: '设置' },
-      showClose: true,
-      height: SheetSize.FIT_CONTENT,
-      preferType: SheetType.BOTTOM,
-      onDisappear: (): void => {
-        this.settingsOpen = false;
-      }
-    })
     .width('100%')
     .height('100%')
   }

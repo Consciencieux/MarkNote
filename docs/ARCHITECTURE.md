@@ -17,9 +17,11 @@
 
 首页是 `HdsNavigation`，文稿页是 `HdsNavDestination`。首页列表滚到标题栏下方，标题栏材质跟随系统；文稿页内容在标题栏下方截断，所以关闭标题栏模糊、用不透明背板。新建和打开入口留在首页内容区，保存、查找和更多入口位于文稿页标题栏。编辑、预览、大纲和分栏由 `Tabs` 切换，宽度达到 720vp 时出现分栏。键盘避让使用 `RESIZE_WITH_CARET`，页面内的工具栏和页签栏都不随键盘重新定位。
 
-标题栏的四宫格菜单用 `Menu`、`MenuItemGroup` 和 `MenuItem` 实现，通过 `promptAction.openMenu` 锚定到标题栏图标，菜单项用通用的 `.onClick()` 触发动作。
+标题栏的四宫格菜单用 `Menu`、`MenuItemGroup` 和 `MenuItem` 实现，通过 `promptAction.openMenu` 锚定到标题栏图标，菜单项用通用的 `.onClick()` 触发动作。一级菜单只放当前页面能执行的动作，不放「关于」这类说明性入口。
 
-半模态有两个：设置挂在外层 `Column`，关于挂在 `HdsNavigation`。同一个节点只能绑定一个 `bindSheet`，两个挂在一起会互相顶掉，最终都不会显示。菜单项要打开半模态时，先关闭菜单再切换半模态的显示状态。
+设置是全屏页面，推在首页同一个 `NavPathStack` 上：导航页和内容页都用 `HdsNavDestinationTitleMode.MINI`，并开 `enableComponentSafeArea` 让内容避让标题栏，返回键由导航组件提供。设置不走半模态——`bindSheet` 的文档把它的场景限定为「简单的任务或信息面板」，带二级页的设置属于导航层级，两者混用会出现从底部弹起却占满整屏的形态。
+
+带 `ListItemGroupStyle.CARD` 的页面必须自己给页面底色（`sys.color.ohos_id_color_sub_background`），卡片是有抬升的一层，页面底不设色就会贴在窗口底上，浅色模式下卡片和页面同色。结构照官方《如何设置分组列表的圆角和间距》：外层容器给底色，卡片保持组件默认。
 
 ## 预览
 
