@@ -247,8 +247,17 @@ export struct DocumentView {
     return await this.askSaveOrDiscard();
   }
 
-  /** true 表示可以离开；保存过程中取消或失败都留在当前文稿。 */
-  private async askSaveOrDiscard(): Promise<boolean> {
+  /**
+   * 未保存的退出确认。true 表示可以离开。
+   *
+   * 用固定样式的警告弹窗（AlertDialog）：API 参考对它的场景说明是「触发一个将产生严重后果的
+   * 不可逆操作时，如删除、重置、取消编辑、停止等」，这里正是「取消编辑」。
+   * 按钮不再手写颜色：`AlertDialogButtonBaseOptions.style` 默认 `DialogButtonStyle.DEFAULT`，
+   * 文档的效果表里「无背景色 + 无文字色 + DEFAULT」是「白底蓝字」，颜色由系统给出；
+   * 强调「保存」用 `DialogButtonStyle.HIGHLIGHT`（官方多按钮示例的写法，效果表的「蓝底白字」）。
+   * 上一版用 `showDialog` 并把按钮色写成 `font_primary`/`font_secondary`，黑字和灰字都是自己填的。
+   */
+  private askSaveOrDiscard(): Promise<boolean> {
     // The reason matters: an unnamed document needs a name, a read-only one needs another
     // location, and a failed write may be an external modification.
     let message = '这份文稿没能写回原文件。可以先另存为，也可以放弃修改。';
@@ -259,23 +268,34 @@ export struct DocumentView {
     } else if (!this.info.writable) {
       message = '这个文件没有写入权限。可以另存为新文件，也可以放弃修改。';
     }
-    let choice = -1;
-    try {
-      const result = await this.getUIContext().getPromptAction().showDialog({
+    return new Promise<boolean>((resolve: (leave: boolean) => void) => {
+      this.getUIContext().showAlertDialog({
         title: '未保存的修改',
         message: message,
+        autoCancel: true,
+        // 点遮罩或按 back 关闭弹窗按取消处理，留在当前文稿。
+        cancel: (): void => resolve(false),
         buttons: [
-          { text: saveLabel, color: $r('sys.color.font_primary') },
-          { text: '放弃修改', color: $r('sys.color.font_secondary') },
-          { text: '取消', color: $r('sys.color.font_secondary') }
+          {
+            value: saveLabel,
+            style: DialogButtonStyle.HIGHLIGHT,
+            action: (): void => {
+              this.saveFile(this.info.uri.length > 0 && !this.info.writable)
+                .then((saved: boolean) => resolve(saved))
+                .catch(() => resolve(false));
+            }
+          },
+          {
+            value: '放弃修改',
+            action: (): void => resolve(true)
+          },
+          {
+            value: '取消',
+            action: (): void => resolve(false)
+          }
         ]
       });
-      choice = result.index;
-    } catch {
-      // 关闭对话框按取消处理，留在当前文稿。
-    }
-    if (choice === 0) return await this.saveFile(this.info.uri.length > 0 && !this.info.writable);
-    return choice === 1;
+    });
   }
 
   private syncFromService(): void {
