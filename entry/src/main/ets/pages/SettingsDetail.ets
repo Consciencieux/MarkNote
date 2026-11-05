@@ -1,3 +1,4 @@
+import { PageScrollPolicy } from './PageScrollPolicy';
 import { HdsListItemCard, SuffixRadio, SuffixText } from '@kit.UIDesignKit';
 import {
   THEME_LABELS, THEME_VALUES, TOOLBAR_POSITION_LABELS, TOOLBAR_POSITION_VALUES
@@ -16,6 +17,8 @@ import {
  */
 @Component
 export struct SettingsDetail {
+  scroller: Scroller = new Scroller();
+  private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
   /** 路由名，同时就是这一页的 section：appearance、privacy、licenses、about。 */
   @Prop section: string = 'about';
   /** 当前主题取值，和设置首页、Index 共用同一份状态。 */
@@ -87,44 +90,31 @@ export struct SettingsDetail {
   build() {
     // 与设置首页同样的分层：页面底由 HdsNavDestination 根节点提供，
     // 每一行是一张 HdsListItemCard，不另套 ListItemGroup 的卡片内边距。
-    // 长正文也用 List 承载而不是 Scroll：Scroll 只有一个子组件时会把它居中，
-    // 正文会跑到页面中间；List 的条目从顶部开始排列。
-    Column() {
+    List({ space: this.section === 'privacy' || this.section === 'licenses' ? 0 : 10,
+      scroller: this.scroller }) {
       if (this.section === 'appearance') {
-        List({ space: 10 }) {
-          ForEach(THEME_VALUES, (choice: string) => {
-            this.RadioRow(THEME_LABELS[THEME_VALUES.indexOf(choice)], choice)
-          }, (choice: string) => choice)
-        }
-        .layoutWeight(1)
+        ForEach(THEME_VALUES, (choice: string) => {
+          this.RadioRow(THEME_LABELS[THEME_VALUES.indexOf(choice)], choice)
+        }, (choice: string) => choice)
       } else if (this.section === 'toolbar') {
-        List({ space: 10 }) {
-          ForEach(TOOLBAR_POSITION_VALUES, (position: string) => {
-            this.ToolbarPositionRow(
-              TOOLBAR_POSITION_LABELS[TOOLBAR_POSITION_VALUES.indexOf(position)], position)
-          }, (position: string) => position)
-        }
-        .layoutWeight(1)
+        ForEach(TOOLBAR_POSITION_VALUES, (position: string) => {
+          this.ToolbarPositionRow(TOOLBAR_POSITION_LABELS[TOOLBAR_POSITION_VALUES.indexOf(position)], position)
+        }, (position: string) => position)
       } else if (this.section === 'about') {
-        List({ space: 10 }) {
-          this.InfoRow('应用名称', 'MarkNote')
-          this.InfoRow('版本', this.version.length > 0 ? this.version : '版本信息不可用')
-        }
-        .layoutWeight(1)
+        this.InfoRow('应用名称', 'MarkNote')
+        this.InfoRow('版本', this.version.length > 0 ? this.version : '版本信息不可用')
       } else {
-        List() {
-          ListItem() {
-            if (this.section === 'licenses') {
-              this.Paragraph(this.text, true)
-            } else {
-              this.Paragraph('文稿在设备本地编辑。应用没有账号、广告、遥测或联网接口，也不上传文稿。' +
-                '文件由系统文件选择器授权，草稿保存在应用私有目录。')
-            }
+        ListItem() {
+          if (this.section === 'licenses') {
+            this.Paragraph(this.text, true)
+          } else {
+            this.Paragraph('文稿在设备本地编辑。应用没有账号、广告、遥测或联网接口，也不上传文稿。' +
+              '文件由系统文件选择器授权，草稿保存在应用私有目录。')
           }
         }
-        .layoutWeight(1)
       }
     }
+    .attributeModifier(this.scrollPolicy)
     .width('100%')
     .height('100%')
   }

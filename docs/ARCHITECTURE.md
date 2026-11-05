@@ -15,7 +15,9 @@
 
 ## 界面
 
-首页是 `HdsNavigation`，文稿页和设置子页是 `HdsNavDestination`。首页标题栏沿用 HDS 默认模糊样式；设置页使用官方固定渐变模糊标题栏。文稿页禁用标题栏全宽滚动模糊背板，只给悬浮按钮配置系统自适应材质。文稿页的共享滚动容器、内容适配和 HDS 导航绑定见[功能目录](FEATURES.md)。顶栏、编辑工具栏和底部页签位于滚动内容上层。文稿页用 HDS `HdsActionBar` 作为编辑快捷插入栏：顶部位置使用标题栏 `bottomBuilder` 和 API 26 系统材质，右侧位置使用 HDS 竖排操作栏及组件默认模糊。编辑、预览、大纲和分栏由 `HdsTabs` 切换，宽度达到 840vp 时出现分栏。键盘避让使用 `RESIZE_WITH_CARET`，页面内的工具栏和页签栏都不随键盘重新定位。
+首页是 `HdsNavigation`，文稿页和设置子页是 `HdsNavDestination`。各页面通过 `HdsMaterialStyles` 共用标题栏配置，`PageScrollPolicy` 负责原生 Scroll/List 的公共行为；设置路由及其滚动控制器由 `SettingsPage` 持有。文稿页签共用 `DocumentScrollLayer`，各页签保留独立滚动位置。具体安全区、裁剪、材质、滚动条和边缘效果见[功能目录](FEATURES.md)的「公共页面滚动」。
+
+顶栏、编辑工具栏和底部页签位于滚动内容上层。文稿用 `HdsActionBar` 提供快捷插入，`HdsTabs` 切换预览、编辑、大纲及宽屏分栏。页面特有内容与公共滚动策略分开维护。键盘避让使用 `RESIZE_WITH_CARET`。
 
 标题栏的四宫格菜单用 `Menu`、`MenuItemGroup` 和 `MenuItem` 实现，通过 `promptAction.openMenu` 锚定到标题栏图标，菜单项用通用的 `.onClick()` 触发动作。一级菜单只放当前页面能执行的动作，不放「关于」这类说明性入口。
 

@@ -1,3 +1,4 @@
+import { PageScrollPolicy } from './PageScrollPolicy';
 import { HdsListItemCard, SuffixArrow, SuffixTextAndArrow } from '@kit.UIDesignKit';
 
 export const THEME_VALUES: string[] = ['system', 'light', 'dark'];
@@ -30,6 +31,8 @@ export function themeLabel(choice: string): string {
  */
 @Component
 export struct SettingsView {
+  scroller: Scroller = new Scroller();
+  private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
   /** @Link keeps the displayed theme in sync with the owner when returning from its detail page. */
   @Link theme: string;
   @Prop toolbarPosition: string = 'top';
@@ -64,17 +67,15 @@ export struct SettingsView {
 
   build() {
     // 按官方《设置列表卡片样式》(ui-design-set-listitem-style) 示例设置卡片行间距。
-    Column() {
-      List({ space: 10 }) {
-        this.LinkRow('外观', themeLabel(this.theme), 'appearance')
-        this.LinkRow('编辑工具栏位置', this.toolbarPosition === 'left' ? '左侧' :
-          (this.toolbarPosition === 'right' ? '右侧' : '顶部'), 'toolbar')
-        this.LinkRow('隐私说明', '', 'privacy')
-        this.LinkRow('第三方开源许可证', '', 'licenses')
-        this.LinkRow('关于', this.version.length > 0 ? `版本 ${this.version}` : '', 'about')
-      }
-      .layoutWeight(1)
+    List({ space: 10, scroller: this.scroller }) {
+      this.LinkRow('外观', themeLabel(this.theme), 'appearance')
+      this.LinkRow('编辑工具栏位置', this.toolbarPosition === 'left' ? '左侧' :
+        (this.toolbarPosition === 'right' ? '右侧' : '顶部'), 'toolbar')
+      this.LinkRow('隐私说明', '', 'privacy')
+      this.LinkRow('第三方开源许可证', '', 'licenses')
+      this.LinkRow('关于', this.version.length > 0 ? `版本 ${this.version}` : '', 'about')
     }
+    .attributeModifier(this.scrollPolicy)
     .width('100%')
     .height('100%')
   }

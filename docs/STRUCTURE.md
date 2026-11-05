@@ -16,6 +16,8 @@ marknote
 │   │   │   ├── FormatBarView.ets            编辑页顶部的常驻格式栏
 │   │   │   ├── DocumentMenus.ets            首页与文稿页的菜单内容和动作桥
 │   │   │   ├── DocumentBridge.ets           首页与文稿页的未保存询问桥
+│   │   │   ├── PageScrollPolicy.ets         Scroll/List 公共配置及页签裁剪策略
+│   │   │   ├── SettingsPage.ets             设置路由与滚动控制器
 │   │   │   ├── SettingsView.ets             设置首页的导航列表
 │   │   │   └── SettingsDetail.ets           设置的二级页
 │   │   ├── document/
@@ -54,6 +56,7 @@ marknote
 | --- | --- |
 | 首页列表、新建菜单 | `entry/src/main/ets/pages/HomeView.ets` |
 | 文稿页：编辑、预览、大纲、分栏、查找、保存 | `entry/src/main/ets/pages/DocumentView.ets` |
+| 公共滚动与标题栏 | `entry/src/main/ets/pages/PageScrollPolicy.ets`、`pages/HdsMaterialStyles.ets` |
 | 首页外壳、导航、主题、设置与关于 | `entry/src/main/ets/pages/Index.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets` |
 | 菜单内容与跨页动作 | `entry/src/main/ets/pages/DocumentMenus.ets`、`pages/DocumentBridge.ets` |
 | 打开、保存、草稿恢复 | `entry/src/main/ets/document/DocumentService.ets` |

@@ -13,9 +13,10 @@ import { SearchHit, TextSearch } from '../document/TextSearch';
 import { EditHistory, EditStep } from '../document/EditHistory';
 import { FormatBarView } from './FormatBarView';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
+import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
-import { adaptiveFloatingHdsTitleBarStyle } from './HdsMaterialStyles';
+import { scrollingTitleBar } from './HdsMaterialStyles';
 import { LocalState } from '../storage/LocalState';
 
 /**
@@ -57,6 +58,8 @@ export struct DocumentView {
 
   private preview: webview.WebviewController = new webview.WebviewController();
   private splitPreview: webview.WebviewController = new webview.WebviewController();
+  private tabContentPolicy: PageTabContentPolicy = new PageTabContentPolicy();
+  private tabsPolicy: PageTabsPolicy = new PageTabsPolicy();
   private previewScroller: Scroller = new Scroller();
   private editScroller: Scroller = new Scroller();
   private outlineScroller: Scroller = new Scroller();
@@ -185,13 +188,7 @@ export struct DocumentView {
       ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
-    const options: HdsNavigationTitleBarOptions = {
-      avoidLayoutSafeArea: false,
-      enableComponentSafeArea: false,
-      style: adaptiveFloatingHdsTitleBarStyle(),
-      content: content
-    };
-    return options;
+    return scrollingTitleBar(content);
   }
 
   private openDocumentMenu(): void {
@@ -732,16 +729,20 @@ export struct DocumentView {
         TabContent() {
           this.PreviewPage(this.preview, this.previewScroller, () => { this.previewReady = true; })
         }
+          .attributeModifier(this.tabContentPolicy)
           .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.eye')), '预览'))
         TabContent() { this.EditPage(this.editScroller) }
+          .attributeModifier(this.tabContentPolicy)
           .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.square_and_pencil')), '编辑'))
         // Only formats that declare an outline get the tab; plain text and SVG have none.
         if (this.currentFormat().outline) {
           TabContent() { this.OutlinePage() }
+            .attributeModifier(this.tabContentPolicy)
             .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.list_bullet')), '大纲'))
         }
         if (this.wide) {
           TabContent() { this.SplitPage() }
+            .attributeModifier(this.tabContentPolicy)
             .tabBar(BottomTabBarStyle.of(this.tabSymbol($r('sys.symbol.rectangle_split_2x1')), '分栏'))
         }
       }
@@ -762,6 +763,7 @@ export struct DocumentView {
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
         }
       })
+      .attributeModifier(this.tabsPolicy)
       .width('100%')
       .height('100%')
       if (this.toolbarPosition === 'top' && this.formatBarWanted()) {
@@ -821,12 +823,11 @@ export struct DocumentView {
     .titleBar(this.documentTitle())
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable(this.activeScrollers())
-    // HdsNavDestination API 的 ignoreLayoutSafeArea 与 HDS 沉浸光感示例一起使用，
-    // 让正文延伸到系统上下避让区；只给标题栏按钮加系统材质，不铺全宽模糊背板。
     .backgroundColor($r('sys.color.ohos_id_color_background'))
-    // HDS Navigation safe-area settings let the scrolling surfaces occupy the full destination
-    // beneath the titlebar and floating tabs; the controls remain above them.
-    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
+    // Keep the same destination layout contract as SettingsPage. HDS ignoreLayoutSafeArea
+    // expands layout into the system avoid areas; it is not a paint-only transparency switch.
+    // Scroll content extends through clipContent(SAFE_AREA) + PageTabsPolicy + PageTabContentPolicy.
+    // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ui-design-hdsnavdestination
     .onBackPressed(() => {
       this.requestLeave();
       return true;

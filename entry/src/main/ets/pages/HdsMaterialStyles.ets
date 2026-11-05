@@ -1,41 +1,31 @@
-import { hdsMaterial, ScrollEffectType, SystemMaterialParams, TitleBarStyleOptions } from '@kit.UIDesignKit';
-
-/** 华为《沉浸光感》(ui-design-hds-component-material) 推荐的标题栏按钮自适应材质。 */
-function adaptiveSystemMaterial(): SystemMaterialParams {
-  return {
-    materialType: hdsMaterial.MaterialType.ADAPTIVE,
-    materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
-  };
-}
-
-export function adaptiveHdsTitleBarStyle(): TitleBarStyleOptions {
-  return { systemMaterialEffect: adaptiveSystemMaterial() };
-}
+import {
+  hdsMaterial, HdsNavigationTitleBarOptions, ScrollEffectType, TitleBarContentOptions
+} from '@kit.UIDesignKit';
 
 /**
- * Documents have independently scrolling Web/TextArea/List content, so they cannot be bound to
- * HdsNavDestination with one Scroller. The official HDS immersive-material sample keeps a fixed
- * GRADIENT_BLUR backdrop together with the adaptive system material in precisely this situation
- * (ui-design-hds-component-material).
+ * HdsNavigationBackgroundStyle.maskExtraHeight defaults to 32vp for GRADIENT_BLUR.
+ * Share that documented extent with the content safe area; do not shorten the blur to move text.
+ * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ui-design-hdsnavigation
  */
-export function adaptiveFloatingHdsTitleBarStyle(): TitleBarStyleOptions {
-  return {
-    scrollEffectOpts: {
-      enableScrollEffect: false,
-      scrollEffectType: ScrollEffectType.GRADIENT_BLUR
-    },
-    systemMaterialEffect: adaptiveSystemMaterial()
-  };
-}
+export const TITLE_BLUR_EXTENSION: number = 32;
 
-/** ui-design-navigation-dynamic-blur: use GRADIENT_BLUR for immersion; keep it fixed because
- * Web, TextArea, and TreeView do not share an HDS-bindable Scroller for dynamic titlebar effects. */
-export function adaptiveBlurredHdsTitleBarStyle(): TitleBarStyleOptions {
+/** One titlebar contract for the library, settings and document destinations. */
+export function scrollingTitleBar(content: TitleBarContentOptions): HdsNavigationTitleBarOptions {
   return {
-    scrollEffectOpts: {
-      enableScrollEffect: false,
-      scrollEffectType: ScrollEffectType.GRADIENT_BLUR
-    },
-    systemMaterialEffect: adaptiveSystemMaterial()
+    enableComponentSafeArea: true,
+    content: content,
+    style: {
+      // ui-design-hds-component-material: false keeps the gradient blur active; it does NOT
+      // disable blur. The button material is independent of the titlebar background effect.
+      scrollEffectOpts: {
+        enableScrollEffect: false,
+        scrollEffectType: ScrollEffectType.GRADIENT_BLUR
+      },
+      originalStyle: { backgroundStyle: { maskExtraHeight: TITLE_BLUR_EXTENSION } },
+      systemMaterialEffect: {
+        materialType: hdsMaterial.MaterialType.ADAPTIVE,
+        materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+      }
+    }
   };
 }

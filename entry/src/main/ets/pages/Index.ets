@@ -2,9 +2,8 @@ import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
 import { ComponentContent, mediaquery } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import {
-  HdsNavigation, HdsNavigationTitleMode, HdsNavDestination, HdsNavDestinationTitleMode,
-  HdsNavigationTitle, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
-  HdsNavigationMenuContentOptions, TitleBarContentOptions,
+  HdsNavigation, HdsNavigationTitleMode,
+  HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleBarOptions
 } from '@kit.UIDesignKit';
 import { RecentDocument } from '../model/Document';
@@ -12,9 +11,8 @@ import { DocumentService } from '../document/DocumentService';
 import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
 import { HomeView } from './HomeView';
 import { DocumentView } from './DocumentView';
-import { SettingsView, settingTitle } from './SettingsView';
-import { SettingsDetail } from './SettingsDetail';
-import { adaptiveBlurredHdsTitleBarStyle, adaptiveHdsTitleBarStyle } from './HdsMaterialStyles';
+import { SettingsPage } from './SettingsPage';
+import { scrollingTitleBar } from './HdsMaterialStyles';
 import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
@@ -181,33 +179,16 @@ struct Index {
     return item;
   }
 
-  /**
-   * 首页保留 HdsNavigation 默认的 COMMON_BLUR 动态模糊样式，并为标题栏按钮配置官方 HDS 自适应沉浸材质：
-   * - HdsNavigation API (ui-design-hdsnavigation)：`scrollEffectType` 默认 ScrollEffectType.COMMON_BLUR，
-   *   `enableScrollEffect` 默认 true，文档对 COMMON_BLUR 的说明是「适用于列表型非沉浸式场景」。
-   * - 同一 API 的 HdsNavigationBackgroundStyle.backgroundColor：模糊样式为 COMMON_BLUR 时
-   *   「背景色默认值均为透明色」；COMMON_BLUR 的说明是「滑动内容进入/离开标题栏区域过程中，
-   *   模糊背板和分割线透明渐变出现/消失」。所以顶栏没有常驻色块，标题和菜单悬浮在内容上，
-   *   内容滑到下面时才浮出模糊蒙板。
-   * - HDS《沉浸光感》(ui-design-hds-component-material) 指定通过
-   *   TitleBarStyleOptions.systemMaterialEffect 配置标题栏按钮材质；不手动补背景色。
-   * `titleMode` 用 MINI（56vp），标题与右侧菜单同一行。
-   */
   private homeTitle(): HdsNavigationTitleBarOptions {
-    return {
-      // 标题栏是组件级安全区（默认 false），内容区据此避让标题栏。
-      enableComponentSafeArea: true,
-      style: adaptiveHdsTitleBarStyle(),
-      content: {
-        title: { mainTitle: '全部' },
-        menu: {
-          value: [
-            this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
-              (): void => this.openHomeMenu())
-          ]
-        }
+    return scrollingTitleBar({
+      title: { mainTitle: '全部' },
+      menu: {
+        value: [
+          this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
+            (): void => this.openHomeMenu())
+        ]
       }
-    };
+    });
   }
 
   private openHomeMenu(): void {
@@ -381,49 +362,17 @@ struct Index {
           void this.rememberRecent(uri, name);
         }
       })
-    } else if (name === 'settings') {
-      HdsNavDestination() {
-        SettingsView({
-          theme: $theme,
-          toolbarPosition: this.toolbarPosition,
-          version: this.version,
-          onOpen: (section: string): void => this.openSetting(section)
-        })
-      }
-      .titleBar({
-        // 标题栏是组件级安全区，内容区才会避让标题栏。
-        enableComponentSafeArea: true,
-        style: adaptiveBlurredHdsTitleBarStyle(),
-        content: {
-          title: { mainTitle: '设置' }
-        }
-      })
-      .titleMode(HdsNavDestinationTitleMode.MINI)
-      // 设置页使用 HDS 固定渐变模糊标题栏和系统自适应材质。
-      // 设置页用分组卡片，卡片是抬升的一层，页面底取 sub_background 以便和卡片分层。
-      .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
     } else {
-      HdsNavDestination() {
-        SettingsDetail({
-          section: name,
-          theme: $theme,
-          toolbarPosition: this.toolbarPosition,
-          version: this.version,
-          text: this.legalText,
-          onChooseTheme: (choice: string): void => this.changeTheme(choice),
-          onChooseToolbarPosition: (position: string): void => this.changeToolbarPosition(position)
-        })
-      }
-      .titleBar({
-        enableComponentSafeArea: true,
-        style: adaptiveBlurredHdsTitleBarStyle(),
-        content: {
-          title: { mainTitle: settingTitle(name) }
-        }
+      SettingsPage({
+        section: name,
+        theme: $theme,
+        toolbarPosition: this.toolbarPosition,
+        version: this.version,
+        text: this.legalText,
+        onOpen: (section: string): void => this.openSetting(section),
+        onChooseTheme: (choice: string): void => this.changeTheme(choice),
+        onChooseToolbarPosition: (position: string): void => this.changeToolbarPosition(position)
       })
-      .titleMode(HdsNavDestinationTitleMode.MINI)
-      // 与设置首页使用相同的 HDS 标题栏模糊和页面底色。
-      .backgroundColor($r('sys.color.ohos_id_color_sub_background'))
     }
   }
 

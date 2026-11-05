@@ -1,3 +1,4 @@
+import { PageScrollPolicy } from './PageScrollPolicy';
 import { ComposeListItem, IconType, SymbolGlyphModifier } from '@kit.ArkUI';
 import { RecentDocument } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
@@ -8,6 +9,7 @@ import { FormatRegistry } from '../document/FormatRegistry';
 @Component
 export struct HomeView {
   @Prop recents: RecentDocument[] = [];
+  private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
   scroller: Scroller = new Scroller();
   onNew: (id: string) => void = (_id: string): void => {};
   onOpen: () => void = (): void => {};
@@ -55,8 +57,7 @@ export struct HomeView {
   build() {
     // 首页只承担两件事：开始一篇新文稿/打开已有文件，和回到最近打开过的文稿。
     // 标题「全部」由导航标题栏给出，页面里不再写标语和分组标题。
-    // List gap and edge spacing use system resources; clip(false) follows
-    // 《设置动态模糊样式》(ui-design-navigation-dynamic-blur) so rows can scroll under the title bar.
+    // List keeps its native row layout; the shared policy owns safe areas and scrolling behavior.
     List({ scroller: this.scroller, spaceWidth: $r('sys.float.padding_level6') }) {
       ListItem() {
         Row() {
@@ -80,6 +81,6 @@ export struct HomeView {
     // Keep the list at the available width and use system margin resources for its edges.
     .layoutWeight(1)
     .margin({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
-    .clip(false)
+    .attributeModifier(this.scrollPolicy)
   }
 }

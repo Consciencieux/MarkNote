@@ -1,5 +1,4 @@
-/** HDS immersive-scroll FAQ places the start gap inside a full-height Scroll viewport. */
-export const DOCUMENT_SCROLL_START_GAP: number = 56;
+import { PageScrollPolicy } from './PageScrollPolicy';
 
 /**
  * The single vertical scroll surface for preview, editing, outline, and split panes.
@@ -7,6 +6,7 @@ export const DOCUMENT_SCROLL_START_GAP: number = 56;
  */
 @Component
 export struct DocumentScrollLayer {
+  private scrollPolicy: PageScrollPolicy<ScrollAttribute> = new PageScrollPolicy<ScrollAttribute>();
   scroller: Scroller = new Scroller();
   @BuilderParam content: () => void = this.EmptyContent;
 
@@ -17,11 +17,10 @@ export struct DocumentScrollLayer {
     Scroll(this.scroller) {
       this.content()
     }
+    // faqs-arkui-725: bounded Scroll centers short content unless aligned to the top.
+    .align(Alignment.Top)
     .scrollable(ScrollDirection.Vertical)
-    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-    .scrollBar(BarState.On)
-    // HDS FAQ faqs-arkui-1095 uses a full-height Scroll with this 56vp content start gap.
-    .padding({ top: DOCUMENT_SCROLL_START_GAP })
+    .attributeModifier(this.scrollPolicy)
     .width('100%')
     .height('100%')
   }
