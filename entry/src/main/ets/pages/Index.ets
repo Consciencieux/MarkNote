@@ -13,6 +13,7 @@ import { HomeView } from './HomeView';
 import { DocumentView } from './DocumentView';
 import { SettingsPage } from './SettingsPage';
 import { scrollingTitleBar } from './HdsMaterialStyles';
+import { menuMaterialOptions } from './MenuMaterialOptions';
 import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
@@ -195,7 +196,7 @@ struct Index {
   private openHomeMenu(): void {
     const uiContext = this.getUIContext();
     this.homeMenu = new ComponentContent<Object>(uiContext, wrapBuilder(HomeMenuContent));
-    uiContext.getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }).catch(() => {
+    uiContext.getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }, menuMaterialOptions()).catch(() => {
       // The menu stays closed when its anchor is not on screen.
     });
   }
@@ -203,7 +204,7 @@ struct Index {
   private openDocumentMenu(): void {
     const uiContext = this.getUIContext();
     this.documentMenu = new ComponentContent<Object>(uiContext, wrapBuilder(DocumentMenuContent));
-    uiContext.getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }).catch(() => {
+    uiContext.getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }, menuMaterialOptions()).catch(() => {
       // The menu stays closed when its anchor is not on screen.
     });
   }

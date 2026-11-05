@@ -1,5 +1,5 @@
 import { PageScrollPolicy } from './PageScrollPolicy';
-import { HdsListItemCard, SuffixArrow, SuffixTextAndArrow } from '@kit.UIDesignKit';
+import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 
 export const THEME_VALUES: string[] = ['system', 'light', 'dark'];
 export const THEME_LABELS: string[] = ['跟随系统', '浅色', '深色'];
@@ -27,13 +27,14 @@ export function themeLabel(choice: string): string {
 /**
  * 设置首页。这一层只放导航条目，正文在各自的二级页。
  *
- * 行用 HdsListItemCard，照《设置列表卡片样式》（ui-design-set-listitem-style）：
- * ListItem 里直接放卡片，右侧状态和箭头使用官方 suffix 组件；不叠加额外卡片样式。
+ * ListItemGroup 和 ListItem 的 CARD 样式负责分组背板及行交互。
+ * 参见官方 ts-container-listitemgroup 和 ts-container-listitem。
  */
 @Component
 export struct SettingsView {
   scroller: Scroller = new Scroller();
   private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
+  private groupStyle: SettingsGroupStyle = new SettingsGroupStyle();
   /** @Link keeps the displayed theme in sync with the owner when returning from its detail page. */
   @Link theme: string;
   @Prop toolbarPosition: string = 'top';
@@ -42,40 +43,25 @@ export struct SettingsView {
 
   @Builder
   private LinkRow(title: string, status: string, section: string) {
-    // 有状态文字时用「文字 + 箭头」，没有状态时只留箭头。颜色都不填，用组件默认。
-    if (status.length > 0) {
-      ListItem() {
-        HdsListItemCard({
-          textItem: {
-            primaryText: { text: title }
-          },
-          suffixItem: new SuffixTextAndArrow({ text: status }),
-          onClick: (): void => this.onOpen(section)
-        })
-      }
-    } else {
-      ListItem() {
-        HdsListItemCard({
-          textItem: {
-            primaryText: { text: title }
-          },
-          suffixItem: new SuffixArrow(),
-          onClick: (): void => this.onOpen(section)
-        })
-      }
+    ListItem({ style: ListItemStyle.CARD }) {
+      SettingsListRow({ title: title, value: status, showArrow: true })
     }
+    .onClick(() => this.onOpen(section))
   }
 
   build() {
-    // 按官方《设置列表卡片样式》(ui-design-set-listitem-style) 示例设置卡片行间距。
-    List({ space: 10, scroller: this.scroller }) {
-      this.LinkRow('外观', themeLabel(this.theme), 'appearance')
-      this.LinkRow('编辑工具栏位置', this.toolbarPosition === 'left' ? '左侧' :
-        (this.toolbarPosition === 'right' ? '右侧' : '顶部'), 'toolbar')
-      this.LinkRow('隐私说明', '', 'privacy')
-      this.LinkRow('本项目开源许可证', '', 'project-license')
-      this.LinkRow('第三方开源许可证', '', 'licenses')
-      this.LinkRow('关于', this.version.length > 0 ? `版本 ${this.version}` : '', 'about')
+    List({ spaceWidth: $r('sys.float.padding_level6'), scroller: this.scroller }) {
+      ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+        this.LinkRow('外观', themeLabel(this.theme), 'appearance')
+        this.LinkRow('编辑工具栏位置', this.toolbarPosition === 'left' ? '左侧' :
+          (this.toolbarPosition === 'right' ? '右侧' : '顶部'), 'toolbar')
+      }.attributeModifier(this.groupStyle)
+      ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+        this.LinkRow('隐私说明', '', 'privacy')
+        this.LinkRow('本项目开源许可证', '', 'project-license')
+        this.LinkRow('第三方开源许可证', '', 'licenses')
+        this.LinkRow('关于', this.version.length > 0 ? `版本 ${this.version}` : '', 'about')
+      }.attributeModifier(this.groupStyle)
     }
     .attributeModifier(this.scrollPolicy)
     .width('100%')
