@@ -136,16 +136,16 @@ export struct DocumentView {
 
   /**
    * 与未保存确认同一套《警告弹窗》排布：HORIZONTAL，左右都是 DEFAULT 蓝字。
-   * 侧滑、返回键和点击遮罩等于「以后再说」。
+   * 侧滑、返回键和点击遮罩等于「暂不」。
    */
   private askRetainCopy(): void {
     this.getUIContext().showAlertDialog({
-      message: '这份文件的授权在退出后会失效。另存为到自己的文件后，可以在最近文稿里再次打开。',
+      message: '此文件的访问权限无法长期保留。是否另存一份，以便以后打开？',
       autoCancel: true,
       buttonDirection: DialogButtonDirection.HORIZONTAL,
       buttons: [
         {
-          value: '以后再说',
+          value: '暂不',
           style: DialogButtonStyle.DEFAULT,
           action: (): void => {}
         },
