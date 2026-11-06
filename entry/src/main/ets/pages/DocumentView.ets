@@ -41,10 +41,8 @@ export struct DocumentView {
   /** 每打开一篇就加一，用来在路由已经存在时重新载入会话。 */
   @Prop @Watch('loadSession') revision: number = 0;
   onLeave: () => void = (): void => {};
-  /** 保存成功后把文件记进最近文稿，列表由首页持有。 */
+  /** 具有持久授权的文件保存成功后通知首页更新最近文稿。 */
   onSaved: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
-  /** 这一次载入已经问过是否另存为的 URI，换篇后才再问。 */
-  private retainOfferedUri: string = '';
 
   private tabContentPolicy: PageTabContentPolicy = new PageTabContentPolicy();
   private tabsPolicy: PageTabsPolicy = new PageTabsPolicy();
@@ -116,56 +114,6 @@ export struct DocumentView {
     this.searchVisible = false;
     // 干净文稿会顺手清掉残留草稿；崩溃恢复来的文稿仍是脏的，继续留在磁盘上。
     this.flushRecovery();
-    this.offerRetainCopy();
-  }
-
-  /**
-   * 其他应用交来的 URI 往往只有本次授权。能打开但不持久时问一次另存为，
-   * 成功后的新 URI 由保存流程记入最近文稿。
-   */
-  private offerRetainCopy(): void {
-    const uri = this.info.uri;
-    if (uri.length === 0 || this.info.persistent) {
-      this.retainOfferedUri = '';
-      return;
-    }
-    if (this.retainOfferedUri === uri) return;
-    this.retainOfferedUri = uri;
-    this.askRetainCopy();
-  }
-
-  /**
-   * 与未保存确认同一套《警告弹窗》排布：HORIZONTAL，左右都是 DEFAULT 蓝字。
-   * 侧滑、返回键和点击遮罩等于「暂不」。
-   */
-  private askRetainCopy(): void {
-    this.getUIContext().showAlertDialog({
-      message: '此文件的访问权限无法长期保留。是否另存一份，以便以后打开？',
-      autoCancel: true,
-      buttonDirection: DialogButtonDirection.HORIZONTAL,
-      buttons: [
-        {
-          value: '暂不',
-          style: DialogButtonStyle.DEFAULT,
-          action: (): void => {}
-        },
-        {
-          value: '另存为',
-          style: DialogButtonStyle.DEFAULT,
-          primary: true,
-          action: (): void => {
-            void this.saveFile(true);
-          }
-        }
-      ],
-      cancel: (): void => {},
-      onWillDismiss: (dismissDialogAction: DismissDialogAction): void => {
-        if (dismissDialogAction.reason === DismissReason.PRESS_BACK ||
-          dismissDialogAction.reason === DismissReason.TOUCH_OUTSIDE) {
-          dismissDialogAction.dismiss();
-        }
-      }
-    });
   }
 
   aboutToDisappear(): void {
@@ -275,7 +223,7 @@ export struct DocumentView {
         resolve(leave);
       };
       this.getUIContext().showAlertDialog({
-        message: '是否保存更改？',
+        message: this.info.uri.length > 0 && !this.info.writable ? '原文件无法写入，是否另存更改？' : '是否保存更改？',
         autoCancel: true,
         buttonDirection: DialogButtonDirection.HORIZONTAL,
         buttons: [
@@ -330,24 +278,43 @@ export struct DocumentView {
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
     if (!this.context || this.saving) return false;
+    if (!asNewFile && this.info.uri.length > 0 && !this.info.writable) {
+      this.offerSaveCopy('原文件无法写入，请另存为其他文件。');
+      return false;
+    }
     this.saving = true;
     try {
       const result = await DocumentService.save(this.context, asNewFile);
       this.syncFromService();
       if (!result.saved) return false;
-      this.toast(result.message);
+      this.toast(result.message + (this.info.persistent ? '' : '。无法保留长期访问权限，未加入最近文稿'));
       if (!this.isDirty()) this.clearRecovery();
       else this.scheduleRecovery();
       // 最近文稿列表在首页，保存成功只通知过去。
-      this.onSaved(this.info.uri, this.title);
+      if (this.info.persistent) this.onSaved(this.info.uri, this.title);
       return !result.stillDirty;
     } catch (error) {
       this.scheduleRecovery();
-      this.toast('保存失败：' + String(error));
+      if (!asNewFile && this.info.uri.length > 0) {
+        this.offerSaveCopy('保存失败：' + String(error) + '\n可另存为其他文件。');
+      } else {
+        this.toast('保存失败：' + String(error));
+      }
       return false;
     } finally {
       this.saving = false;
     }
+  }
+
+  /** 使用系统警告弹窗提供另存选项，关闭弹窗时保留未保存的内容。 */
+  private offerSaveCopy(message: string): void {
+    this.getUIContext().showAlertDialog({
+      message: message,
+      buttons: [
+        { value: '取消', action: (): void => {} },
+        { value: '另存为', primary: true, action: (): void => { void this.saveFile(true); } }
+      ]
+    });
   }
 
   private clearRecovery(): void {
