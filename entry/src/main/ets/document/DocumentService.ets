@@ -41,8 +41,9 @@ export class DocumentService {
     return FormatRegistry.byFilename(info.name);
   }
 
-  static headingsFor(info: DocumentInfo, source: string): Heading[] {
-    if (!DocumentService.formatFor(info).outline) return [];
+  /** Only Markdown has a native parser; LaTeX headings arrive from its preview. */
+  static nativeHeadingsFor(info: DocumentInfo, source: string): Heading[] {
+    if (DocumentService.formatFor(info).id !== 'markdown') return [];
     return documentOutline(source);
   }
 

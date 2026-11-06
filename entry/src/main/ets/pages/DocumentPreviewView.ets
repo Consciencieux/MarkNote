@@ -1,5 +1,9 @@
 import { webview } from '@kit.ArkWeb';
+import { Heading } from '../model/Document';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
+
+interface ParsedHeading { level: number; text: string; offset: number; line: number }
+interface ParsedResult { kind: string; revision: number; headings: ParsedHeading[] }
 
 /** 文稿预览和分栏预览共用同一组 Web 与滚动配置。 */
 @Component
@@ -7,15 +11,51 @@ export struct DocumentPreviewView {
   @Prop @Watch('scheduleUpdate') theme: string = 'system';
   @Prop @Watch('scheduleUpdate') source: string = '';
   @Prop @Watch('scheduleUpdate') kind: string = 'markdown';
+  @Prop @Watch('scheduleUpdate') parseRevision: number = 0;
+  onOutline: (revision: number, headings: Heading[]) => void = (_revision: number, _headings: Heading[]): void => {};
   scroller: Scroller = new Scroller();
   private controller: webview.WebviewController = new webview.WebviewController();
   private ready: boolean = false;
+  private ports: webview.WebMessagePort[] = [];
   private timer: number = -1;
 
   aboutToDisappear(): void {
     if (this.timer >= 0) clearTimeout(this.timer);
     this.timer = -1;
     this.ready = false;
+    if (this.ports.length > 1) {
+      try { this.ports[1].close(); } catch { /* Web already released */ }
+    }
+    this.ports = [];
+  }
+
+  private connectResultPort(): void {
+    try {
+      if (this.ports.length > 1) this.ports[1].close();
+      this.ports = this.controller.createWebMessagePorts();
+      this.ports[1].onMessageEvent((message: webview.WebMessage): void => {
+        if (typeof message !== 'string') return;
+        try {
+          const result = JSON.parse(message) as ParsedResult;
+          if (result.kind !== 'tex-outline' || result.revision !== this.parseRevision ||
+            this.kind !== 'tex-math' || !Array.isArray(result.headings)) return;
+          const headings: Heading[] = [];
+          for (const item of result.headings) {
+            if (typeof item.text !== 'string' || typeof item.level !== 'number' ||
+              typeof item.offset !== 'number' || typeof item.line !== 'number' ||
+              !Number.isInteger(item.offset) || item.offset < 0 || item.offset > this.source.length ||
+              !Number.isInteger(item.level) || item.level < 1 || item.level > 6 ||
+              !Number.isInteger(item.line) || item.line < 1) return;
+            headings.push(new Heading(item.level, item.text, item.offset, item.line));
+          }
+          this.onOutline(result.revision, headings);
+        } catch { /* Ignore malformed results from the page. */ }
+      });
+      // 华为《建立应用侧与前端页面数据通道》：将一个端口转交网页。
+      this.controller.postMessage('__marknote_parse_port__', [this.ports[0]], '*');
+    } catch {
+      this.ports = [];
+    }
   }
 
   private scheduleUpdate(): void {
@@ -30,7 +70,8 @@ export struct DocumentPreviewView {
     const command = 'window.MarknotePreview.update(' + JSON.stringify({
       kind: this.kind,
       source: this.source,
-      theme: this.theme
+      theme: this.theme,
+      revision: this.parseRevision
     }) + ')';
     try {
       this.controller.runJavaScript(command);
@@ -55,6 +96,7 @@ export struct DocumentPreviewView {
       .backgroundColor($r('sys.color.ohos_id_color_background'))
       .onPageEnd(() => {
         this.ready = true;
+        this.connectResultPort();
         this.sendUpdate();
       })
       .width('100%')

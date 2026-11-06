@@ -27,6 +27,8 @@ npm run check
 npm run build
 ```
 
+`npm ci` 安装锁定的 npm 依赖后，会从固定的 GitHub 提交获取 `tex-to-myst` 的两处修复，校验并编译到本机依赖目录。首次安装需要访问 npm 镜像和 GitHub；已验证的修复源码缓存在 `renderer/.cache/`，不提交到版本库。缓存及 npm 包齐全时可离线安装。修复的来源和移除条件见[第三方组件与许可证](third_party/README.md)。
+
 构建生成单文件预览页，并从已安装的生产依赖中收集许可证：
 
 - `entry/src/main/resources/rawfile/preview/index.html`

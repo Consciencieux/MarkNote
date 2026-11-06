@@ -275,7 +275,7 @@ struct Index {
     this.revision++;
     this.showDocumentRoute();
     const info = DocumentService.current().info;
-    if (info.uri.length > 0) void this.rememberRecent(info.uri, info.name);
+    if (info.uri.length > 0 && info.persistent) void this.rememberRecent(info.uri, info.name);
   }
 
   private async startNew(kind: string): Promise<void> {
@@ -304,7 +304,22 @@ struct Index {
       await DocumentService.openUri(item.uri, '', true, false);
       this.presentOpened();
     } catch {
-      this.toast('原文件授权可能已经失效，请使用“打开”重新选取');
+      // 华为《固定样式弹出框》：需要用户决定后续操作时使用警告弹窗。
+      this.getUIContext().showAlertDialog({
+        title: '无法打开文稿',
+        message: '是否从最近文稿中移除此记录？移除记录不会删除文件。',
+        buttons: [
+          {
+            value: '保留',
+            primary: true,
+            action: (): void => {}
+          },
+          {
+            value: '移除',
+            action: (): void => { void this.forgetRecent(item.uri); }
+          }
+        ]
+      });
     }
   }
 
@@ -315,6 +330,16 @@ struct Index {
       this.presentOpened();
     } catch (error) {
       this.toast('打开失败：' + String(error));
+    }
+  }
+
+  private async forgetRecent(uri: string): Promise<void> {
+    if (!this.context || uri.length === 0) return;
+    try {
+      this.recents = await LocalState.removeRecent(this.context, uri);
+      void DocumentFiles.release(uri);
+    } catch {
+      this.toast('最近文稿列表未能更新');
     }
   }
 

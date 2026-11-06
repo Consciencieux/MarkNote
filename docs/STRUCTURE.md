@@ -16,12 +16,16 @@ marknote/
 │       │   └── storage/              文件访问和本机状态
 │       └── resources/rawfile/        构建生成的预览页与许可证文本
 ├── renderer/                         离线预览源码及构建脚本
+│   ├── package.json、package-lock.json  npm 依赖声明与锁定版本
 │   ├── src/renderers/                各文稿格式的渲染器
 │   ├── src/styles.css                预览样式
-│   └── scripts/                      打包资源及生成许可证声明
+│   ├── scripts/                      安装依赖修复、打包资源及生成许可证声明
+│   └── tests/                        预览、依赖安装及许可证收集测试
 ├── docs/                             功能、架构、隐私及发布文档
 ├── examples/                         Markdown、SVG 和 TeX 示例文稿
-├── third_party/                      第三方依赖说明
+├── third_party/                      第三方依赖说明与补充许可证原文
+│   └── upstream-licenses/            按依赖版本核验的上游许可证及声明
+├── .github/workflows/                GitHub 自动化流程
 ├── README.md                         产品概览
 ├── CONTRIBUTING.md                   构建与验证
 ├── AGENTS.md                         项目开发约定
@@ -48,6 +52,6 @@ marknote/
 | 格式注册与文件关联 | `document/FormatRegistry.ets`，仓库根目录下的 `entry/src/main/module.json5` 和 `renderer/src/renderers/` |
 | 预览行为与样式 | 仓库根目录下的 `renderer/src/main.ts`、`renderer/src/renderers/` 和 `renderer/src/styles.css` |
 
-`entry/src/main/resources/rawfile/preview/index.html` 和 `rawfile/licenses/` 中的许可证文件由预览构建生成；修改预览或依赖后，按[构建与贡献](../CONTRIBUTING.md)中的步骤重新生成。
+`entry/src/main/resources/rawfile/preview/index.html` 和 `rawfile/licenses/` 中的许可证文件由预览构建生成并纳入版本库，供应用直接打包；修改预览或依赖后，按[构建与贡献](../CONTRIBUTING.md)中的步骤重新生成。依赖和许可证材料的管理方式见[第三方组件与许可证](../third_party/README.md)。
 
-本机 `build-profile.json5`、签名材料、构建产物、缓存和安装的依赖不提交到版本库。
+本机 `build-profile.json5`、签名材料、应用构建产物、缓存和包管理器安装的依赖不提交到版本库。

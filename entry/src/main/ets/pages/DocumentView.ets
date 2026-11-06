@@ -43,6 +43,8 @@ export struct DocumentView {
   onLeave: () => void = (): void => {};
   /** 保存成功后把文件记进最近文稿，列表由首页持有。 */
   onSaved: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
+  /** 这一次载入已经问过是否另存为的 URI，换篇后才再问。 */
+  private retainOfferedUri: string = '';
 
   private tabContentPolicy: PageTabContentPolicy = new PageTabContentPolicy();
   private tabsPolicy: PageTabsPolicy = new PageTabsPolicy();
@@ -58,6 +60,7 @@ export struct DocumentView {
   /** Format id of the open document, kept as state so the format bar rebuilds on switch. */
   @State private formatId: string = '';
   @State private headings: Heading[] = [];
+  @State private parseRevision: number = 0;
   @State private saving: boolean = false;
   @State private searchVisible: boolean = false;
   @State private query: string = '';
@@ -113,6 +116,56 @@ export struct DocumentView {
     this.searchVisible = false;
     // 干净文稿会顺手清掉残留草稿；崩溃恢复来的文稿仍是脏的，继续留在磁盘上。
     this.flushRecovery();
+    this.offerRetainCopy();
+  }
+
+  /**
+   * 其他应用交来的 URI 往往只有本次授权。能打开但不持久时问一次另存为，
+   * 成功后的新 URI 由保存流程记入最近文稿。
+   */
+  private offerRetainCopy(): void {
+    const uri = this.info.uri;
+    if (uri.length === 0 || this.info.persistent) {
+      this.retainOfferedUri = '';
+      return;
+    }
+    if (this.retainOfferedUri === uri) return;
+    this.retainOfferedUri = uri;
+    this.askRetainCopy();
+  }
+
+  /**
+   * 与未保存确认同一套《警告弹窗》排布：HORIZONTAL，左右都是 DEFAULT 蓝字。
+   * 侧滑、返回键和点击遮罩等于「暂不」。
+   */
+  private askRetainCopy(): void {
+    this.getUIContext().showAlertDialog({
+      message: '此文件的访问权限无法长期保留。是否另存一份，以便以后打开？',
+      autoCancel: true,
+      buttonDirection: DialogButtonDirection.HORIZONTAL,
+      buttons: [
+        {
+          value: '暂不',
+          style: DialogButtonStyle.DEFAULT,
+          action: (): void => {}
+        },
+        {
+          value: '另存为',
+          style: DialogButtonStyle.DEFAULT,
+          primary: true,
+          action: (): void => {
+            void this.saveFile(true);
+          }
+        }
+      ],
+      cancel: (): void => {},
+      onWillDismiss: (dismissDialogAction: DismissDialogAction): void => {
+        if (dismissDialogAction.reason === DismissReason.PRESS_BACK ||
+          dismissDialogAction.reason === DismissReason.TOUCH_OUTSIDE) {
+          dismissDialogAction.dismiss();
+        }
+      }
+    });
   }
 
   aboutToDisappear(): void {
@@ -267,7 +320,12 @@ export struct DocumentView {
   /** Build outline rows with the FAQ's List/ListItem tree pattern. TreeView has no documented
    * content-start offset and its API warns against generic attributes, so List owns this viewport. */
   private updateHeadings(): void {
-    this.headings = DocumentService.headingsFor(this.info, this.source);
+    this.parseRevision++;
+    this.headings = DocumentService.nativeHeadingsFor(this.info, this.source);
+  }
+
+  private acceptTexOutline(revision: number, headings: Heading[]): void {
+    if (this.formatId === 'tex-math' && revision === this.parseRevision) this.headings = headings;
   }
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
@@ -549,7 +607,8 @@ export struct DocumentView {
       Column() {
         DocumentPreviewView({
           scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
-          kind: this.currentFormat().id
+          kind: this.currentFormat().id, parseRevision: this.parseRevision,
+          onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
         })
       }
         .width('50%')
@@ -575,7 +634,8 @@ export struct DocumentView {
         TabContent() {
           DocumentPreviewView({
             scroller: this.previewScroller, theme: this.theme, source: this.source,
-            kind: this.currentFormat().id
+            kind: this.currentFormat().id, parseRevision: this.parseRevision,
+            onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
           })
         }
           .attributeModifier(this.tabContentPolicy)

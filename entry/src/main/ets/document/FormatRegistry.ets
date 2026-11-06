@@ -137,14 +137,14 @@ const FORMATS: DocumentFormat[] = [
   }),
   defineFormat({
     id: 'tex-math',
-    sheetTitle: 'LaTeX 数学公式',
-    moreTitle: '新建 LaTeX 公式',
+    sheetTitle: 'LaTeX 文稿',
+    moreTitle: '新建 LaTeX',
     extensions: ['.tex'],
     utds: ['org.tug.tex', 'general.tex'],
     mimes: ['application/x-tex', 'text/x-tex'],
     defaultFilename: '未命名.tex',
     starter: '\\frac{a}{b} + \\sqrt{x^2 + y^2}',
-    outline: false,
+    outline: true,
     inserts: [],
     openFilter: 'LaTeX|.tex',
     saveChoice: 'LaTeX|.tex'

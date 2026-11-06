@@ -47,6 +47,18 @@ export class LocalState {
     return updated;
   }
 
+  static async removeRecent(context: common.UIAbilityContext, uri: string): Promise<RecentDocument[]> {
+    const previous = await LocalState.readRecent(context);
+    const updated: RecentDocument[] = [];
+    for (const recent of previous) {
+      if (recent.uri !== uri) updated.push(recent);
+    }
+    const store = await preferences.getPreferences(context, 'marknote-settings');
+    await store.put(RECENT_KEY, JSON.stringify(updated));
+    await store.flush();
+    return updated;
+  }
+
   static readDraft(context: common.UIAbilityContext): RecoveryData | null {
     try {
       const text = fileIo.readTextSync(context.filesDir + DRAFT);
