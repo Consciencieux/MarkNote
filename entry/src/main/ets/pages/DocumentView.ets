@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { FrameCallback, SymbolGlyphModifier, uiMaterial } from '@kit.ArkUI';
+import { FrameCallback, SymbolGlyphModifier } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -19,6 +19,7 @@ import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { scrollingTitleBar } from './HdsMaterialStyles';
+import { searchFieldMaterial } from './ImmersiveMaterials';
 import { LocalState } from '../storage/LocalState';
 
 /**
@@ -98,8 +99,7 @@ export struct DocumentView {
   private selectionEnd: number = 0;
   private recoveryTimer: number = -1;
   // 官方沉浸光感指南将 THIN 列为搜索框适用样式；不支持时保留系统输入框样式。
-  private searchMaterial: uiMaterial.Material | undefined = uiMaterial.isImmersiveMaterialSupported() ?
-    new uiMaterial.ImmersiveMaterial({ style: uiMaterial.ImmersiveStyle.THIN, colorInvert: true }) : undefined;
+  private searchMaterial = searchFieldMaterial();
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     // 文稿页自己的菜单项：另存为和查找只对当前文稿有意义。

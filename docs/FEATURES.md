@@ -42,7 +42,7 @@
 
 “开源许可证”页分别提供本项目和第三方许可证全文。“关于”页显示应用名称、版本，提供离线使用帮助和 GitHub 项目主页入口；主页交给系统浏览器打开。
 
-标题栏使用 HDS 导航组件，菜单使用系统菜单组件。文稿标题栏显示文件名，不显示行数、字符数或保存状态。对不支持沉浸材质或处于 `SMOOTH` 材质档位的设备，菜单关闭沉浸材质并使用系统默认背板。
+标题栏使用 HDS 导航组件，菜单使用系统菜单组件。文稿标题栏显示文件名，不显示行数、字符数或保存状态。菜单配置系统材质和背景模糊，材质效果由系统根据设备能力调整。
 
 主要代码：[SettingsView.ets](../entry/src/main/ets/pages/SettingsView.ets)、[SettingsDetail.ets](../entry/src/main/ets/pages/SettingsDetail.ets)、[SettingsPage.ets](../entry/src/main/ets/pages/SettingsPage.ets)、[MenuMaterialOptions.ets](../entry/src/main/ets/pages/MenuMaterialOptions.ets)。
 

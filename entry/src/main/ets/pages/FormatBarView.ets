@@ -1,22 +1,13 @@
-import { Chip, SymbolGlyphModifier, uiMaterial } from '@kit.ArkUI';
+import { Chip, SymbolGlyphModifier } from '@kit.ArkUI';
 import { FormatRegistry, InsertAction } from '../document/FormatRegistry';
+import { formatChipMaterial } from './ImmersiveMaterials';
 
 /** 编辑快捷操作放在导航标题栏的 bottomBuilder 中。 */
 @ComponentV2
 export struct FormatBarView {
   @Param formatId: string = '';
   @Param onInsert: (action: InsertAction) => void = (_action: InsertAction): void => {};
-  // 显式开启系统的触摸流光；未设置时由组件决定是否启用。
-  // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/arkts-apis-uimaterial
-  private material: uiMaterial.Material | undefined = uiMaterial.isImmersiveMaterialSupported() ?
-    new uiMaterial.ImmersiveMaterial({
-      style: uiMaterial.ImmersiveStyle.ULTRA_THIN,
-      colorInvert: true,
-      // 横向滚动容器会裁切胶囊自带阴影；关闭材质阴影，保留系统材质和光感反馈。
-      // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-immersive-light-sense-common-capability
-      applyShadow: false,
-      lightEffect: {}
-    }) : undefined;
+  private material = formatChipMaterial();
 
   build() {
     Scroll() {

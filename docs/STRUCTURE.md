@@ -45,6 +45,7 @@ marknote/
 | 文稿预览和大纲界面 | `pages/DocumentPreviewView.ets`、`pages/DocumentOutlineView.ets` |
 | 编辑工具栏 | `pages/FormatBarView.ets`、`document/FormatRegistry.ets` |
 | 标题栏与滚动 | `pages/HdsMaterialStyles.ets`、`pages/PageScrollPolicy.ets`、`pages/DocumentScrollLayer.ets` |
+| 搜索框与编辑工具栏材质 | `pages/ImmersiveMaterials.ets` |
 | 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets` |
 | 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
 | 文稿打开、保存和草稿恢复 | `document/DocumentService.ets`、`storage/DocumentFiles.ets`、`storage/LocalState.ets` |
