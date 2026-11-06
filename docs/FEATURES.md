@@ -7,7 +7,7 @@
 | 功能 | 当前行为与限制 | 主要代码 |
 | --- | --- | --- |
 | 新建与打开 | 首页可新建 Markdown、纯文本、SVG 和 LaTeX 公式，也可通过系统选择器打开文件。文件管理器可以通过系统文件关联打开受支持的文稿，默认进入预览。格式优先按文件后缀识别，其次使用系统声明的类型 | [HomeView.ets](../entry/src/main/ets/pages/HomeView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[module.json5](../entry/src/main/module.json5) |
-| 最近文稿 | 本机最多保存 12 条记录。再次打开时尝试恢复文件的持久授权；授权失效时需要重新选择文件 | [LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
+| 最近文稿 | 本机最多保存 12 条记录，只收录已经持久化授权的文件。其他应用交来、系统不允许持久化的文件会提示另存为；不另存就不写入最近文稿。再次打开时尝试恢复持久授权；授权失效时从列表移除，需要重新选择文件 | [LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)（`offerRetainCopy`）、[Index.ets](../entry/src/main/ets/pages/Index.ets)（`presentOpened`、`forgetRecent`） |
 | 保存与另存为 | 有写入授权时可保存到原 URI；没有写入授权时使用另存为。写入前检查文件是否被外部修改，发现冲突时拒绝覆盖。保存后重新读取并校验内容；文件提供方不保证写入操作具有原子性 | [DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
 | 未保存内容 | 离开已修改的文稿前，应用询问是否保存。编辑时会在应用私有目录保存草稿，供异常退出后恢复；正常离开时清除草稿 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
 | 编码与换行 | 支持 UTF-8、UTF-16 LE/BE 和 GB18030，保存时保留原编码、BOM 和换行方式。混合换行的文件在行数改变后不能直接按原方式保存；另存为时使用 LF。当前不能手动选择编码 | [TextEncoding.ets](../entry/src/main/ets/document/TextEncoding.ets)、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets) |

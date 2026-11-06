@@ -275,7 +275,7 @@ struct Index {
     this.revision++;
     this.showDocumentRoute();
     const info = DocumentService.current().info;
-    if (info.uri.length > 0) void this.rememberRecent(info.uri, info.name);
+    if (info.uri.length > 0 && info.persistent) void this.rememberRecent(info.uri, info.name);
   }
 
   private async startNew(kind: string): Promise<void> {
@@ -304,6 +304,7 @@ struct Index {
       await DocumentService.openUri(item.uri, '', true, false);
       this.presentOpened();
     } catch {
+      void this.forgetRecent(item.uri);
       this.toast('原文件授权可能已经失效，请使用“打开”重新选取');
     }
   }
@@ -315,6 +316,16 @@ struct Index {
       this.presentOpened();
     } catch (error) {
       this.toast('打开失败：' + String(error));
+    }
+  }
+
+  private async forgetRecent(uri: string): Promise<void> {
+    if (!this.context || uri.length === 0) return;
+    try {
+      this.recents = await LocalState.removeRecent(this.context, uri);
+      void DocumentFiles.release(uri);
+    } catch {
+      this.toast('最近文稿列表未能更新');
     }
   }
 

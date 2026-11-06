@@ -43,6 +43,8 @@ export struct DocumentView {
   onLeave: () => void = (): void => {};
   /** 保存成功后把文件记进最近文稿，列表由首页持有。 */
   onSaved: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
+  /** 这一次载入已经问过是否另存为的 URI，换篇后才再问。 */
+  private retainOfferedUri: string = '';
 
   private tabContentPolicy: PageTabContentPolicy = new PageTabContentPolicy();
   private tabsPolicy: PageTabsPolicy = new PageTabsPolicy();
@@ -113,6 +115,56 @@ export struct DocumentView {
     this.searchVisible = false;
     // 干净文稿会顺手清掉残留草稿；崩溃恢复来的文稿仍是脏的，继续留在磁盘上。
     this.flushRecovery();
+    this.offerRetainCopy();
+  }
+
+  /**
+   * 其他应用交来的 URI 往往只有本次授权。能打开但不持久时问一次另存为，
+   * 成功后的新 URI 由保存流程记入最近文稿。
+   */
+  private offerRetainCopy(): void {
+    const uri = this.info.uri;
+    if (uri.length === 0 || this.info.persistent) {
+      this.retainOfferedUri = '';
+      return;
+    }
+    if (this.retainOfferedUri === uri) return;
+    this.retainOfferedUri = uri;
+    this.askRetainCopy();
+  }
+
+  /**
+   * 与未保存确认同一套《警告弹窗》排布：HORIZONTAL，左右都是 DEFAULT 蓝字。
+   * 侧滑、返回键和点击遮罩等于「以后再说」。
+   */
+  private askRetainCopy(): void {
+    this.getUIContext().showAlertDialog({
+      message: '这份文件的授权在退出后会失效。另存为到自己的文件后，可以在最近文稿里再次打开。',
+      autoCancel: true,
+      buttonDirection: DialogButtonDirection.HORIZONTAL,
+      buttons: [
+        {
+          value: '以后再说',
+          style: DialogButtonStyle.DEFAULT,
+          action: (): void => {}
+        },
+        {
+          value: '另存为',
+          style: DialogButtonStyle.DEFAULT,
+          primary: true,
+          action: (): void => {
+            void this.saveFile(true);
+          }
+        }
+      ],
+      cancel: (): void => {},
+      onWillDismiss: (dismissDialogAction: DismissDialogAction): void => {
+        if (dismissDialogAction.reason === DismissReason.PRESS_BACK ||
+          dismissDialogAction.reason === DismissReason.TOUCH_OUTSIDE) {
+          dismissDialogAction.dismiss();
+        }
+      }
+    });
   }
 
   aboutToDisappear(): void {
