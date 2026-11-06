@@ -592,43 +592,45 @@ export struct DocumentView {
               this.matchCount = TextSearch.count(this.source, value);
             })
             .width('100%')
-            // Search 自带清空按钮；结果导航位于它的左侧，避免覆盖系统按钮。
-            .padding({ right: this.searchControlsWidth + 40 })
+            // 清除按钮由 Search 提供；仅有文字时为它预留位置。
+            .cancelButton({ style: this.query.length > 0 ? CancelButtonStyle.CONSTANT : CancelButtonStyle.INVISIBLE })
+            .padding({ right: this.query.length > 0 ? this.searchControlsWidth + 40 : 0 })
             .systemMaterial(this.searchMaterial)
-          Row() {
-            if (this.query.length > 0) {
-              Text(`${this.matchOrdinal}/${this.matchCount}`)
+          if (this.query.length > 0) {
+            Row() {
+              Text(this.matchOrdinal > 0 ? `${this.matchOrdinal}/${this.matchCount}` : `共 ${this.matchCount} 处`)
                 .fontColor($r('sys.color.font_secondary'))
-                .accessibilityText(`第 ${this.matchOrdinal} 处，共 ${this.matchCount} 处`)
+                .accessibilityText(this.matchOrdinal > 0 ?
+                  `第 ${this.matchOrdinal} 处，共 ${this.matchCount} 处` : `共 ${this.matchCount} 处`)
+              Button() {
+                SymbolGlyph($r('sys.symbol.chevron_up'))
+                  .fontColor([$r('sys.color.icon_primary')])
+                  .fontSize(24)
+              }
+              .buttonStyle(ButtonStyleMode.TEXTUAL)
+              .width(40)
+              .height(40)
+              .accessibilityText('上一处')
+              .enabled(this.matchCount > 0)
+              .onClick(() => this.findNext(false))
+              Button() {
+                SymbolGlyph($r('sys.symbol.chevron_down'))
+                  .fontColor([$r('sys.color.icon_primary')])
+                  .fontSize(24)
+              }
+              .buttonStyle(ButtonStyleMode.TEXTUAL)
+              .width(40)
+              .height(40)
+              .accessibilityText('下一处')
+              .enabled(this.matchCount > 0)
+              .onClick(() => this.findNext())
             }
-            Button() {
-              SymbolGlyph($r('sys.symbol.chevron_up'))
-                .fontColor([$r('sys.color.icon_primary')])
-                .fontSize(24)
-            }
-            .buttonStyle(ButtonStyleMode.TEXTUAL)
-            .width(40)
-            .height(40)
-            .accessibilityText('上一处')
-            .enabled(this.matchCount > 0)
-            .onClick(() => this.findNext(false))
-            Button() {
-              SymbolGlyph($r('sys.symbol.chevron_down'))
-                .fontColor([$r('sys.color.icon_primary')])
-                .fontSize(24)
-            }
-            .buttonStyle(ButtonStyleMode.TEXTUAL)
-            .width(40)
-            .height(40)
-            .accessibilityText('下一处')
-            .enabled(this.matchCount > 0)
-            .onClick(() => this.findNext())
+            .margin({ right: 40 })
+            .onAreaChange((_oldArea: Area, newArea: Area) => {
+              const width = parseFloat(String(newArea.width)) || 0;
+              if (width > 0 && width !== this.searchControlsWidth) this.searchControlsWidth = width;
+            })
           }
-          .margin({ right: 40 })
-          .onAreaChange((_oldArea: Area, newArea: Area) => {
-            const width = parseFloat(String(newArea.width)) || 0;
-            if (width > 0 && width !== this.searchControlsWidth) this.searchControlsWidth = width;
-          })
         }
         .layoutWeight(1)
         .margin({ right: $r('sys.float.padding_level4') })
