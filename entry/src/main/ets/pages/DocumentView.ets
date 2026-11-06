@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { FrameCallback, SymbolGlyphModifier } from '@kit.ArkUI';
+import { FrameCallback, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -98,6 +98,17 @@ export struct DocumentView {
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
   private recoveryTimer: number = -1;
+  /**
+   * 底部导航避让高度为 0 时，页签栏与 HdsTabs 底边留出一段应用自己的距离。
+   * 这段用 sys.float.margin_left，不是华为规定的底边距；有导航避让区时不再加。
+   */
+  @State private navigationInsetAbsent: boolean = false;
+  private hostWindow: window.Window | null = null;
+  private watchingIndicator: boolean = false;
+  private readonly onAvoidArea = (data: window.AvoidAreaOptions): void => {
+    if (data.type !== window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) return;
+    this.navigationInsetAbsent = data.area.bottomRect.height === 0;
+  };
   // 官方沉浸光感指南将 THIN 列为搜索框适用样式；不支持时保留系统输入框样式。
   private searchMaterial = searchFieldMaterial();
   aboutToAppear(): void {
@@ -122,6 +133,33 @@ export struct DocumentView {
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => this.saveBeforeLeaving();
     documentBridge.requestLeave = (): void => this.requestLeave();
     this.loadSession();
+    this.watchNavigationIndicator();
+  }
+
+  /**
+   * 《开发应用沉浸式效果》：全屏、悬浮窗、分屏切换会改变避让区，高度可以为 0。
+   * 这里只判断高度是否为 0，高度单位是 px，不换算成 vp。
+   * 注销时传入本次注册的回调，避免拆掉窗口上其他监听。
+   */
+  private watchNavigationIndicator(): void {
+    if (!this.context) return;
+    this.watchingIndicator = true;
+    window.getLastWindow(this.context).then((host: window.Window) => {
+      if (!this.watchingIndicator) return;
+      this.hostWindow = host;
+      const area = host.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
+      this.navigationInsetAbsent = area.bottomRect.height === 0;
+      host.on('avoidAreaChange', this.onAvoidArea);
+    }).catch(() => {
+      // 读不到窗口时保持默认，不额外抬高底栏。
+    });
+  }
+
+  private stopNavigationIndicator(): void {
+    this.watchingIndicator = false;
+    const host = this.hostWindow;
+    this.hostWindow = null;
+    if (host !== null) host.off('avoidAreaChange', this.onAvoidArea);
   }
 
 
@@ -153,6 +191,7 @@ export struct DocumentView {
   }
 
   aboutToDisappear(): void {
+    this.stopNavigationIndicator();
     this.flushRecovery();
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     menuBridge.saveAs = (): void => {};
@@ -815,11 +854,15 @@ export struct DocumentView {
       .barMode(BarMode.Fixed)
       // 按华为《沉浸光感》(ui-design-hds-component-material) 推荐值启用系统自适应材质。
       .barOverlap(true)
+      // barBottomMargin 是页签栏到 HdsTabs 底边的距离，默认 0。
+      // 导航避让高度大于 0 时不设置，避免和组件已有的安全区扩展叠成两段。
+      // 高度为 0 时用应用自己的边距，不是文档规定的底部间距。
       .barFloatingStyle({
         systemMaterialEffect: {
           materialType: hdsMaterial.MaterialType.ADAPTIVE,
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
-        }
+        },
+        barBottomMargin: this.navigationInsetAbsent ? $r('sys.float.margin_left') : 0
       })
       .attributeModifier(this.tabsPolicy)
       .width('100%')
