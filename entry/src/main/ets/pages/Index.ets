@@ -42,17 +42,11 @@ struct Index {
   private documentMenu: ComponentContent<Object> | null = null;
 
   aboutToAppear(): void {
-    menuBridge.confirmNew = (id: string): void => {
-      this.afterMenu(() => this.confirmSwitch(() => this.startNew(id)));
-    };
     menuBridge.openFile = (): void => {
       this.afterMenu(() => this.confirmSwitch(() => this.pickOpen()));
     };
     menuBridge.openSettings = (): void => {
       this.afterMenu(() => this.routes.pushPathByName('settings', ''));
-    };
-    menuBridge.closeLibrary = (): void => {
-      this.afterMenu(() => this.leaveDocument());
     };
     // 文稿页的标题栏菜单由这里打开：锚点 id 是全局的，菜单关闭也由这里统一收。
     menuBridge.openDocumentMenu = (): void => this.openDocumentMenu();

@@ -12,6 +12,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 | --- | --- |
 | `FormatRegistry` | 定义文件扩展名、系统类型、默认文件名、大纲支持和编辑快捷操作。 |
 | `DocumentFiles` | 调用系统文件选择器，处理 URI 授权、文件读取、写入和外部修改检查。 |
+| `DocumentShare` | 将当前编辑内容写入临时分享文件，并调用系统分享面板。 |
 | `TextEncoding` | 在文件字节和编辑器文本之间转换，记录并恢复编码、BOM 与换行方式。 |
 | `LocalState` | 保存最近文稿、草稿和外观偏好。 |
 | `EditHistory`、`TextSearch` | 分别处理编辑历史和字面文本查找。 |

@@ -35,6 +35,37 @@ export class TextSearch {
     return TextSearch.next(source, query, from);
   }
 
+  /** Previous non-overlapping occurrence, wrapping to the last match. */
+  static preceding(source: string, query: string, current: number): SearchHit | null {
+    if (query.length === 0) return null;
+    let from = 0;
+    let previous = -1;
+    let last = -1;
+    let found = source.indexOf(query, from);
+    while (found >= 0) {
+      if (current < 0 || found < current) previous = found;
+      last = found;
+      from = found + query.length;
+      found = source.indexOf(query, from);
+    }
+    const start = previous >= 0 ? previous : last;
+    return start >= 0 ? new SearchHit(start, query.length) : null;
+  }
+
+  /** Count the same non-overlapping matches used by navigation. */
+  static count(source: string, query: string, before: number = source.length): number {
+    if (query.length === 0) return 0;
+    let count = 0;
+    let from = 0;
+    let found = source.indexOf(query, from);
+    while (found >= 0 && found < before) {
+      count++;
+      from = found + query.length;
+      found = source.indexOf(query, from);
+    }
+    return count;
+  }
+
   /**
    * Replace the match at `start` when the text there still equals the query.
    * Returns null when the position no longer matches, so the caller can search again.

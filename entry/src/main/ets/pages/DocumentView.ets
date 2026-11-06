@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { FrameCallback, SymbolGlyphModifier } from '@kit.ArkUI';
+import { FrameCallback, SymbolGlyphModifier, uiMaterial } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -7,6 +7,7 @@ import {
 } from '@kit.UIDesignKit';
 import { DocumentInfo, Heading, RecoveryData } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
+import { DocumentShare } from '../document/DocumentShare';
 import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
 import { EditHistory, EditStep } from '../document/EditHistory';
@@ -78,6 +79,10 @@ export struct DocumentView {
   @State private query: string = '';
   @State private replacement: string = '';
   @State private currentMatch: number = -1;
+  @State private matchCount: number = 0;
+  @State private matchOrdinal: number = 0;
+  @State private findBarHeight: number = 112;
+  @State private searchControlsWidth: number = 80;
   /** Drives the enabled state of the title bar undo and redo icons. */
   @State private undoAvailable: boolean = false;
   @State private redoAvailable: boolean = false;
@@ -92,16 +97,25 @@ export struct DocumentView {
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
   private recoveryTimer: number = -1;
+  // 官方沉浸光感指南将 THIN 列为搜索框适用样式；不支持时保留系统输入框样式。
+  private searchMaterial: uiMaterial.Material | undefined = uiMaterial.isImmersiveMaterialSupported() ?
+    new uiMaterial.ImmersiveMaterial({ style: uiMaterial.ImmersiveStyle.THIN, colorInvert: true }) : undefined;
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     // 文稿页自己的菜单项：另存为和查找只对当前文稿有意义。
     menuBridge.saveAs = (): void => {
       menuBridge.dismiss((): void => { void this.saveFile(true); });
     };
+    menuBridge.share = (): void => {
+      menuBridge.dismiss((): void => { void this.shareDocument(); });
+    };
     menuBridge.find = (): void => {
       menuBridge.dismiss((): void => {
         this.searchVisible = true;
         this.selectedTab = TAB_EDIT;
+        this.currentMatch = -1;
+        this.matchOrdinal = 0;
+        this.matchCount = TextSearch.count(this.source, this.query);
       });
     };
     // 首页在换篇、返回列表前都要先问这里能否离开。
@@ -126,6 +140,8 @@ export struct DocumentView {
     this.history.reset(this.source, 0);
     this.refreshHistoryState();
     this.currentMatch = -1;
+    this.matchOrdinal = 0;
+    this.matchCount = 0;
     this.selectionStart = 0;
     this.selectionEnd = 0;
     this.selectedTab = TAB_PREVIEW;
@@ -140,6 +156,7 @@ export struct DocumentView {
     this.flushRecovery();
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     menuBridge.saveAs = (): void => {};
+    menuBridge.share = (): void => {};
     menuBridge.find = (): void => {};
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
     documentBridge.requestLeave = (): void => {};
@@ -154,6 +171,15 @@ export struct DocumentView {
 
   private toast(message: string): void {
     this.getUIContext().getPromptAction().showToast({ message });
+  }
+
+  private async shareDocument(): Promise<void> {
+    if (!this.context) return;
+    try {
+      await DocumentShare.show(this.context, this.info.name, this.source);
+    } catch {
+      this.toast('无法分享文稿，请重试');
+    }
   }
 
   private menuIcon(label: string, symbol: Resource, id: string, action: () => void,
@@ -186,7 +212,11 @@ export struct DocumentView {
       ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
-    if (this.formatBarWanted()) {
+    if (this.searchVisible && this.selectedTab === TAB_EDIT) {
+      // 搜索栏固定在导航标题下方，由 HDS 管理布局和组件安全区。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
+      content.bottomBuilder = { builder: (): void => this.FindBar(), height: this.findBarHeight };
+    } else if (this.formatBarWanted()) {
       // 官方导航自定义区域：标题栏负责底部区域布局和安全区。
       // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
       content.bottomBuilder = { builder: (): void => this.TopFormatBar() };
@@ -396,6 +426,8 @@ export struct DocumentView {
     DocumentService.edit(text);
     this.source = text;
     this.currentMatch = -1;
+    this.matchOrdinal = 0;
+    this.matchCount = this.searchVisible ? TextSearch.count(text, this.query) : 0;
     this.updateHeadings();
     const position = caret >= 0 ? caret : this.selectionEnd;
     this.history.record(text, position, Date.now());
@@ -427,6 +459,8 @@ export struct DocumentView {
     DocumentService.edit(step.text);
     this.source = step.text;
     this.currentMatch = -1;
+    this.matchOrdinal = 0;
+    this.matchCount = this.searchVisible ? TextSearch.count(step.text, this.query) : 0;
     this.updateHeadings();
     this.refreshHistoryState();
     this.scheduleRecovery();
@@ -436,17 +470,41 @@ export struct DocumentView {
     setTimeout(() => this.activeCursor().caretPosition(caret), 20);
   }
 
-  private findNext(): void {
+  private findNext(forward: boolean = true): void {
     if (!this.query) return;
     this.selectedTab = TAB_EDIT;
-    const hit: SearchHit | null = TextSearch.following(this.source, this.query, this.currentMatch);
+    const hit: SearchHit | null = forward ? TextSearch.following(this.source, this.query, this.currentMatch) :
+      TextSearch.preceding(this.source, this.query, this.currentMatch);
     if (hit === null) {
       this.currentMatch = -1;
       this.toast('没有找到匹配内容');
       return;
     }
     this.currentMatch = hit.start;
-    setTimeout(() => this.activeCursor().setTextSelection(hit.start, hit.start + hit.length), 20);
+    this.matchOrdinal = TextSearch.count(this.source, this.query, hit.start) + 1;
+    const query = this.query;
+    const revision = this.revision;
+    this.getUIContext().postFrameCallback(new AfterFrame((): void => {
+      if (!this.searchVisible || this.selectedTab !== TAB_EDIT || this.revision !== revision ||
+        this.query !== query || this.currentMatch !== hit.start) return;
+      // TextArea 的文本选区需要组件获焦；编辑框随内容增高，因此由外层 Scroll 定位。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-basic-components-textarea
+      this.getUIContext().getFocusController().requestFocus('marknote-main-editor');
+      this.cursor.caretPosition(hit.start);
+      this.getUIContext().postFrameCallback(new AfterFrame((): void => {
+        if (!this.searchVisible || this.selectedTab !== TAB_EDIT || this.revision !== revision ||
+          this.query !== query || this.currentMatch !== hit.start) return;
+        const caret = this.cursor.getCaretOffset();
+        if (caret && caret.index === hit.start) {
+          this.editScroller.scrollTo({
+            xOffset: 0,
+            yOffset: Math.max(0, this.editTop + this.getUIContext().px2vp(caret.y)),
+            animation: false
+          });
+        }
+        this.cursor.setTextSelection(hit.start, hit.start + hit.length, { menuPolicy: MenuPolicy.HIDE });
+      }));
+    }));
   }
 
   private replaceMatch(): void {
@@ -519,36 +577,87 @@ export struct DocumentView {
     }));
   }
 
-  /**
-   * 查找栏用官方 Search 的 searchButton 承载「下一处」，onSubmit 与按钮点击共用同一入口，
-   * 不再在 Search 旁边另放一个文字按钮。关闭用系统符号的文本按钮。
-   * 行内间距和上下留白取系统间距资源（`Row` 的 `space` 只接受数字，所以间距写成子项 margin）。
-   */
+  /** 搜索框与结果导航共享系统材质；替换操作的右边缘与搜索区域对齐。 */
   @Builder
   private FindBar() {
     Column() {
       Row() {
-        Search({ value: this.query, placeholder: '查找文稿内容' })
-          .searchButton('下一处')
-          .onSubmit(() => this.findNext())
-          .onChange((value: string) => { this.query = value; this.currentMatch = -1; })
-          .layoutWeight(1)
-          .margin({ right: $r('sys.float.padding_level4') })
-        Button({ type: ButtonType.Circle }) {
+        Stack({ alignContent: Alignment.End }) {
+          Search({ value: this.query, placeholder: '查找文稿内容' })
+            .onSubmit(() => this.findNext())
+            .onChange((value: string) => {
+              this.query = value;
+              this.currentMatch = -1;
+              this.matchOrdinal = 0;
+              this.matchCount = TextSearch.count(this.source, value);
+            })
+            .width('100%')
+            // Search 自带清空按钮；结果导航位于它的左侧，避免覆盖系统按钮。
+            .padding({ right: this.searchControlsWidth + 40 })
+            .systemMaterial(this.searchMaterial)
+          Row() {
+            if (this.query.length > 0) {
+              Text(`${this.matchOrdinal}/${this.matchCount}`)
+                .fontColor($r('sys.color.font_secondary'))
+                .accessibilityText(`第 ${this.matchOrdinal} 处，共 ${this.matchCount} 处`)
+            }
+            Button() {
+              SymbolGlyph($r('sys.symbol.chevron_up'))
+                .fontColor([$r('sys.color.icon_primary')])
+                .fontSize(24)
+            }
+            .buttonStyle(ButtonStyleMode.TEXTUAL)
+            .width(40)
+            .height(40)
+            .accessibilityText('上一处')
+            .enabled(this.matchCount > 0)
+            .onClick(() => this.findNext(false))
+            Button() {
+              SymbolGlyph($r('sys.symbol.chevron_down'))
+                .fontColor([$r('sys.color.icon_primary')])
+                .fontSize(24)
+            }
+            .buttonStyle(ButtonStyleMode.TEXTUAL)
+            .width(40)
+            .height(40)
+            .accessibilityText('下一处')
+            .enabled(this.matchCount > 0)
+            .onClick(() => this.findNext())
+          }
+          .margin({ right: 40 })
+          .onAreaChange((_oldArea: Area, newArea: Area) => {
+            const width = parseFloat(String(newArea.width)) || 0;
+            if (width > 0 && width !== this.searchControlsWidth) this.searchControlsWidth = width;
+          })
+        }
+        .layoutWeight(1)
+        .margin({ right: $r('sys.float.padding_level4') })
+        Button() {
           SymbolGlyph($r('sys.symbol.xmark'))
+            .fontColor([$r('sys.color.icon_primary')])
+            .fontSize(24)
         }
         .buttonStyle(ButtonStyleMode.TEXTUAL)
+        // 华为通用应用 UX 体验标准：交互热区不得小于 40vp × 40vp。
+        .width(40)
+        .height(40)
         .accessibilityText('关闭查找')
         .onClick(() => this.searchVisible = false)
       }
       .width('100%')
       Row() {
-        TextInput({ text: this.replacement, placeholder: '替换为' })
-          .onChange((value: string) => { this.replacement = value; })
-          .layoutWeight(1)
-          .margin({ right: $r('sys.float.padding_level4') })
-        Button('替换')
-          .onClick(() => this.replaceMatch())
+        Row() {
+          TextInput({ text: this.replacement, placeholder: '替换为' })
+            .onChange((value: string) => { this.replacement = value; })
+            .layoutWeight(1)
+            .margin({ right: $r('sys.float.padding_level4') })
+            .systemMaterial(this.searchMaterial)
+          Button('替换')
+            .onClick(() => this.replaceMatch())
+        }
+        .layoutWeight(1)
+        .margin({ right: $r('sys.float.padding_level4') })
+        Blank().width(40)
       }
       .width('100%')
       .margin({ top: $r('sys.float.padding_level4') })
@@ -560,15 +669,16 @@ export struct DocumentView {
       bottom: $r('sys.float.padding_level4')
     })
     .width('100%')
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      const height = parseFloat(String(newArea.height)) || 0;
+      if (height > 0 && height !== this.findBarHeight) this.findBarHeight = height;
+    })
   }
 
   @Builder
   private EditPage(scroller: Scroller, controller: TextAreaController, editorId: string) {
     DocumentScrollLayer({ scroller: scroller }) {
       Column() {
-        if (this.searchVisible) {
-          this.FindBar()
-        }
         TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: controller })
           .id(editorId)
           .onAreaChange((_oldArea: Area, newArea: Area) => {

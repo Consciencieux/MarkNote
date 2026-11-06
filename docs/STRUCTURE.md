@@ -48,6 +48,7 @@ marknote/
 | 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets` |
 | 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
 | 文稿打开、保存和草稿恢复 | `document/DocumentService.ets`、`storage/DocumentFiles.ets`、`storage/LocalState.ets` |
+| 文稿分享 | `document/DocumentShare.ets`、`pages/DocumentMenus.ets` |
 | 文件编码与换行 | `document/TextEncoding.ets` |
 | 格式注册与文件关联 | `document/FormatRegistry.ets`，仓库根目录下的 `entry/src/main/module.json5` 和 `renderer/src/renderers/` |
 | 预览行为与样式 | 仓库根目录下的 `renderer/src/main.ts`、`renderer/src/renderers/` 和 `renderer/src/styles.css` |
