@@ -185,7 +185,7 @@ export struct DocumentView {
   /** Bind HDS navigation effects to the shared Scroll surface(s) in the active tab. */
   private activeScrollers(): Scroller[] {
     if (this.wide && this.selectedTab === this.splitTab()) {
-      return [this.splitEditScroller, this.splitPreviewScroller];
+      return [this.splitPreviewScroller, this.splitEditScroller];
     }
     if (this.currentFormat().outline && this.selectedTab === TAB_OUTLINE) return [this.outlineScroller];
     if (this.selectedTab === TAB_EDIT) return [this.editScroller];
@@ -568,9 +568,6 @@ export struct DocumentView {
   @Builder
   private SplitPage() {
     RowSplit() {
-      Column() { this.EditPage(this.splitEditScroller) }
-        .width('50%')
-        .height('100%')
       Column() {
         DocumentPreviewView({
           scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
@@ -578,6 +575,9 @@ export struct DocumentView {
           onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
         })
       }
+        .width('50%')
+        .height('100%')
+      Column() { this.EditPage(this.splitEditScroller) }
         .width('50%')
         .height('100%')
     }
