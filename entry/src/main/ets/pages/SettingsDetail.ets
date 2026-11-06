@@ -3,7 +3,7 @@ import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { THEME_LABELS, THEME_VALUES } from './SettingsView';
 
 /**
- * 设置的内容页，按 section 渲染外观、隐私说明、许可证或关于。
+ * 设置的内容页，按 section 渲染外观、隐私说明、许可证、关于或使用帮助。
  *
  * 标题栏和返回键由外层 HdsNavDestination 提供，这里只排内容。设置通过 HdsNavigation 路由展示，
  * 见 Index 里 Destination 的说明。
@@ -63,6 +63,16 @@ export struct SettingsDetail {
       .copyOption(copyable ? CopyOptions.LocalDevice : CopyOptions.None)
   }
 
+  @Builder
+  private HelpSection(title: string, body: string) {
+    Text(title)
+      .fontSize($r('sys.float.Subtitle_M'))
+      .fontWeight(FontWeight.Medium)
+      .fontColor($r('sys.color.font_primary'))
+      .margin({ top: $r('sys.float.padding_level8'), bottom: $r('sys.float.padding_level4') })
+    this.Paragraph(body)
+  }
+
   build() {
     List({ scroller: this.scroller }) {
       if (this.section === 'appearance') {
@@ -80,6 +90,7 @@ export struct SettingsDetail {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           this.InfoRow('应用名称', 'MarkNote')
           this.InfoRow('版本', this.version.length > 0 ? this.version : '版本信息不可用')
+          this.LinkRow('使用帮助', () => this.onOpen('help'))
           this.LinkRow('GitHub 项目主页', () => this.onOpenProject())
         }.attributeModifier(this.groupStyle)
       } else {
@@ -95,11 +106,21 @@ export struct SettingsDetail {
               Column() {
                 if (this.section === 'licenses' || this.section === 'project-license') {
                   this.Paragraph(this.text, true)
+                } else if (this.section === 'help') {
+                  this.HelpSection('打开与保存', '在首页新建文稿或选择文件，也可以从其他应用打开支持的文件。' +
+                    '如果原文件无法写入，保存时可以另存为；另存成功后会继续编辑新文件。')
+                  this.HelpSection('编辑与预览', '在文稿底部切换预览、编辑和大纲。Markdown 和 LaTeX 文稿支持大纲；' +
+                    '在宽屏设备上可以使用分栏，同时查看预览和编辑内容。')
+                  this.HelpSection('支持的格式', '支持 Markdown、纯文本、SVG 和 LaTeX 文件。' +
+                    'LaTeX 可以预览常见文稿和数学公式，不编译 PDF；部分命令、引用的图片和 TikZ 图形暂无法显示。')
+                  this.HelpSection('草稿与最近文稿', '编辑时会在设备上保存草稿，供异常退出后恢复。' +
+                    '最近文稿只显示已获得持久访问授权的文件。')
                 } else {
                   this.Paragraph('文稿在设备本地编辑。应用没有账号、广告、遥测或联网接口，也不上传文稿。' +
                     '文件由系统文件选择器授权，草稿保存在应用私有目录。')
                 }
               }
+              .alignItems(HorizontalAlign.Start)
               .width('100%')
             }
           }

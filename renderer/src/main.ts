@@ -85,12 +85,6 @@ function render(update: PreviewUpdate): void {
         trust: false, strict: 'warn', maxSize: 100, maxExpand: 1000, output: 'htmlAndMathml'
       });
     }
-    if (tex.diagnostics.length) {
-      const notice = document.createElement('p');
-      notice.className = 'error';
-      notice.textContent = '部分 LaTeX 内容暂不支持，预览可能不完整。';
-      host!.prepend(notice);
-    }
     lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision,
       headings: tex.headings, diagnostics: tex.diagnostics });
     resultPort?.postMessage(lastResult);

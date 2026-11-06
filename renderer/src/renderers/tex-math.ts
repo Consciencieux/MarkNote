@@ -2,7 +2,7 @@ import katex from 'katex';
 
 export function renderTexMath(source: string): string {
   if (/\\(?:documentclass|usepackage|begin\s*\{document\})/.test(source)) {
-    return '<p class="error">当前支持 TeX 数学公式（含环境），尚未集成完整 LaTeX 文档编译器。</p>';
+    return '';
   }
   let formula = source.trim();
   if (formula.startsWith('$$') && formula.endsWith('$$')) formula = formula.slice(2, -2);

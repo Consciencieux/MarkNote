@@ -11,6 +11,7 @@ export function settingTitle(section: string): string {
   if (section === 'license-list') return '开源许可证';
   if (section === 'project-license') return '本项目开源许可证';
   if (section === 'licenses') return '第三方开源许可证';
+  if (section === 'help') return '使用帮助';
   return '关于';
 }
 
