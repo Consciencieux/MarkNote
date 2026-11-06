@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check version and prepare release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          tag = os.environ['RELEASE_TAG']
+          with open('AppScope/app.json5', encoding='utf-8') as f:
+              version = json.load(f)['app']['versionName']
+          if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag) or tag != f'v{version}':
+              raise SystemExit(f'标签 {tag} 与应用版本 {version} 不一致')
+
+          changelog = Path('CHANGELOG.md').read_text(encoding='utf-8')
+          match = re.search(r'^## ' + re.escape(version) + r'\s*\n(.*?)(?=^## |\Z)',
+                            changelog, re.MULTILINE | re.DOTALL)
+          if not match or not match.group(1).strip():
+              raise SystemExit(f'CHANGELOG.md 中缺少 {version} 的更新日志')
+          notes = match.group(1).strip()
+          notes = notes.replace('](docs/FEATURES.md)', '](https://github.com/' +
+                                os.environ['GITHUB_REPOSITORY'] + '/blob/' + tag +
+                                '/docs/FEATURES.md)')
+          Path('release-notes.md').write_text(notes + '\n', encoding='utf-8')
+          PY
+      - name: Publish source release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" --verify-tag \
+            --title "MarkNote $RELEASE_TAG" --notes-file release-notes.md

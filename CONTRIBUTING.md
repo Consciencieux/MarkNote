@@ -58,3 +58,7 @@ cp build-profile.example.json5 build-profile.json5
 修改预览代码后，执行本页的预览检查与构建；修改 ArkTS 后，构建 `entry`。涉及界面或设备行为时，按改动范围进行运行验证，并在说明中区分已验证和未验证的部分。
 
 用户功能发生变化时，同步更新[功能目录](docs/FEATURES.md)。不要提交 HAP、构建缓存、`renderer/node_modules/` 或 `renderer/dist/`。
+
+## 发布源码版本
+
+更新 `AppScope/app.json5` 中的 `versionName` 并递增 `versionCode`，在 [CHANGELOG.md](CHANGELOG.md) 中编写该版本的更新日志。提交后推送与版本号一致的标签，例如 `v0.1.0`。GitHub Actions 会用对应日志创建 Release，GitHub 自动提供源码压缩包。当前工作流不构建或上传安装包；安装包需要另行准备适用于目标分发方式的签名。
