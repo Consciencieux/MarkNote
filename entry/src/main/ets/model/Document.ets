@@ -62,13 +62,11 @@ export class Heading {
   level: number;
   text: string;
   offset: number;
-  line: number;
 
-  constructor(level: number, text: string, offset: number, line: number) {
+  constructor(level: number, text: string, offset: number) {
     this.level = level;
     this.text = text;
     this.offset = offset;
-    this.line = line;
   }
 }
 
@@ -92,7 +90,7 @@ export function documentOutline(source: string): Heading[] {
       const match = /^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/.exec(row);
       if (match) {
         const name = match[2].trim();
-        if (name.length > 0) result.push(new Heading(match[1].length, name, offset, index + 1));
+        if (name.length > 0) result.push(new Heading(match[1].length, name, offset));
       }
     }
     offset += row.length + 1;

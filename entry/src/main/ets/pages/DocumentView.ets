@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { SymbolGlyphModifier } from '@kit.ArkUI';
+import { FrameCallback, SymbolGlyphModifier } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -28,6 +28,20 @@ const TAB_PREVIEW: number = 0;
 const TAB_EDIT: number = 1;
 const TAB_OUTLINE: number = 2;
 const TAB_SPLIT: number = 3;
+
+/** Run once after a rendered frame; used when a caret position needs layout to settle. */
+class AfterFrame extends FrameCallback {
+  private action: () => void;
+
+  constructor(action: () => void) {
+    super();
+    this.action = action;
+  }
+
+  onIdle(_timeLeftInNano: number): void {
+    this.action();
+  }
+}
 /**
  * 文稿页：预览、编辑、大纲和分栏，以及它们的悬浮操作栏和保存/草稿逻辑。
  * 文稿会话由 DocumentService 持有，这里只镜像一份给 UI；首页通过 revision 通知换篇，
@@ -71,6 +85,10 @@ export struct DocumentView {
   private context: common.UIAbilityContext | null = null;
   private info: DocumentInfo = new DocumentInfo();
   private cursor: TextAreaController = new TextAreaController();
+  private splitCursor: TextAreaController = new TextAreaController();
+  private editTop: number = 0;
+  private pendingHeadingOffset: number = -1;
+  private headingJump: number = 0;
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
   private recoveryTimer: number = -1;
@@ -100,6 +118,8 @@ export struct DocumentView {
 
   /** 载入当前会话。首次进入和首页换篇（revision 变）都走这里。 */
   private loadSession(): void {
+    this.headingJump++;
+    this.pendingHeadingOffset = -1;
     this.syncFromService();
     // The history belongs to one document. Keeping it across a switch would let undo write
     // the previous document's text into this one.
@@ -265,8 +285,7 @@ export struct DocumentView {
     this.updateHeadings();
   }
 
-  /** Build outline rows with the FAQ's List/ListItem tree pattern. TreeView has no documented
-   * content-start offset and its API warns against generic attributes, so List owns this viewport. */
+  /** Refresh native Markdown headings and invalidate older LaTeX parse results. */
   private updateHeadings(): void {
     this.parseRevision++;
     this.headings = DocumentService.nativeHeadingsFor(this.info, this.source);
@@ -414,7 +433,7 @@ export struct DocumentView {
     const caret = Math.min(step.caret, step.text.length);
     this.selectionStart = caret;
     this.selectionEnd = caret;
-    setTimeout(() => this.cursor.caretPosition(caret), 20);
+    setTimeout(() => this.activeCursor().caretPosition(caret), 20);
   }
 
   private findNext(): void {
@@ -427,7 +446,7 @@ export struct DocumentView {
       return;
     }
     this.currentMatch = hit.start;
-    setTimeout(() => this.cursor.setTextSelection(hit.start, hit.start + hit.length), 20);
+    setTimeout(() => this.activeCursor().setTextSelection(hit.start, hit.start + hit.length), 20);
   }
 
   private replaceMatch(): void {
@@ -441,7 +460,7 @@ export struct DocumentView {
     const caret = this.currentMatch + this.replacement.length;
     this.updateSource(changed, caret);
     this.currentMatch = -1;
-    setTimeout(() => this.cursor.caretPosition(caret), 20);
+    setTimeout(() => this.activeCursor().caretPosition(caret), 20);
   }
 
   private insertToken(action: InsertAction): void {
@@ -452,12 +471,52 @@ export struct DocumentView {
       this.source.slice(end);
     const position = start + action.before.length + selected.length;
     this.updateSource(changed, position);
-    setTimeout(() => this.cursor.caretPosition(position), 20);
+    setTimeout(() => this.activeCursor().caretPosition(position), 20);
+  }
+
+  private activeCursor(): TextAreaController {
+    return this.wide && this.selectedTab === this.splitTab() ? this.splitCursor : this.cursor;
   }
 
   private focusHeading(heading: Heading): void {
+    this.headingJump++;
+    this.pendingHeadingOffset = heading.offset;
     this.selectedTab = TAB_EDIT;
-    setTimeout(() => this.cursor.caretPosition(heading.offset), 20);
+  }
+
+  /**
+   * TextArea 自适应内容高度，外层 Scroll 才是滚动容器。Tab 显示后先设置光标，
+   * 再于后续帧读取光标相对输入框的像素坐标并转换为 Scroll 所需的 vp。
+   * 官方文档：ts-universal-attributes-text-style 的 getCaretOffset、ts-container-scroll 的 scrollTo。
+   */
+  private jumpToPendingHeading(): void {
+    if (this.pendingHeadingOffset < 0) return;
+    const offset = this.pendingHeadingOffset;
+    const jump = this.headingJump;
+    this.pendingHeadingOffset = -1;
+    this.getUIContext().postFrameCallback(new AfterFrame((): void => {
+      if (jump !== this.headingJump || this.selectedTab !== TAB_EDIT) return;
+      try {
+        this.getUIContext().getFocusController().requestFocus('marknote-main-editor');
+        this.cursor.caretPosition(offset);
+      } catch {
+        this.toast('无法定位标题，请重试');
+        return;
+      }
+      this.getUIContext().postFrameCallback(new AfterFrame((): void => {
+        if (jump !== this.headingJump || this.selectedTab !== TAB_EDIT) return;
+        const caret = this.cursor.getCaretOffset();
+        if (!caret || caret.index !== offset) {
+          this.toast('无法定位标题，请重试');
+          return;
+        }
+        this.editScroller.scrollTo({
+          xOffset: 0,
+          yOffset: Math.max(0, this.editTop + this.getUIContext().px2vp(caret.y)),
+          animation: false
+        });
+      }));
+    }));
   }
 
   /**
@@ -504,13 +563,19 @@ export struct DocumentView {
   }
 
   @Builder
-  private EditPage(scroller: Scroller) {
+  private EditPage(scroller: Scroller, controller: TextAreaController, editorId: string) {
     DocumentScrollLayer({ scroller: scroller }) {
       Column() {
         if (this.searchVisible) {
           this.FindBar()
         }
-        TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: this.cursor })
+        TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: controller })
+          .id(editorId)
+          .onAreaChange((_oldArea: Area, newArea: Area) => {
+            if (editorId === 'marknote-main-editor') {
+              this.editTop = parseFloat(String(newArea.position.y)) || 0;
+            }
+          })
           .width('100%')
           .padding({
             top: 0,
@@ -577,7 +642,7 @@ export struct DocumentView {
       }
         .width('50%')
         .height('100%')
-      Column() { this.EditPage(this.splitEditScroller) }
+      Column() { this.EditPage(this.splitEditScroller, this.splitCursor, 'marknote-split-editor') }
         .width('50%')
         .height('100%')
     }
@@ -607,14 +672,15 @@ export struct DocumentView {
         }
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.eye'), '预览'))
-        TabContent() { this.EditPage(this.editScroller) }
+        TabContent() { this.EditPage(this.editScroller, this.cursor, 'marknote-main-editor') }
+          .onWillShow(() => this.jumpToPendingHeading())
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), '编辑'))
         // Only formats that declare an outline get the tab; plain text and SVG have none.
         if (this.currentFormat().outline) {
           TabContent() {
             DocumentOutlineView({
-              headings: this.headings, scroller: this.outlineScroller,
+              headings: this.headings, documentRevision: this.revision, scroller: this.outlineScroller,
               onSelect: (heading: Heading): void => this.focusHeading(heading)
             })
           }
@@ -654,6 +720,7 @@ export struct DocumentView {
   /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */
   private stopEditing(): void {
     this.cursor.stopEditing();
+    this.splitCursor.stopEditing();
   }
 
   /** The format bar applies to the editable tab, and to the split tab which also edits. */
