@@ -6,7 +6,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 
 `EntryAbility` 接收桌面启动和系统文件打开请求。文件请求经 `LaunchRequests` 交给页面；页面尚未就绪时，请求会暂存。
 
-`DocumentService` 管理当前文稿会话，并协调新建、打开、保存和草稿恢复。相关模块的职责如下：
+`DocumentService` 管理当前文稿会话，并协调新建、打开、保存和草稿恢复；原生大纲提取只处理 Markdown。相关模块的职责如下：
 
 | 模块 | 职责 |
 | --- | --- |

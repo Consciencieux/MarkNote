@@ -23,12 +23,13 @@ function textOf(node: Node): string {
 export function renderTexDocument(source: string): TexDocument {
   const file = new VFile();
   const parser = new TexParser(source, file);
-  // The existing format also accepts a bare math expression. A document has structural
-  // nodes in the parser's input tree; expressions composed only of math-mode tokens do not.
+  // Unmarked content is text. Keep the legacy math path only when the parser identifies
+  // at least one math-mode command or environment and no document-specific nodes.
   const raw = parser.raw.content as Array<{ type: string; _renderInfo?: { inMathMode?: boolean } }>;
-  const bareFormula = raw.every(node => node.type === 'string' || node.type === 'whitespace' ||
-    node.type === 'parbreak' ||
-    ((node.type === 'macro' || node.type === 'environment') && node._renderInfo?.inMathMode === true));
+  const mathNode = (node: typeof raw[number]): boolean =>
+    (node.type === 'macro' || node.type === 'environment') && node._renderInfo?.inMathMode === true;
+  const bareFormula = raw.some(mathNode) && raw.every(node => node.type === 'string' || node.type === 'whitespace' ||
+    node.type === 'parbreak' || mathNode(node));
   if (bareFormula) return { html: renderTexMath(source), headings: [], diagnostics: [] };
   const headings: TexHeading[] = [];
   function visit(node: Node): void {

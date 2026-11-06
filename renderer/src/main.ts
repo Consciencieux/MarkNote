@@ -5,11 +5,10 @@ import { renderMarkdown } from './renderers/markdown';
 import { renderPlain } from './renderers/plain';
 import { installReferenceHook, sanitizeSvg } from './renderers/svg';
 import { renderTexDocument, type TexDocument } from './renderers/tex';
+import type { PreviewUpdate } from './globals';
 import katex from 'katex';
 
-type Kind = 'markdown' | 'plain' | 'svg' | 'tex-math';
-type Theme = 'system' | 'light' | 'dark';
-interface PreviewUpdate { kind: Kind; source: string; theme: Theme; revision?: number }
+type Kind = PreviewUpdate['kind'];
 let resultPort: MessagePort | undefined;
 let lastResult: string | undefined;
 let lastRendered: { kind: Kind; source: string; tex?: TexDocument } | undefined;

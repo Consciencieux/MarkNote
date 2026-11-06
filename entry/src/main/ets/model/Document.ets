@@ -99,12 +99,3 @@ export function documentOutline(source: string): Heading[] {
   }
   return result;
 }
-
-export function linesIn(source: string): number {
-  if (source.length === 0) return 1;
-  let count = 1;
-  for (let i = 0; i < source.length; i++) {
-    if (source.charCodeAt(i) === 10) count++;
-  }
-  return count;
-}

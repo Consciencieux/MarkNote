@@ -26,6 +26,20 @@ test('keeps formula-only files on the KaTeX preview path', () => {
   assert.deepEqual(result.headings, []);
 });
 
+test('treats unmarked content as text even when it could be a formula', () => {
+  for (const source of ['x', 'a+b', 'This is plain text.', '中文普通正文']) {
+    const result = renderTexDocument(source);
+    assert.match(result.html, /<p>/);
+    assert.ok(result.html.includes(source));
+    assert.doesNotMatch(result.html, /math-canvas|katex/);
+  }
+});
+
+test('recognizes inline and display math delimiters', () => {
+  assert.match(renderTexDocument('$a+b$').html, /math-inline/);
+  assert.match(renderTexDocument(String.raw`\[a+b\]`).html, /math-display/);
+});
+
 test('renders structured document titles returned by MyST', () => {
   const result = renderTexDocument(String.raw`\title{Experiment\\Report}
 \begin{document}\maketitle\section{Introduction}Text\end{document}`);

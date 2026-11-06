@@ -31,7 +31,7 @@
 | `.txt` | 显示原文，保留换行和缩进 | 不解释 Markdown |
 | `.md`、`.markdown` | 使用 markdown-it 渲染，支持表格、代码围栏、KaTeX 数学公式和 SVG 代码围栏 | 不解析原始 HTML，不加载外部图片 |
 | `.svg` | 使用 DOMPurify 清理后显示静态 SVG | 不执行脚本和动画，不加载外部资源；部分内部片段引用可用 |
-| `.tex` | MyST 转换常见 LaTeX 文稿，KaTeX 渲染公式；纯数学表达式继续使用 KaTeX 预览 | 不执行 TeX 引擎或编译 PDF；宏包、命令和环境仅支持转换器已实现的部分，不支持的内容可能省略并提示，TikZ 尚未接入 |
+| `.tex` | MyST 转换常见 LaTeX 文稿，KaTeX 渲染公式；无标记内容按正文显示，公式可使用数学定界符或受支持的独立公式命令 | 不执行 TeX 引擎或编译 PDF；宏包、命令和环境仅支持转换器已实现的部分，不支持的内容可能省略并提示；TikZ 尚未接入 |
 
 预览入口是 [main.ts](../renderer/src/main.ts)，各格式的实现位于 [renderer/src/renderers](../renderer/src/renderers/)。
 

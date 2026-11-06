@@ -321,7 +321,7 @@ export struct DocumentView {
    * content-start offset and its API warns against generic attributes, so List owns this viewport. */
   private updateHeadings(): void {
     this.parseRevision++;
-    this.headings = this.formatId === 'tex-math' ? [] : DocumentService.headingsFor(this.info, this.source);
+    this.headings = DocumentService.nativeHeadingsFor(this.info, this.source);
   }
 
   private acceptTexOutline(revision: number, headings: Heading[]): void {
