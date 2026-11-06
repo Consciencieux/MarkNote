@@ -3,7 +3,7 @@ import { mystToHtml } from 'myst-to-html';
 import { VFile } from 'vfile';
 import { renderTexMath } from './tex-math.ts';
 
-export interface TexHeading { level: number; text: string; offset: number; line: number }
+export interface TexHeading { level: number; text: string; offset: number }
 export interface TexDocument { html: string; headings: TexHeading[]; diagnostics: string[] }
 interface Node {
   type: string;
@@ -11,7 +11,7 @@ interface Node {
   depth?: number;
   enumerator?: string;
   children?: Node[];
-  position?: { start?: { offset?: number; line?: number } };
+  position?: { start?: { offset?: number } };
 }
 
 function textOf(node: Node): string {
@@ -37,8 +37,8 @@ export function renderTexDocument(source: string): TexDocument {
       const start = node.position?.start;
       const label = textOf(node).trim();
       const text = node.enumerator && label ? `${node.enumerator} ${label}` : label;
-      if (text && typeof start?.offset === 'number' && typeof start.line === 'number') {
-        headings.push({ level: node.depth ?? 1, text, offset: start.offset, line: start.line });
+      if (text && typeof start?.offset === 'number') {
+        headings.push({ level: node.depth ?? 1, text, offset: start.offset });
       }
     }
     node.children?.forEach(visit);

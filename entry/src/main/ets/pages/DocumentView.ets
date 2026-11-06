@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { SymbolGlyphModifier } from '@kit.ArkUI';
+import { FrameCallback, SymbolGlyphModifier } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -28,6 +28,20 @@ const TAB_PREVIEW: number = 0;
 const TAB_EDIT: number = 1;
 const TAB_OUTLINE: number = 2;
 const TAB_SPLIT: number = 3;
+
+/** Run once after a rendered frame; used when a caret position needs layout to settle. */
+class AfterFrame extends FrameCallback {
+  private action: () => void;
+
+  constructor(action: () => void) {
+    super();
+    this.action = action;
+  }
+
+  onIdle(_timeLeftInNano: number): void {
+    this.action();
+  }
+}
 /**
  * 文稿页：预览、编辑、大纲和分栏，以及它们的悬浮操作栏和保存/草稿逻辑。
  * 文稿会话由 DocumentService 持有，这里只镜像一份给 UI；首页通过 revision 通知换篇，
@@ -41,10 +55,8 @@ export struct DocumentView {
   /** 每打开一篇就加一，用来在路由已经存在时重新载入会话。 */
   @Prop @Watch('loadSession') revision: number = 0;
   onLeave: () => void = (): void => {};
-  /** 保存成功后把文件记进最近文稿，列表由首页持有。 */
+  /** 具有持久授权的文件保存成功后通知首页更新最近文稿。 */
   onSaved: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
-  /** 这一次载入已经问过是否另存为的 URI，换篇后才再问。 */
-  private retainOfferedUri: string = '';
 
   private tabContentPolicy: PageTabContentPolicy = new PageTabContentPolicy();
   private tabsPolicy: PageTabsPolicy = new PageTabsPolicy();
@@ -73,6 +85,10 @@ export struct DocumentView {
   private context: common.UIAbilityContext | null = null;
   private info: DocumentInfo = new DocumentInfo();
   private cursor: TextAreaController = new TextAreaController();
+  private splitCursor: TextAreaController = new TextAreaController();
+  private editTop: number = 0;
+  private pendingHeadingOffset: number = -1;
+  private headingJump: number = 0;
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
   private recoveryTimer: number = -1;
@@ -102,6 +118,8 @@ export struct DocumentView {
 
   /** 载入当前会话。首次进入和首页换篇（revision 变）都走这里。 */
   private loadSession(): void {
+    this.headingJump++;
+    this.pendingHeadingOffset = -1;
     this.syncFromService();
     // The history belongs to one document. Keeping it across a switch would let undo write
     // the previous document's text into this one.
@@ -116,56 +134,6 @@ export struct DocumentView {
     this.searchVisible = false;
     // 干净文稿会顺手清掉残留草稿；崩溃恢复来的文稿仍是脏的，继续留在磁盘上。
     this.flushRecovery();
-    this.offerRetainCopy();
-  }
-
-  /**
-   * 其他应用交来的 URI 往往只有本次授权。能打开但不持久时问一次另存为，
-   * 成功后的新 URI 由保存流程记入最近文稿。
-   */
-  private offerRetainCopy(): void {
-    const uri = this.info.uri;
-    if (uri.length === 0 || this.info.persistent) {
-      this.retainOfferedUri = '';
-      return;
-    }
-    if (this.retainOfferedUri === uri) return;
-    this.retainOfferedUri = uri;
-    this.askRetainCopy();
-  }
-
-  /**
-   * 与未保存确认同一套《警告弹窗》排布：HORIZONTAL，左右都是 DEFAULT 蓝字。
-   * 侧滑、返回键和点击遮罩等于「暂不」。
-   */
-  private askRetainCopy(): void {
-    this.getUIContext().showAlertDialog({
-      message: '此文件的访问权限无法长期保留。是否另存一份，以便以后打开？',
-      autoCancel: true,
-      buttonDirection: DialogButtonDirection.HORIZONTAL,
-      buttons: [
-        {
-          value: '暂不',
-          style: DialogButtonStyle.DEFAULT,
-          action: (): void => {}
-        },
-        {
-          value: '另存为',
-          style: DialogButtonStyle.DEFAULT,
-          primary: true,
-          action: (): void => {
-            void this.saveFile(true);
-          }
-        }
-      ],
-      cancel: (): void => {},
-      onWillDismiss: (dismissDialogAction: DismissDialogAction): void => {
-        if (dismissDialogAction.reason === DismissReason.PRESS_BACK ||
-          dismissDialogAction.reason === DismissReason.TOUCH_OUTSIDE) {
-          dismissDialogAction.dismiss();
-        }
-      }
-    });
   }
 
   aboutToDisappear(): void {
@@ -237,7 +205,7 @@ export struct DocumentView {
   /** Bind HDS navigation effects to the shared Scroll surface(s) in the active tab. */
   private activeScrollers(): Scroller[] {
     if (this.wide && this.selectedTab === this.splitTab()) {
-      return [this.splitEditScroller, this.splitPreviewScroller];
+      return [this.splitPreviewScroller, this.splitEditScroller];
     }
     if (this.currentFormat().outline && this.selectedTab === TAB_OUTLINE) return [this.outlineScroller];
     if (this.selectedTab === TAB_EDIT) return [this.editScroller];
@@ -275,7 +243,7 @@ export struct DocumentView {
         resolve(leave);
       };
       this.getUIContext().showAlertDialog({
-        message: '是否保存更改？',
+        message: this.info.uri.length > 0 && !this.info.writable ? '原文件无法写入，是否另存更改？' : '是否保存更改？',
         autoCancel: true,
         buttonDirection: DialogButtonDirection.HORIZONTAL,
         buttons: [
@@ -317,8 +285,7 @@ export struct DocumentView {
     this.updateHeadings();
   }
 
-  /** Build outline rows with the FAQ's List/ListItem tree pattern. TreeView has no documented
-   * content-start offset and its API warns against generic attributes, so List owns this viewport. */
+  /** Refresh native Markdown headings and invalidate older LaTeX parse results. */
   private updateHeadings(): void {
     this.parseRevision++;
     this.headings = DocumentService.nativeHeadingsFor(this.info, this.source);
@@ -330,24 +297,43 @@ export struct DocumentView {
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
     if (!this.context || this.saving) return false;
+    if (!asNewFile && this.info.uri.length > 0 && !this.info.writable) {
+      this.offerSaveCopy('原文件无法写入，请另存为其他文件。');
+      return false;
+    }
     this.saving = true;
     try {
       const result = await DocumentService.save(this.context, asNewFile);
       this.syncFromService();
       if (!result.saved) return false;
-      this.toast(result.message);
+      this.toast(result.message + (this.info.persistent ? '' : '。无法保留长期访问权限，未加入最近文稿'));
       if (!this.isDirty()) this.clearRecovery();
       else this.scheduleRecovery();
       // 最近文稿列表在首页，保存成功只通知过去。
-      this.onSaved(this.info.uri, this.title);
+      if (this.info.persistent) this.onSaved(this.info.uri, this.title);
       return !result.stillDirty;
     } catch (error) {
       this.scheduleRecovery();
-      this.toast('保存失败：' + String(error));
+      if (!asNewFile && this.info.uri.length > 0) {
+        this.offerSaveCopy('保存失败：' + String(error) + '\n可另存为其他文件。');
+      } else {
+        this.toast('保存失败：' + String(error));
+      }
       return false;
     } finally {
       this.saving = false;
     }
+  }
+
+  /** 使用系统警告弹窗提供另存选项，关闭弹窗时保留未保存的内容。 */
+  private offerSaveCopy(message: string): void {
+    this.getUIContext().showAlertDialog({
+      message: message,
+      buttons: [
+        { value: '取消', action: (): void => {} },
+        { value: '另存为', primary: true, action: (): void => { void this.saveFile(true); } }
+      ]
+    });
   }
 
   private clearRecovery(): void {
@@ -447,7 +433,7 @@ export struct DocumentView {
     const caret = Math.min(step.caret, step.text.length);
     this.selectionStart = caret;
     this.selectionEnd = caret;
-    setTimeout(() => this.cursor.caretPosition(caret), 20);
+    setTimeout(() => this.activeCursor().caretPosition(caret), 20);
   }
 
   private findNext(): void {
@@ -460,7 +446,7 @@ export struct DocumentView {
       return;
     }
     this.currentMatch = hit.start;
-    setTimeout(() => this.cursor.setTextSelection(hit.start, hit.start + hit.length), 20);
+    setTimeout(() => this.activeCursor().setTextSelection(hit.start, hit.start + hit.length), 20);
   }
 
   private replaceMatch(): void {
@@ -474,7 +460,7 @@ export struct DocumentView {
     const caret = this.currentMatch + this.replacement.length;
     this.updateSource(changed, caret);
     this.currentMatch = -1;
-    setTimeout(() => this.cursor.caretPosition(caret), 20);
+    setTimeout(() => this.activeCursor().caretPosition(caret), 20);
   }
 
   private insertToken(action: InsertAction): void {
@@ -485,12 +471,52 @@ export struct DocumentView {
       this.source.slice(end);
     const position = start + action.before.length + selected.length;
     this.updateSource(changed, position);
-    setTimeout(() => this.cursor.caretPosition(position), 20);
+    setTimeout(() => this.activeCursor().caretPosition(position), 20);
+  }
+
+  private activeCursor(): TextAreaController {
+    return this.wide && this.selectedTab === this.splitTab() ? this.splitCursor : this.cursor;
   }
 
   private focusHeading(heading: Heading): void {
+    this.headingJump++;
+    this.pendingHeadingOffset = heading.offset;
     this.selectedTab = TAB_EDIT;
-    setTimeout(() => this.cursor.caretPosition(heading.offset), 20);
+  }
+
+  /**
+   * TextArea 自适应内容高度，外层 Scroll 才是滚动容器。Tab 显示后先设置光标，
+   * 再于后续帧读取光标相对输入框的像素坐标并转换为 Scroll 所需的 vp。
+   * 官方文档：ts-universal-attributes-text-style 的 getCaretOffset、ts-container-scroll 的 scrollTo。
+   */
+  private jumpToPendingHeading(): void {
+    if (this.pendingHeadingOffset < 0) return;
+    const offset = this.pendingHeadingOffset;
+    const jump = this.headingJump;
+    this.pendingHeadingOffset = -1;
+    this.getUIContext().postFrameCallback(new AfterFrame((): void => {
+      if (jump !== this.headingJump || this.selectedTab !== TAB_EDIT) return;
+      try {
+        this.getUIContext().getFocusController().requestFocus('marknote-main-editor');
+        this.cursor.caretPosition(offset);
+      } catch {
+        this.toast('无法定位标题，请重试');
+        return;
+      }
+      this.getUIContext().postFrameCallback(new AfterFrame((): void => {
+        if (jump !== this.headingJump || this.selectedTab !== TAB_EDIT) return;
+        const caret = this.cursor.getCaretOffset();
+        if (!caret || caret.index !== offset) {
+          this.toast('无法定位标题，请重试');
+          return;
+        }
+        this.editScroller.scrollTo({
+          xOffset: 0,
+          yOffset: Math.max(0, this.editTop + this.getUIContext().px2vp(caret.y)),
+          animation: false
+        });
+      }));
+    }));
   }
 
   /**
@@ -537,13 +563,19 @@ export struct DocumentView {
   }
 
   @Builder
-  private EditPage(scroller: Scroller) {
+  private EditPage(scroller: Scroller, controller: TextAreaController, editorId: string) {
     DocumentScrollLayer({ scroller: scroller }) {
       Column() {
         if (this.searchVisible) {
           this.FindBar()
         }
-        TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: this.cursor })
+        TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: controller })
+          .id(editorId)
+          .onAreaChange((_oldArea: Area, newArea: Area) => {
+            if (editorId === 'marknote-main-editor') {
+              this.editTop = parseFloat(String(newArea.position.y)) || 0;
+            }
+          })
           .width('100%')
           .padding({
             top: 0,
@@ -601,9 +633,6 @@ export struct DocumentView {
   @Builder
   private SplitPage() {
     RowSplit() {
-      Column() { this.EditPage(this.splitEditScroller) }
-        .width('50%')
-        .height('100%')
       Column() {
         DocumentPreviewView({
           scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
@@ -611,6 +640,9 @@ export struct DocumentView {
           onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
         })
       }
+        .width('50%')
+        .height('100%')
+      Column() { this.EditPage(this.splitEditScroller, this.splitCursor, 'marknote-split-editor') }
         .width('50%')
         .height('100%')
     }
@@ -640,14 +672,15 @@ export struct DocumentView {
         }
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.eye'), '预览'))
-        TabContent() { this.EditPage(this.editScroller) }
+        TabContent() { this.EditPage(this.editScroller, this.cursor, 'marknote-main-editor') }
+          .onWillShow(() => this.jumpToPendingHeading())
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), '编辑'))
         // Only formats that declare an outline get the tab; plain text and SVG have none.
         if (this.currentFormat().outline) {
           TabContent() {
             DocumentOutlineView({
-              headings: this.headings, scroller: this.outlineScroller,
+              headings: this.headings, documentRevision: this.revision, scroller: this.outlineScroller,
               onSelect: (heading: Heading): void => this.focusHeading(heading)
             })
           }
@@ -687,6 +720,7 @@ export struct DocumentView {
   /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */
   private stopEditing(): void {
     this.cursor.stopEditing();
+    this.splitCursor.stopEditing();
   }
 
   /** The format bar applies to the editable tab, and to the split tab which also edits. */

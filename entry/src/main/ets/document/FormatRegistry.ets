@@ -91,6 +91,16 @@ const MARKDOWN_INSERTS: InsertAction[] = [
   new InsertAction('代码块', $r('sys.symbol.code_square'), '```\n', '\n```')
 ];
 
+const LATEX_INSERTS: InsertAction[] = [
+  new InsertAction('章节', $r('sys.symbol.textformat'), '\\section{', '}'),
+  new InsertAction('小节', $r('sys.symbol.textformat'), '\\subsection{', '}'),
+  new InsertAction('加粗', $r('sys.symbol.bold'), '\\textbf{', '}'),
+  new InsertAction('斜体', $r('sys.symbol.italic'), '\\emph{', '}'),
+  new InsertAction('代码', $r('sys.symbol.code'), '\\texttt{', '}'),
+  wrap('$', '公式', $r('sys.symbol.sum_rectangle_fill')),
+  new InsertAction('公式块', $r('sys.symbol.sum_rectangle_fill'), '\\[\n', '\n\\]')
+];
+
 const FORMATS: DocumentFormat[] = [
   defineFormat({
     id: 'markdown',
@@ -145,7 +155,7 @@ const FORMATS: DocumentFormat[] = [
     defaultFilename: '未命名.tex',
     starter: '\\frac{a}{b} + \\sqrt{x^2 + y^2}',
     outline: true,
-    inserts: [],
+    inserts: LATEX_INSERTS,
     openFilter: 'LaTeX|.tex',
     saveChoice: 'LaTeX|.tex'
   })

@@ -2,7 +2,7 @@ import { webview } from '@kit.ArkWeb';
 import { Heading } from '../model/Document';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
 
-interface ParsedHeading { level: number; text: string; offset: number; line: number }
+interface ParsedHeading { level: number; text: string; offset: number }
 interface ParsedResult { kind: string; revision: number; headings: ParsedHeading[] }
 
 /** 文稿预览和分栏预览共用同一组 Web 与滚动配置。 */
@@ -42,11 +42,10 @@ export struct DocumentPreviewView {
           const headings: Heading[] = [];
           for (const item of result.headings) {
             if (typeof item.text !== 'string' || typeof item.level !== 'number' ||
-              typeof item.offset !== 'number' || typeof item.line !== 'number' ||
+              typeof item.offset !== 'number' ||
               !Number.isInteger(item.offset) || item.offset < 0 || item.offset > this.source.length ||
-              !Number.isInteger(item.level) || item.level < 1 || item.level > 6 ||
-              !Number.isInteger(item.line) || item.line < 1) return;
-            headings.push(new Heading(item.level, item.text, item.offset, item.line));
+              !Number.isInteger(item.level) || item.level < 1 || item.level > 6) return;
+            headings.push(new Heading(item.level, item.text, item.offset));
           }
           this.onOutline(result.revision, headings);
         } catch { /* Ignore malformed results from the page. */ }
