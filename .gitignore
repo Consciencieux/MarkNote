@@ -27,6 +27,7 @@ oh_modules/
 renderer/node_modules/
 renderer/dist/
 renderer/.vite/
+renderer/.cache/
 
 # Local configuration
 /local.properties

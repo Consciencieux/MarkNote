@@ -4,16 +4,24 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/setup-tex-dependency.mjs",
+    "prebuild": "node scripts/setup-tex-dependency.mjs --verify",
     "build": "vite build && node scripts/package-assets.mjs",
+    "predev": "node scripts/setup-tex-dependency.mjs --verify",
     "dev": "vite --host 127.0.0.1",
     "check": "tsc --noEmit",
-    "check:licenses": "node scripts/generate-notices.mjs"
+    "check:licenses": "node scripts/generate-notices.mjs",
+    "pretest": "node scripts/setup-tex-dependency.mjs --verify",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {
-    "markdown-it": "15.0.3",
     "@mdit/plugin-katex": "1.1.4",
+    "dompurify": "3.4.17",
     "katex": "0.19.1",
-    "dompurify": "3.4.17"
+    "markdown-it": "15.0.3",
+    "myst-to-html": "1.7.5",
+    "tex-to-myst": "1.0.48",
+    "vfile": "5.3.7"
   },
   "devDependencies": {
     "typescript": "7.0.2",

@@ -30,7 +30,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 
 ## 离线预览
 
-`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文和主题；网页不调用 ArkTS 接口。预览资源和网络限制见[功能目录](FEATURES.md)。
+`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题和修订号。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过 `WebMessagePort` 仅回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲，网页不注册文件或导航接口。预览资源和网络限制见[功能目录](FEATURES.md)。
 
 ## 文件关联
 

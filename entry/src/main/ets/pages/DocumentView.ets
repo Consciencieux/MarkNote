@@ -60,6 +60,7 @@ export struct DocumentView {
   /** Format id of the open document, kept as state so the format bar rebuilds on switch. */
   @State private formatId: string = '';
   @State private headings: Heading[] = [];
+  @State private parseRevision: number = 0;
   @State private saving: boolean = false;
   @State private searchVisible: boolean = false;
   @State private query: string = '';
@@ -319,7 +320,12 @@ export struct DocumentView {
   /** Build outline rows with the FAQ's List/ListItem tree pattern. TreeView has no documented
    * content-start offset and its API warns against generic attributes, so List owns this viewport. */
   private updateHeadings(): void {
-    this.headings = DocumentService.headingsFor(this.info, this.source);
+    this.parseRevision++;
+    this.headings = this.formatId === 'tex-math' ? [] : DocumentService.headingsFor(this.info, this.source);
+  }
+
+  private acceptTexOutline(revision: number, headings: Heading[]): void {
+    if (this.formatId === 'tex-math' && revision === this.parseRevision) this.headings = headings;
   }
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
@@ -601,7 +607,8 @@ export struct DocumentView {
       Column() {
         DocumentPreviewView({
           scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
-          kind: this.currentFormat().id
+          kind: this.currentFormat().id, parseRevision: this.parseRevision,
+          onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
         })
       }
         .width('50%')
@@ -627,7 +634,8 @@ export struct DocumentView {
         TabContent() {
           DocumentPreviewView({
             scroller: this.previewScroller, theme: this.theme, source: this.source,
-            kind: this.currentFormat().id
+            kind: this.currentFormat().id, parseRevision: this.parseRevision,
+            onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
           })
         }
           .attributeModifier(this.tabContentPolicy)

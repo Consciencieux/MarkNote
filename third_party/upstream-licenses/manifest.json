@@ -1,0 +1,416 @@
+[
+  {
+    "name": "tex-to-myst",
+    "version": "1.0.48",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/jupyter-book/mystmd/0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f/LICENSE",
+    "file": "jupyter-book_mystmd-0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f",
+    "sha256": "e0172292abee956e6787f3316a870efa50bbc9d217db774c6dcaad353512c6be"
+  },
+  {
+    "name": "myst-to-html",
+    "version": "1.7.5",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/jupyter-book/mystmd/0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f/LICENSE",
+    "file": "jupyter-book_mystmd-0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f",
+    "sha256": "e0172292abee956e6787f3316a870efa50bbc9d217db774c6dcaad353512c6be"
+  },
+  {
+    "name": "rehype-minify-whitespace",
+    "version": "5.0.1",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/rehypejs/rehype-minify/857a97f8bb1f229b47e5f3d835741907c008cde2/license",
+    "file": "rehypejs_rehype-minify-857a97f8bb1f229b47e5f3d835741907c008cde2",
+    "sha256": "8bcb6db133b417da60891d74be6ce583162ba9143be32ccc9e24cea7913ead14"
+  },
+  {
+    "name": "micromark-util-sanitize-uri",
+    "version": "1.2.0",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/micromark/micromark/94b7679646bc0221899bba034f52f4abb3700f81/license",
+    "file": "micromark_micromark-94b7679646bc0221899bba034f52f4abb3700f81",
+    "sha256": "536804b3adbff17dbbb9ed0d2bf9655b78f07640278581e37e3d7475282d5e61"
+  },
+  {
+    "name": "micromark-util-character",
+    "version": "1.2.0",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/micromark/micromark/94b7679646bc0221899bba034f52f4abb3700f81/license",
+    "file": "micromark_micromark-94b7679646bc0221899bba034f52f4abb3700f81",
+    "sha256": "536804b3adbff17dbbb9ed0d2bf9655b78f07640278581e37e3d7475282d5e61"
+  },
+  {
+    "name": "micromark-util-symbol",
+    "version": "1.1.0",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/micromark/micromark/94b7679646bc0221899bba034f52f4abb3700f81/license",
+    "file": "micromark_micromark-94b7679646bc0221899bba034f52f4abb3700f81",
+    "sha256": "536804b3adbff17dbbb9ed0d2bf9655b78f07640278581e37e3d7475282d5e61"
+  },
+  {
+    "name": "micromark-util-types",
+    "version": "1.1.0",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/micromark/micromark/94b7679646bc0221899bba034f52f4abb3700f81/license",
+    "file": "micromark_micromark-94b7679646bc0221899bba034f52f4abb3700f81",
+    "sha256": "536804b3adbff17dbbb9ed0d2bf9655b78f07640278581e37e3d7475282d5e61"
+  },
+  {
+    "name": "micromark-util-encode",
+    "version": "1.1.0",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/micromark/micromark/94b7679646bc0221899bba034f52f4abb3700f81/license",
+    "file": "micromark_micromark-94b7679646bc0221899bba034f52f4abb3700f81",
+    "sha256": "536804b3adbff17dbbb9ed0d2bf9655b78f07640278581e37e3d7475282d5e61"
+  },
+  {
+    "name": "myst-common",
+    "version": "1.10.2",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/jupyter-book/mystmd/0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f/LICENSE",
+    "file": "jupyter-book_mystmd-0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f",
+    "sha256": "e0172292abee956e6787f3316a870efa50bbc9d217db774c6dcaad353512c6be"
+  },
+  {
+    "name": "myst-frontmatter",
+    "version": "1.10.2",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/jupyter-book/mystmd/0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f/LICENSE",
+    "file": "jupyter-book_mystmd-0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f",
+    "sha256": "e0172292abee956e6787f3316a870efa50bbc9d217db774c6dcaad353512c6be"
+  },
+  {
+    "name": "simple-validators",
+    "version": "1.2.1",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/jupyter-book/mystmd/0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f/LICENSE",
+    "file": "jupyter-book_mystmd-0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f",
+    "sha256": "e0172292abee956e6787f3316a870efa50bbc9d217db774c6dcaad353512c6be"
+  },
+  {
+    "name": "myst-toc",
+    "version": "0.1.5",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/jupyter-book/mystmd/0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f/LICENSE",
+    "file": "jupyter-book_mystmd-0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f",
+    "sha256": "e0172292abee956e6787f3316a870efa50bbc9d217db774c6dcaad353512c6be"
+  },
+  {
+    "name": "myst-spec",
+    "version": "0.0.6",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/jupyter-book/mystmd/807672d850695c2863143571f296327b15f203bd/LICENSE",
+    "file": "jupyter-book_mystmd-807672d850695c2863143571f296327b15f203bd",
+    "sha256": "e0172292abee956e6787f3316a870efa50bbc9d217db774c6dcaad353512c6be"
+  },
+  {
+    "name": "rehype-parse",
+    "version": "8.0.5",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/rehypejs/rehype/476d219cdd69f051bd5f64532e1cea237588c5f5/license",
+    "file": "rehypejs_rehype-476d219cdd69f051bd5f64532e1cea237588c5f5",
+    "sha256": "8bcb6db133b417da60891d74be6ce583162ba9143be32ccc9e24cea7913ead14"
+  },
+  {
+    "name": "rehype-stringify",
+    "version": "9.0.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/rehypejs/rehype/e97afa10064b47d5861ae1c5d3e09dc68a043302/license",
+    "file": "rehypejs_rehype-e97afa10064b47d5861ae1c5d3e09dc68a043302",
+    "sha256": "8bcb6db133b417da60891d74be6ce583162ba9143be32ccc9e24cea7913ead14"
+  },
+  {
+    "name": "@unified-latex/unified-latex",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-types",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-parse",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-ctan",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-builder",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-argspec",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-pegjs",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-match",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-print-raw",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-arguments",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-render-info",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-visit",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-scan",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-comments",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-replace",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-split",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-trim",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-catcode",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-environments",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-to-string",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-prettier",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-align",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "@unified-latex/unified-latex-util-pgfkeys",
+    "version": "1.8.4",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/siefkenj/unified-latex/7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c/LICENSE",
+    "file": "siefkenj_unified-latex-7a74e60c4fbaf2527b9cf79772c0c7266f3d2b2c",
+    "sha256": "8945d330ddb16e332fedabf1dfe1ab5c7b371a6c0864ccc0c8663281685fae0b"
+  },
+  {
+    "name": "myst-spec-ext",
+    "version": "1.10.2",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/jupyter-book/mystmd/0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f/LICENSE",
+    "file": "jupyter-book_mystmd-0e7cd9b131ffe3e8d6d20f6ef3a7a375fab0c23f",
+    "sha256": "e0172292abee956e6787f3316a870efa50bbc9d217db774c6dcaad353512c6be"
+  },
+  {
+    "name": "hast-util-is-body-ok-link",
+    "version": "2.0.0",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/rehypejs/rehype-minify/88493cbbc19d89c29748f6ac6b46cf2fd731f93d/license",
+    "file": "rehype-minify-88493cbbc19d89c29748f6ac6b46cf2fd731f93d",
+    "sha256": "8bcb6db133b417da60891d74be6ce583162ba9143be32ccc9e24cea7913ead14"
+  },
+  {
+    "name": "html-whitespace-sensitive-tag-names",
+    "version": "2.0.0",
+    "license": "MIT",
+    "source": "https://raw.githubusercontent.com/rehypejs/rehype-minify/88493cbbc19d89c29748f6ac6b46cf2fd731f93d/license",
+    "file": "rehype-minify-88493cbbc19d89c29748f6ac6b46cf2fd731f93d",
+    "sha256": "8bcb6db133b417da60891d74be6ce583162ba9143be32ccc9e24cea7913ead14"
+  },
+  {
+    "name": "eastasianwidth",
+    "version": "0.2.0",
+    "license": "MIT",
+    "source": "https://github.com/komagata/eastasianwidth/blob/f42b1e7b2a403d2050dda1141211b4e198e50e70/MIT-LICENSE.txt",
+    "file": "eastasianwidth-f42b1e7-license.txt",
+    "sha256": "543f72322f0ec407fc96f9d2ea9c9af98db9b8448fdd99483be94d65a1011b16",
+    "noticeSource": "https://github.com/komagata/eastasianwidth/blob/f42b1e7b2a403d2050dda1141211b4e198e50e70/LICENSE-NOTES.md",
+    "noticeFile": "eastasianwidth-f42b1e7-notes.md",
+    "noticeSha256": "652d0486b433ecd1e91c2a933f6d320f651bda1d7bb32ba50a48cf7329bb81b3"
+  },
+  {
+    "name": "boolbase",
+    "version": "1.0.0",
+    "license": "ISC",
+    "source": "https://github.com/fb55/boolbase/blob/be0bcd8a4e917a0a5895e95b523fbbed05a64871/LICENSE",
+    "evidence": "https://github.com/fb55/boolbase/issues/3#issuecomment-719655921",
+    "file": "boolbase-be0bcd8-license.txt",
+    "sha256": "cdf4d87ae0a6c160227263bf4e39a0a10e30e89ae7256e0f7ac7bde0836552c6"
+  },
+  {
+    "name": "spdx-exceptions",
+    "version": "2.5.0",
+    "license": "CC-BY-3.0",
+    "source": "https://creativecommons.org/licenses/by/3.0/legalcode.txt",
+    "file": "CC-BY-3.0-legalcode.txt",
+    "sha256": "e6bc9e9c474700b708f568bac9e5a8a9bcb2b1dad53442f5ba449fcb848b8e76",
+    "noticeSource": "https://github.com/kemitchell/spdx-exceptions.json/blob/3aa64bec339abc6a3eca00c3436aaa7e154b8799/README.md",
+    "noticeFile": "spdx-exceptions-2.5.0-readme.md",
+    "noticeSha256": "554b19eee11d2964e9f7b244e47944c08d52ca75539260a04f3227e6c0144513"
+  },
+  {
+    "name": "spdx-license-ids",
+    "version": "3.0.24",
+    "license": "CC0-1.0",
+    "source": "https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt",
+    "file": "CC0-1.0-legalcode.txt",
+    "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+    "noticeSource": "https://github.com/jslicense/spdx-license-ids/blob/dc0dd99cfb7b38c9159f3baa2804a4d3fd2632e1/README.md",
+    "noticeFile": "spdx-license-ids-3.0.24-readme.md",
+    "noticeSha256": "b4807793db6058c819f76c023362b7d522b3d19c9b41563fcc01c2b2c5b1ccd3"
+  },
+  {
+    "name": "mdast",
+    "version": "3.0.0",
+    "license": "MIT",
+    "source": "https://github.com/spdx/license-list-data/blob/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt",
+    "file": "SPDX-MIT.txt",
+    "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+    "noticeSource": "https://github.com/syntax-tree/mdast/blob/d89c4a2d345ff5091557346d1c4d88dd55c092c6/readme.md",
+    "noticeFile": "mdast-3.0.0-readme.md",
+    "noticeSha256": "9c2bf8ee90fc72335513dece24e860ab989fd7742a4e1536f2fd861bf27004ee"
+  },
+  {
+    "name": "trie-prefix-tree",
+    "version": "1.5.1",
+    "license": "MIT",
+    "source": "https://github.com/spdx/license-list-data/blob/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt",
+    "file": "SPDX-MIT.txt",
+    "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+    "noticeSource": "https://github.com/lyndseybrowning/trie-prefix-tree/blob/dcb48612606e4af37f9c1d240420bf9b13228f65/README.md",
+    "noticeFile": "trie-prefix-tree-1.5.1-readme.md",
+    "noticeSha256": "0054ff4626d65b39d2a3e5987392e5f28c946c5d58569d1bb38eda40a1f055a8"
+  },
+  {
+    "name": "hast",
+    "version": "1.0.0",
+    "license": "MIT",
+    "source": "https://github.com/spdx/license-list-data/blob/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt",
+    "file": "SPDX-MIT.txt",
+    "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+    "noticeSource": "https://registry.npmjs.org/hast/-/hast-1.0.0.tgz",
+    "noticeFile": "hast-1.0.0-package.json",
+    "noticeSha256": "77ffeeaed66f55c47fe75408d981810b5b80f9cd93a77fa5aab972b636d3ee2c"
+  },
+  {
+    "name": "argparse",
+    "version": "2.0.1",
+    "license": "Python-2.0",
+    "source": "https://github.com/nodeca/argparse/blob/e373563876f1c049826c21bd1c9388f6a5737a3e/LICENSE",
+    "file": "argparse-2.0.1-license.txt",
+    "sha256": "de4d1f2d2ad5ad0cfd1657a106476b31cb5db5ef9d1ff842b237c0c81f0c8a23",
+    "noticeSource": "https://github.com/nodeca/argparse/blob/e373563876f1c049826c21bd1c9388f6a5737a3e/README.md",
+    "noticeFile": "argparse-2.0.1-readme.md",
+    "noticeSha256": "44161d4e4baf71c745a327a5d05ee4a762c3004db5453aca221e3d0a3fa52ba6"
+  }
+]

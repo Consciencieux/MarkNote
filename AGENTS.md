@@ -1,6 +1,6 @@
 # 项目开发约定
 
-开始修改前，阅读 [架构](docs/ARCHITECTURE.md) 和 [功能目录](docs/FEATURES.md)，确认相关模块的职责和现有行为。构建与验证方法见 [CONTRIBUTING.md](CONTRIBUTING.md)。同一项事实应有一个主要维护位置，其他文档按需链接。
+开始修改前，阅读 [架构](docs/ARCHITECTURE.md)、[仓库结构](docs/STRUCTURE.md) 和 [功能目录](docs/FEATURES.md)，确认模块职责、代码位置和现有行为。构建与验证方法见 [CONTRIBUTING.md](CONTRIBUTING.md)。同一项事实应有一个主要维护位置，其他文档按需链接。
 
 ## 开发工具
 
@@ -30,3 +30,5 @@
 ## 同步文档
 
 新增、修改或删除用户可用的功能时，同步更新 [功能目录](docs/FEATURES.md)。新增文稿格式时，同时检查 `FormatRegistry`、预览渲染器及相关文件关联；功能目录只记录已经接入用户入口的功能。
+
+新增、移动或删除主要目录与模块时，同步检查 [仓库结构](docs/STRUCTURE.md)；模块职责或数据流变化时，同步检查 [架构](docs/ARCHITECTURE.md)。

@@ -6,7 +6,7 @@
 
 | 功能 | 当前行为与限制 | 主要代码 |
 | --- | --- | --- |
-| 新建与打开 | 首页可新建 Markdown、纯文本、SVG 和 LaTeX 公式，也可通过系统选择器打开文件。文件管理器可以通过系统文件关联打开受支持的文稿，默认进入预览。格式优先按文件后缀识别，其次使用系统声明的类型 | [HomeView.ets](../entry/src/main/ets/pages/HomeView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[module.json5](../entry/src/main/module.json5) |
+| 新建与打开 | 首页可新建 Markdown、纯文本、SVG 和 LaTeX 文稿，也可通过系统选择器打开文件。文件管理器可以通过系统文件关联打开受支持的文稿，默认进入预览。格式优先按文件后缀识别，其次使用系统声明的类型 | [HomeView.ets](../entry/src/main/ets/pages/HomeView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[module.json5](../entry/src/main/module.json5) |
 | 最近文稿 | 本机最多保存 12 条记录，只收录已经持久化授权的文件。其他应用交来、系统不允许持久化的文件会提示另存为；不另存就不写入最近文稿。再次打开时尝试恢复持久授权；授权失效时从列表移除，需要重新选择文件 | [LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)（`offerRetainCopy`）、[Index.ets](../entry/src/main/ets/pages/Index.ets)（`presentOpened`、`forgetRecent`） |
 | 保存与另存为 | 有写入授权时可保存到原 URI；没有写入授权时使用另存为。写入前检查文件是否被外部修改，发现冲突时拒绝覆盖。保存后重新读取并校验内容；文件提供方不保证写入操作具有原子性 | [DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
 | 未保存内容 | 离开已修改的文稿前，应用询问是否保存。编辑时会在应用私有目录保存草稿，供异常退出后恢复；正常离开时清除草稿 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
@@ -20,18 +20,18 @@
 | 编辑 | 使用 ArkUI `TextArea` 编辑源文本，支持光标和选区。切换到编辑页签不会主动弹出键盘；点击文本后才进入输入状态。不支持多光标、语法折叠或行级语法高亮 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 快捷插入 | Markdown 编辑页提供标题、强调、链接、列表、待办、代码和公式等快捷操作。工具栏位于顶部标题栏下方，空间不足时可横向滚动。其他格式不显示格式工具栏 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[FormatBarView.ets](../entry/src/main/ets/pages/FormatBarView.ets) |
 | 查找与替换 | 按字面文本查找，可跳到下一处并替换单处；不支持正则表达式和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
-| Markdown 大纲 | 提取代码围栏以外的 ATX 标题，按标题级别分层；可展开、折叠并跳转到相应位置。暂不解析 Setext 标题 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[DocumentOutlineView.ets](../entry/src/main/ets/pages/DocumentOutlineView.ets) |
+| 文稿大纲 | Markdown 提取代码围栏以外的 ATX 标题，暂不解析 Setext 标题；LaTeX 使用预览解析得到的章节标题和源文本位置。大纲按级别分层，可展开、折叠并跳转到编辑位置 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[tex.ts](../renderer/src/renderers/tex.ts)、[DocumentOutlineView.ets](../entry/src/main/ets/pages/DocumentOutlineView.ets) |
 | 撤销与重做 | 编辑历史保存在内存中，连续输入在 600 毫秒内合并，最多保留 200 步；切换文稿时清空 | [EditHistory.ets](../entry/src/main/ets/document/EditHistory.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。宽度达到 `WIDTH_LG` 断点时增加编辑与预览分栏 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
 
-预览页面随应用离线打包。ArkUI 将格式、正文和主题传给网页；网页不能调用 ArkTS 接口，内容安全策略禁止网络连接。
+预览页面随应用离线打包。ArkUI 将格式、正文、主题和修订号传给网页；LaTeX 预览通过消息端口回传解析结果，网页不能调用文件或导航接口。内容安全策略禁止网络连接。
 
 | 格式 | 预览方式 | 限制 |
 | --- | --- | --- |
 | `.txt` | 显示原文，保留换行和缩进 | 不解释 Markdown |
 | `.md`、`.markdown` | 使用 markdown-it 渲染，支持表格、代码围栏、KaTeX 数学公式和 SVG 代码围栏 | 不解析原始 HTML，不加载外部图片 |
 | `.svg` | 使用 DOMPurify 清理后显示静态 SVG | 不执行脚本和动画，不加载外部资源；部分内部片段引用可用 |
-| `.tex` | 使用 KaTeX 渲染数学表达式 | 不编译完整 TeX 文档，不支持 `\documentclass`、宏包和完整的 TeX 宏 |
+| `.tex` | MyST 转换常见 LaTeX 文稿，KaTeX 渲染公式；纯数学表达式继续使用 KaTeX 预览 | 不执行 TeX 引擎或编译 PDF；宏包、命令和环境仅支持转换器已实现的部分，不支持的内容可能省略并提示，TikZ 尚未接入 |
 
 预览入口是 [main.ts](../renderer/src/main.ts)，各格式的实现位于 [renderer/src/renderers](../renderer/src/renderers/)。
 
