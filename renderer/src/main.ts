@@ -2,6 +2,7 @@ import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import './styles.css';
 import { renderMarkdown } from './renderers/markdown';
+import { visibleImageKeys } from './image-window';
 import { renderPlain } from './renderers/plain';
 import { installReferenceHook, sanitizeSvg } from './renderers/svg';
 import { renderTexDocument, type TexDocument } from './renderers/tex';
@@ -11,7 +12,7 @@ import katex from 'katex';
 type Kind = PreviewUpdate['kind'];
 let resultPort: MessagePort | undefined;
 let lastResult: string | undefined;
-let lastRendered: { kind: Kind; source: string; tex?: TexDocument } | undefined;
+let lastRendered: { kind: Kind; source: string; documentId?: number; tex?: TexDocument } | undefined;
 window.addEventListener('message', (event: MessageEvent) => {
   if (event.data !== '__marknote_parse_port__' || !event.ports[0]) return;
   resultPort?.close();
@@ -21,6 +22,50 @@ window.addEventListener('message', (event: MessageEvent) => {
 
 const host = document.getElementById('preview');
 if (!host) throw new Error('missing preview root');
+
+function isAppImage(url: string): boolean {
+  return /^data:image\/(?:png|jpeg|gif|webp|bmp|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/.test(url);
+}
+
+let wantedImages = new Set<string>();
+function imageWindow(top: number, height: number): string[] {
+  if (!host || !Number.isFinite(top) || !Number.isFinite(height) || height <= 0) return [];
+  const slots = [...host.querySelectorAll<HTMLElement>('.image-slot')];
+  const positions = slots.map(slot => {
+    const rect = slot.getBoundingClientRect();
+    return { key: slot.dataset.mnSrc ?? '', top: rect.top, bottom: rect.bottom };
+  });
+  wantedImages = new Set(visibleImageKeys(positions, top, height));
+  const pending = new Set<string>();
+  for (let index = 0; index < slots.length; index++) {
+    const slot = slots[index];
+    const position = positions[index];
+    const nearby = visibleImageKeys([position], top, height).length > 0;
+    slot.dataset.mnNearby = nearby ? '1' : '0';
+    const image = slot.querySelector('img');
+    if (!nearby && image) {
+      slot.style.minHeight = `${slot.getBoundingClientRect().height}px`;
+      slot.textContent = `[图片：${slot.dataset.mnAlt || '图片'}]`;
+    } else if (nearby && !image && position.key) {
+      pending.add(position.key);
+    }
+  }
+  return [...pending];
+}
+
+/** Only data received from the application is inserted as an image. */
+function setImage(key: string, dataUrl: string): void {
+  if (!host || !wantedImages.has(key) || !isAppImage(dataUrl)) return;
+  for (const slot of host.querySelectorAll<HTMLElement>('.image-slot')) {
+    if (slot.dataset.mnSrc !== key || slot.dataset.mnNearby !== '1' || slot.querySelector('img')) continue;
+    const image = document.createElement('img');
+    image.alt = slot.dataset.mnAlt || '图片';
+    image.src = dataUrl;
+    slot.replaceChildren(image);
+    slot.classList.add('image-slot-loaded');
+    slot.style.minHeight = '';
+  }
+}
 
 function renderBody(kind: Kind, source: string): string {
   if (kind === 'svg') return `<section class="svg-canvas">${sanitizeSvg(source)}</section>`;
@@ -35,7 +80,8 @@ function render(update: PreviewUpdate): void {
   document.documentElement.removeAttribute('data-theme');
   if (update.theme !== 'system') document.documentElement.dataset.theme = update.theme;
   // Theme changes only affect CSS. Avoid parsing and rebuilding a potentially large document.
-  if (lastRendered?.kind === update.kind && lastRendered.source === update.source) {
+  if (lastRendered?.kind === update.kind && lastRendered.source === update.source &&
+    lastRendered.documentId === update.documentId) {
     if (lastRendered.tex) {
       lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision,
         headings: lastRendered.tex.headings, diagnostics: lastRendered.tex.diagnostics });
@@ -53,7 +99,7 @@ function render(update: PreviewUpdate): void {
     empty.className = 'placeholder';
     empty.textContent = '内容将在这里预览';
     host!.append(empty);
-    lastRendered = { kind: update.kind, source: update.source };
+    lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId };
     if (update.kind === 'tex-math') {
       lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision, headings: [], diagnostics: [] });
       resultPort?.postMessage(lastResult);
@@ -77,7 +123,8 @@ function render(update: PreviewUpdate): void {
     FORBID_ATTR: ['src', 'srcset', 'target', 'formaction'],
     SANITIZE_NAMED_PROPS: false
   });
-  lastRendered = { kind: update.kind, source: update.source, tex };
+  wantedImages.clear();
+  lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, tex };
   if (tex) {
     for (const element of host!.querySelectorAll<HTMLElement>('.math-inline, .math-display')) {
       katex.render(element.textContent ?? '', element, {
@@ -91,6 +138,10 @@ function render(update: PreviewUpdate): void {
   }
 }
 
-const api = Object.freeze({ update: (data: PreviewUpdate) => render(data) });
+const api = Object.freeze({
+  update: (data: PreviewUpdate) => render(data),
+  imageWindow,
+  setImage
+});
 Object.defineProperty(window, 'MarknotePreview', { value: api, writable: false, configurable: false });
 render({ kind: 'markdown', source: '', theme: 'system' });

@@ -1,16 +1,19 @@
-import { DocumentFormat, FormatRegistry } from '../document/FormatRegistry';
-
 /**
  * 菜单内容通过全局 @Builder 交给 ComponentContent 渲染，拿不到页面实例，所以用这个桥把
  * 点击转回页面：页面在 aboutToAppear 里接上自己的处理，菜单只负责发起动作。
  */
 export class MenuBridge {
-  confirmNew: (id: string) => void = (_id: string): void => {};
   openFile: () => void = (): void => {};
   saveAs: () => void = (): void => {};
+  share: () => void = (): void => {};
+  deleteDocument: () => void = (): void => {};
+  save: () => void = (): void => {};
+  showDocumentActions: boolean = false;
+  canDeleteDocument: boolean = false;
   openSettings: () => void = (): void => {};
   find: () => void = (): void => {};
-  closeLibrary: () => void = (): void => {};
+  closeDocument: () => void = (): void => {};
+  showCloseDocument: boolean = false;
   /** 打开文稿页标题栏的菜单；锚点 id 由文稿页的标题栏提供。 */
   openDocumentMenu: () => void = (): void => {};
   /** 先收起已打开的菜单再执行动作，首页提供实现。 */
@@ -35,29 +38,41 @@ export function HomeMenuContent() {
 }
 
 /**
- * 文稿页标题栏的四宫格菜单：新建各格式、打开、另存为、查找和设置。
- * 同样把「关于」留给设置页，一级菜单不放。
+ * 使用 MenuItemGroup 按操作类型分组；具体项目和排序由应用功能决定。
  */
 @Builder
 export function DocumentMenuContent() {
   Menu() {
     MenuItemGroup() {
-      ForEach(FormatRegistry.all(), (item: DocumentFormat) => {
-        MenuItem({ content: item.moreTitle })
-          .onClick(() => menuBridge.confirmNew(item.id))
-      }, (item: DocumentFormat) => item.id)
-    }
-    MenuItemGroup() {
       MenuItem({ content: '打开文件' })
         .onClick(() => menuBridge.openFile())
       MenuItem({ content: '另存为' })
         .onClick(() => menuBridge.saveAs())
+      if (!menuBridge.showDocumentActions) {
+        MenuItem({ content: '保存' })
+          .onClick(() => menuBridge.save())
+      }
+      if (menuBridge.showDocumentActions) {
+        MenuItem({ content: '分享' })
+          .onClick(() => menuBridge.share())
+        MenuItem({ content: '收藏' })
+          .enabled(false)
+      }
     }
     MenuItemGroup() {
       MenuItem({ content: '查找' })
         .onClick(() => menuBridge.find())
-      MenuItem({ content: '返回文稿列表' })
-        .onClick(() => menuBridge.closeLibrary())
+      if (menuBridge.showCloseDocument) {
+        MenuItem({ content: '关闭文稿' })
+          .onClick(() => menuBridge.closeDocument())
+      }
+    }
+    if (menuBridge.showDocumentActions) {
+      MenuItemGroup() {
+        MenuItem({ content: '删除' })
+          .enabled(menuBridge.canDeleteDocument)
+          .onClick(() => menuBridge.deleteDocument())
+      }
     }
     MenuItemGroup() {
       MenuItem({ content: '设置' })

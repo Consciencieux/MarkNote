@@ -12,6 +12,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 | --- | --- |
 | `FormatRegistry` | 定义文件扩展名、系统类型、默认文件名、大纲支持和编辑快捷操作。 |
 | `DocumentFiles` | 调用系统文件选择器，处理 URI 授权、文件读取、写入和外部修改检查。 |
+| `DocumentShare` | 将当前编辑内容写入临时分享文件，并调用系统分享面板。 |
 | `TextEncoding` | 在文件字节和编辑器文本之间转换，记录并恢复编码、BOM 与换行方式。 |
 | `LocalState` | 保存最近文稿、草稿和外观偏好。 |
 | `EditHistory`、`TextSearch` | 分别处理编辑历史和字面文本查找。 |
@@ -30,7 +31,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 
 ## 离线预览
 
-`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题和修订号。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过 `WebMessagePort` 仅回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲，网页不注册文件或导航接口。预览资源和网络限制见[功能目录](FEATURES.md)。
+`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题和修订号。应用按原生滚动容器的可视范围向网页查询附近的 Markdown 图片地址，再用文稿 URI 取得所在目录 URI，尝试逐张读取相对路径。读到的图片以 data URL 传回页面，离开阅读区域后释放；打不开的图片保持占位。网页不注册文件或导航接口，也不加载网络图片。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过 `WebMessagePort` 仅回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲。预览资源和网络限制见[功能目录](FEATURES.md)。
 
 ## 文件关联
 

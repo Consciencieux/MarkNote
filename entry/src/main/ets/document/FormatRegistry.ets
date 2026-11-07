@@ -34,7 +34,6 @@ function prefix(token: string, label: string, symbol: Resource): InsertAction {
 export class DocumentFormat {
   id: string = '';
   sheetTitle: string = '';
-  moreTitle: string = '';
   extensions: string[] = [];
   utds: string[] = [];
   mimes: string[] = [];
@@ -50,7 +49,6 @@ export class DocumentFormat {
 interface FormatSpec {
   id: string;
   sheetTitle: string;
-  moreTitle: string;
   extensions: string[];
   utds: string[];
   mimes: string[];
@@ -66,7 +64,6 @@ function defineFormat(spec: FormatSpec): DocumentFormat {
   const item = new DocumentFormat();
   item.id = spec.id;
   item.sheetTitle = spec.sheetTitle;
-  item.moreTitle = spec.moreTitle;
   item.extensions = spec.extensions;
   item.utds = spec.utds;
   item.mimes = spec.mimes;
@@ -105,7 +102,6 @@ const FORMATS: DocumentFormat[] = [
   defineFormat({
     id: 'markdown',
     sheetTitle: 'Markdown 文稿',
-    moreTitle: '新建 Markdown',
     extensions: ['.md', '.markdown'],
     utds: ['general.markdown'],
     mimes: ['text/markdown', 'text/x-markdown'],
@@ -119,7 +115,6 @@ const FORMATS: DocumentFormat[] = [
   defineFormat({
     id: 'plain',
     sheetTitle: '纯文本',
-    moreTitle: '新建纯文本',
     extensions: ['.txt'],
     utds: ['general.plain-text'],
     mimes: ['text/plain'],
@@ -133,7 +128,6 @@ const FORMATS: DocumentFormat[] = [
   defineFormat({
     id: 'svg',
     sheetTitle: 'SVG 图形',
-    moreTitle: '新建 SVG',
     extensions: ['.svg'],
     utds: ['general.svg-image'],
     mimes: ['image/svg+xml'],
@@ -148,7 +142,6 @@ const FORMATS: DocumentFormat[] = [
   defineFormat({
     id: 'tex-math',
     sheetTitle: 'LaTeX 文稿',
-    moreTitle: '新建 LaTeX',
     extensions: ['.tex'],
     utds: ['org.tug.tex', 'general.tex'],
     mimes: ['application/x-tex', 'text/x-tex'],

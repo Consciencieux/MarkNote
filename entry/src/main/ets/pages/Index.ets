@@ -4,7 +4,7 @@ import { util } from '@kit.ArkTS';
 import {
   HdsNavigation, HdsNavigationTitleMode,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
-  HdsNavigationTitleBarOptions
+  HdsNavigationTitleBarOptions, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { RecentDocument } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
@@ -32,6 +32,9 @@ struct Index {
   @State private theme: string = 'system';
   @State private version: string = '';
   @State private wide: boolean = false;
+  @State private navigationMode: NavigationMode = NavigationMode.Stack;
+  @State private documentExpanded: boolean = false;
+  @State private documentOpen: boolean = false;
   /** 每开一篇加一，文稿页据此重新载入会话。 */
   @State private revision: number = 0;
   private context: common.UIAbilityContext | null = null;
@@ -42,17 +45,14 @@ struct Index {
   private documentMenu: ComponentContent<Object> | null = null;
 
   aboutToAppear(): void {
-    menuBridge.confirmNew = (id: string): void => {
-      this.afterMenu(() => this.confirmSwitch(() => this.startNew(id)));
-    };
     menuBridge.openFile = (): void => {
       this.afterMenu(() => this.confirmSwitch(() => this.pickOpen()));
     };
     menuBridge.openSettings = (): void => {
-      this.afterMenu(() => this.routes.pushPathByName('settings', ''));
-    };
-    menuBridge.closeLibrary = (): void => {
-      this.afterMenu(() => this.leaveDocument());
+      this.afterMenu(() => {
+        this.documentExpanded = false;
+        this.routes.pushPathByName('settings', '');
+      });
     };
     // 文稿页的标题栏菜单由这里打开：锚点 id 是全局的，菜单关闭也由这里统一收。
     menuBridge.openDocumentMenu = (): void => this.openDocumentMenu();
@@ -137,6 +137,7 @@ struct Index {
     this.wide = this.wideQuery.matches;
     this.wideQuery.on('change', (result: mediaquery.MediaQueryResult) => {
       this.wide = result.matches;
+      if (!result.matches) this.documentExpanded = false;
     });
   }
 
@@ -172,15 +173,14 @@ struct Index {
   }
 
   private homeTitle(): HdsNavigationTitleBarOptions {
-    return scrollingTitleBar({
-      title: { mainTitle: '全部' },
-      menu: {
-        value: [
-          this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
-            (): void => this.openHomeMenu())
-        ]
-      }
-    });
+    const content: TitleBarContentOptions = { title: { mainTitle: '全部' } };
+    content.menu = {
+      value: this.documentOpen && this.navigationMode === NavigationMode.Split ? [] : [
+        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
+          (): void => this.openHomeMenu())
+      ]
+    };
+    return scrollingTitleBar(content);
   }
 
   private openHomeMenu(): void {
@@ -193,6 +193,8 @@ struct Index {
 
   private openDocumentMenu(): void {
     const uiContext = this.getUIContext();
+    menuBridge.showCloseDocument = this.wide &&
+      (this.navigationMode === NavigationMode.Split || this.documentExpanded);
     this.documentMenu = new ComponentContent<Object>(uiContext, wrapBuilder(DocumentMenuContent));
     uiContext.getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }, menuMaterialOptions()).catch(() => {
       // The menu stays closed when its anchor is not on screen.
@@ -273,6 +275,7 @@ struct Index {
   /** 会话已经在 DocumentService 里了，这里只推进 revision 让文稿页重新载入。 */
   private presentOpened(): void {
     this.revision++;
+    this.documentOpen = true;
     this.showDocumentRoute();
     const info = DocumentService.current().info;
     if (info.uri.length > 0 && info.persistent) void this.rememberRecent(info.uri, info.name);
@@ -388,12 +391,20 @@ struct Index {
       DocumentView({
         theme: this.theme,
         wide: this.wide,
+        canExpand: this.wide && (this.navigationMode === NavigationMode.Split || this.documentExpanded),
+        expanded: this.documentExpanded,
+        onToggleExpanded: (): void => { this.documentExpanded = !this.documentExpanded; },
         revision: this.revision,
         onLeave: (): void => {
+          this.documentExpanded = false;
+          this.documentOpen = false;
           if (this.routes.size() > 0) this.routes.pop();
         },
         onSaved: (uri: string, name: string): void => {
           void this.rememberRecent(uri, name);
+        },
+        onDeleted: (uri: string): void => {
+          void this.forgetRecent(uri);
         }
       })
     } else {
@@ -419,7 +430,10 @@ struct Index {
       .titleBar(this.homeTitle())
       // HdsNavigationTitleMode.MINI 固定为 56vp（ui-design-hdsnavigation）。
       .titleMode(HdsNavigationTitleMode.MINI)
-      // Leave mode unset: HdsNavigation defaults to NavigationMode.Auto (ui-design-hdsnavigation).
+      // The official multi-device office example changes navigation mode to expand the content page.
+      // https://developer.huawei.com/consumer/cn/doc/best-practices/multi-business-office/
+      .mode(this.documentExpanded ? NavigationMode.Stack : NavigationMode.Auto)
+      .onNavigationModeChange((mode: NavigationMode): void => { this.navigationMode = mode; })
       .hideBackButton(true)
       .bindToScrollable([this.libraryScroller])
       .width('100%')
