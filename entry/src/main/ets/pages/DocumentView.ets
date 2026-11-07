@@ -787,7 +787,7 @@ export struct DocumentView {
       Column() {
         DocumentPreviewView({
           scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
-          kind: this.currentFormat().id, parseRevision: this.parseRevision,
+          kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
           onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
         })
       }
@@ -817,7 +817,7 @@ export struct DocumentView {
         TabContent() {
           DocumentPreviewView({
             scroller: this.previewScroller, theme: this.theme, source: this.source,
-            kind: this.currentFormat().id, parseRevision: this.parseRevision,
+            kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
             onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
           })
         }

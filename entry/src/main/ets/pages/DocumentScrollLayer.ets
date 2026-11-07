@@ -8,6 +8,8 @@ import { PageScrollPolicy } from './PageScrollPolicy';
 export struct DocumentScrollLayer {
   private scrollPolicy: PageScrollPolicy<ScrollAttribute> = new PageScrollPolicy<ScrollAttribute>();
   scroller: Scroller = new Scroller();
+  onViewportChange: (top: number, height: number) => void = (_top: number, _height: number): void => {};
+  @State private viewportHeight: number = 0;
   @BuilderParam content: () => void = this.EmptyContent;
 
   @Builder
@@ -21,6 +23,13 @@ export struct DocumentScrollLayer {
     .align(Alignment.Top)
     .scrollable(ScrollDirection.Vertical)
     .attributeModifier(this.scrollPolicy)
+    .onDidScroll(() => {
+      this.onViewportChange(this.scroller.currentOffset().yOffset, this.viewportHeight);
+    })
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      this.viewportHeight = Number(newArea.height);
+      this.onViewportChange(this.scroller.currentOffset().yOffset, this.viewportHeight);
+    })
     .width('100%')
     .height('100%')
   }

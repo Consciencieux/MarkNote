@@ -1,5 +1,6 @@
 import { webview } from '@kit.ArkWeb';
 import { Heading } from '../model/Document';
+import { loadLocalImages, PreviewImage, sourcesFromPage } from '../document/LocalImages';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
 
 interface ParsedHeading { level: number; text: string; offset: number }
@@ -12,15 +13,27 @@ export struct DocumentPreviewView {
   @Prop @Watch('scheduleUpdate') source: string = '';
   @Prop @Watch('scheduleUpdate') kind: string = 'markdown';
   @Prop @Watch('scheduleUpdate') parseRevision: number = 0;
+  /** 当前文稿 URI。空字符串表示还没有文件，本地图片无法定位。 */
+  @Prop @Watch('scheduleUpdate') documentUri: string = '';
   onOutline: (revision: number, headings: Heading[]) => void = (_revision: number, _headings: Heading[]): void => {};
   scroller: Scroller = new Scroller();
   private controller: webview.WebviewController = new webview.WebviewController();
   private ready: boolean = false;
   private ports: webview.WebMessagePort[] = [];
   private timer: number = -1;
+  private imageGeneration: number = 0;
+  private imageTimer: number = -1;
+  private imageBusy: boolean = false;
+  private imageTop: number = 0;
+  private imageHeight: number = 0;
+  private failedImages: string[] = [];
+  private publishedUri: string = '';
+  private documentGeneration: number = 0;
 
   aboutToDisappear(): void {
+    this.imageGeneration++;
     if (this.timer >= 0) clearTimeout(this.timer);
+    if (this.imageTimer >= 0) clearTimeout(this.imageTimer);
     this.timer = -1;
     this.ready = false;
     if (this.ports.length > 1) {
@@ -58,11 +71,63 @@ export struct DocumentPreviewView {
   }
 
   private scheduleUpdate(): void {
+    this.imageGeneration++;
+    this.failedImages = [];
     if (this.timer >= 0) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = -1;
-      if (this.ready) this.sendUpdate();
+      if (this.ready) this.publish();
     }, 120);
+  }
+
+  private publish(): void {
+    if (this.documentUri !== this.publishedUri) {
+      this.publishedUri = this.documentUri;
+      this.documentGeneration++;
+    }
+    this.sendUpdate();
+    this.scheduleImages();
+  }
+
+  private scheduleImages(): void {
+    this.imageGeneration++;
+    if (this.imageTimer >= 0) clearTimeout(this.imageTimer);
+    this.imageTimer = setTimeout(() => {
+      this.imageTimer = -1;
+      void this.refreshImages();
+    }, 150);
+  }
+
+  /** 根据原生 Scroll 的可视范围逐张读取，避免一次持有整篇文稿的图片。 */
+  private async refreshImages(): Promise<void> {
+    if (this.imageBusy || !this.ready || this.kind !== 'markdown' || this.documentUri.length === 0 ||
+      this.imageHeight <= 0) return;
+    this.imageBusy = true;
+    const generation = this.imageGeneration;
+    const source = this.source;
+    const uri = this.documentUri;
+    try {
+      const raw = await this.controller.runJavaScript('JSON.stringify(window.MarknotePreview.imageWindow(' +
+        JSON.stringify(this.imageTop) + ',' + JSON.stringify(this.imageHeight) + '))');
+      if (generation !== this.imageGeneration || source !== this.source || uri !== this.documentUri) return;
+      const pending = sourcesFromPage(raw).filter((key: string): boolean => this.failedImages.indexOf(key) < 0);
+      if (pending.length === 0) return;
+      const key = pending[0];
+      const images: PreviewImage[] = await loadLocalImages(uri, [key]);
+      if (generation !== this.imageGeneration || source !== this.source || uri !== this.documentUri) return;
+      if (images.length === 0) {
+        this.failedImages.push(key);
+      } else {
+        await this.controller.runJavaScript('window.MarknotePreview.setImage(' + JSON.stringify(key) + ',' +
+          JSON.stringify(images[0].dataUrl) + ')');
+      }
+      this.scheduleImages();
+    } catch {
+      // 页面已释放或图片不可用时，仍保留正文和图片占位。
+    } finally {
+      this.imageBusy = false;
+      if (generation !== this.imageGeneration && this.imageTimer < 0 && this.ready) this.scheduleImages();
+    }
   }
 
   private sendUpdate(): void {
@@ -70,7 +135,8 @@ export struct DocumentPreviewView {
       kind: this.kind,
       source: this.source,
       theme: this.theme,
-      revision: this.parseRevision
+      revision: this.parseRevision,
+      documentId: this.documentGeneration
     }) + ')';
     try {
       this.controller.runJavaScript(command);
@@ -96,7 +162,7 @@ export struct DocumentPreviewView {
       .onPageEnd(() => {
         this.ready = true;
         this.connectResultPort();
-        this.sendUpdate();
+        this.publish();
       })
       .width('100%')
       // 《Web组件大小自适应页面内容布局》：Web 按内容撑高，滚动交给外层 Scroll；
@@ -106,7 +172,11 @@ export struct DocumentPreviewView {
   }
 
   build() {
-    DocumentScrollLayer({ scroller: this.scroller }) {
+    DocumentScrollLayer({ scroller: this.scroller, onViewportChange: (top: number, height: number): void => {
+      this.imageTop = top;
+      this.imageHeight = height;
+      this.scheduleImages();
+    } }) {
       this.PreviewWeb()
     }
   }
