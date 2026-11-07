@@ -22,7 +22,7 @@ MarkNote 可以新建文稿，通过系统文件选择器或文件管理器打�
 - [功能目录](docs/FEATURES.md)：已实现的功能、限制和相关代码。
 - [架构](docs/ARCHITECTURE.md)：模块职责与数据流。
 - [仓库结构](docs/STRUCTURE.md)：目录、文件及常见改动的位置。
-- [构建与贡献](CONTRIBUTING.md)：开发环境、构建和验证方法。
+- [构建与贡献](CONTRIBUTING.md)：开发环境、构建验证和提交更改。
 - [隐私说明](docs/PRIVACY.md)与[上架准备](docs/STORE_RELEASE.md)：数据行为及发布前需要核对的事项。
 - [第三方组件与许可证](third_party/README.md)：依赖、许可证和声明生成方式。
 - [项目开发约定](AGENTS.md)：修改项目时需要遵守的边界。

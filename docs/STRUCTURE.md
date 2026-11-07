@@ -27,7 +27,7 @@ marknote/
 │   └── upstream-licenses/            按依赖版本核验的上游许可证及声明
 ├── .github/workflows/                GitHub 自动化流程
 ├── README.md                         产品概览
-├── CONTRIBUTING.md                   构建与验证
+├── CONTRIBUTING.md                   构建、验证与提交更改
 ├── AGENTS.md                         项目开发约定
 ├── build-profile.example.json5       构建配置模板
 ├── hvigorfile.ts                     应用构建入口
