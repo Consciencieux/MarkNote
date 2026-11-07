@@ -21,6 +21,7 @@ import { documentBridge } from './DocumentBridge';
 import { scrollingTitleBar } from './HdsMaterialStyles';
 import { searchFieldMaterial } from './ImmersiveMaterials';
 import { LocalState } from '../storage/LocalState';
+import { DocumentFiles } from '../storage/DocumentFiles';
 
 /**
  * Tab positions on the document page. Preview comes first so a document opens in reading
@@ -62,6 +63,7 @@ export struct DocumentView {
   onLeave: () => void = (): void => {};
   /** 具有持久授权的文件保存成功后通知首页更新最近文稿。 */
   onSaved: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
+  onDeleted: (uri: string) => void = (_uri: string): void => {};
 
   private tabContentPolicy: PageTabContentPolicy = new PageTabContentPolicy();
   private tabsPolicy: PageTabsPolicy = new PageTabsPolicy();
@@ -79,6 +81,7 @@ export struct DocumentView {
   @State private headings: Heading[] = [];
   @State private parseRevision: number = 0;
   @State private saving: boolean = false;
+  @State private deleting: boolean = false;
   @State private searchVisible: boolean = false;
   @State private query: string = '';
   @State private replacement: string = '';
@@ -122,6 +125,12 @@ export struct DocumentView {
     };
     menuBridge.share = (): void => {
       menuBridge.dismiss((): void => { void this.shareDocument(); });
+    };
+    menuBridge.save = (): void => {
+      menuBridge.dismiss((): void => { void this.saveFile(false); });
+    };
+    menuBridge.deleteDocument = (): void => {
+      menuBridge.dismiss((): void => this.confirmDelete());
     };
     menuBridge.find = (): void => {
       menuBridge.dismiss((): void => {
@@ -200,6 +209,8 @@ export struct DocumentView {
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     menuBridge.saveAs = (): void => {};
     menuBridge.share = (): void => {};
+    menuBridge.save = (): void => {};
+    menuBridge.deleteDocument = (): void => {};
     menuBridge.find = (): void => {};
     menuBridge.closeDocument = (): void => {};
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
@@ -241,19 +252,27 @@ export struct DocumentView {
 
   private documentTitle(): HdsNavigationTitleBarOptions {
     const heading: HdsNavigationTitle = { mainTitle: this.title };
+    const more = this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
+      (): void => this.openDocumentMenu());
+    const actions: HdsNavigationMenuItemOptions[] = this.inEditTab() ? [
+      this.menuIcon('撤销', $r('sys.symbol.undo'), 'marknote-undo',
+        (): void => this.undo(), this.undoAvailable),
+      this.menuIcon('重做', $r('sys.symbol.redo'), 'marknote-redo',
+        (): void => this.redo(), this.redoAvailable),
+      more,
+      this.menuIcon('保存', $r('sys.symbol.checkmark'), 'marknote-save',
+        (): void => { void this.saveFile(false); })
+    ] : [
+      this.menuIcon('分享', $r('sys.symbol.share'), 'marknote-share',
+        (): void => { void this.shareDocument(); }),
+      this.menuIcon('收藏', $r('sys.symbol.star'), 'marknote-favorite', (): void => {}, false),
+      this.menuIcon('删除', $r('sys.symbol.trash'), 'marknote-delete',
+        (): void => this.confirmDelete(), this.info.uri.length > 0 && !this.deleting),
+      more
+    ];
     const menu: HdsNavigationMenuContentOptions = {
       maxCount: 4,
-      value: [
-        // Keep the document actions in one navigation menu; find remains in the overflow menu.
-        this.menuIcon('撤销', $r('sys.symbol.undo'), 'marknote-undo',
-          (): void => this.undo(), this.undoAvailable),
-        this.menuIcon('重做', $r('sys.symbol.redo'), 'marknote-redo',
-          (): void => this.redo(), this.redoAvailable),
-        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
-          (): void => this.openDocumentMenu()),
-        this.menuIcon('保存', $r('sys.symbol.checkmark'), 'marknote-save',
-          (): void => { void this.saveFile(false); })
-      ]
+      value: actions
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
     content.backIcon = {
@@ -279,7 +298,61 @@ export struct DocumentView {
   }
 
   private openDocumentMenu(): void {
+    menuBridge.showDocumentActions = this.inEditTab();
+    menuBridge.canDeleteDocument = this.info.uri.length > 0 && !this.deleting;
     menuBridge.openDocumentMenu();
+  }
+
+  private confirmDelete(): void {
+    if (this.saving || this.deleting || this.info.uri.length === 0) return;
+    const uri = this.info.uri;
+    const confirmedSource = this.source;
+    this.getUIContext().showAlertDialog({
+      title: '删除文件',
+      message: this.isDirty() ?
+        '将文件移入回收站？未保存的修改将被丢弃。' : '将文件移入回收站？',
+      buttons: [
+        { value: '取消', action: (): void => {} },
+        { value: '删除', action: (): void => { void this.deleteDocument(uri, confirmedSource); } }
+      ]
+    });
+  }
+
+  private async deleteDocument(uri: string, confirmedSource: string): Promise<void> {
+    const session = DocumentService.current();
+    if (this.deleting || this.saving || !session.editing || session.info.uri !== uri) return;
+    if (this.source !== confirmedSource) {
+      this.confirmDelete();
+      return;
+    }
+    const sourceBefore = this.source;
+    this.deleting = true;
+    try {
+      await DocumentFiles.moveToTrash(session.info);
+      this.onDeleted(uri);
+      if (DocumentService.current() === session && session.editing && session.info.uri === uri) {
+        if (this.source !== sourceBefore) {
+          // An edit arriving while the file manager was working becomes an unsaved document.
+          session.info.uri = '';
+          session.info.writable = false;
+          session.info.persistent = false;
+          session.info.fingerprint = '';
+          session.savedText = this.source + '\n';
+          this.savedText = session.savedText;
+          this.scheduleRecovery();
+          this.toast('文件已移入回收站，新修改请保存为新文件');
+        } else {
+          this.clearRecovery();
+          DocumentService.close();
+          this.onLeave();
+          this.toast('文件已移入回收站');
+        }
+      }
+    } catch (error) {
+      this.toast('删除失败：' + String(error));
+    } finally {
+      this.deleting = false;
+    }
   }
 
   private currentFormat(): DocumentFormat {
@@ -305,6 +378,7 @@ export struct DocumentView {
    * 草稿副本只用于崩溃兜底，不再作为「未保存」的常驻入口。
    */
   private async saveBeforeLeaving(): Promise<boolean> {
+    if (this.deleting) return false;
     if (!DocumentService.current().editing || !this.isDirty()) return true;
     return await this.askSaveOrDiscard();
   }
@@ -380,7 +454,7 @@ export struct DocumentView {
   }
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
-    if (!this.context || this.saving) return false;
+    if (!this.context || this.saving || this.deleting) return false;
     if (!asNewFile && this.info.uri.length > 0 && !this.info.writable) {
       this.offerSaveCopy('原文件无法写入，请另存为其他文件。');
       return false;

@@ -402,6 +402,9 @@ struct Index {
         },
         onSaved: (uri: string, name: string): void => {
           void this.rememberRecent(uri, name);
+        },
+        onDeleted: (uri: string): void => {
+          void this.forgetRecent(uri);
         }
       })
     } else {

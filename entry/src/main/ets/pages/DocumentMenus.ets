@@ -6,6 +6,10 @@ export class MenuBridge {
   openFile: () => void = (): void => {};
   saveAs: () => void = (): void => {};
   share: () => void = (): void => {};
+  deleteDocument: () => void = (): void => {};
+  save: () => void = (): void => {};
+  showDocumentActions: boolean = false;
+  canDeleteDocument: boolean = false;
   openSettings: () => void = (): void => {};
   find: () => void = (): void => {};
   closeDocument: () => void = (): void => {};
@@ -34,8 +38,7 @@ export function HomeMenuContent() {
 }
 
 /**
- * 文稿页标题栏的四宫格菜单：打开、另存为、分享、查找和设置。
- * 同样把「关于」留给设置页，一级菜单不放。
+ * 使用 MenuItemGroup 按操作类型分组；具体项目和排序由应用功能决定。
  */
 @Builder
 export function DocumentMenuContent() {
@@ -45,8 +48,16 @@ export function DocumentMenuContent() {
         .onClick(() => menuBridge.openFile())
       MenuItem({ content: '另存为' })
         .onClick(() => menuBridge.saveAs())
-      MenuItem({ content: '分享' })
-        .onClick(() => menuBridge.share())
+      if (!menuBridge.showDocumentActions) {
+        MenuItem({ content: '保存' })
+          .onClick(() => menuBridge.save())
+      }
+      if (menuBridge.showDocumentActions) {
+        MenuItem({ content: '分享' })
+          .onClick(() => menuBridge.share())
+        MenuItem({ content: '收藏' })
+          .enabled(false)
+      }
     }
     MenuItemGroup() {
       MenuItem({ content: '查找' })
@@ -54,6 +65,13 @@ export function DocumentMenuContent() {
       if (menuBridge.showCloseDocument) {
         MenuItem({ content: '关闭文稿' })
           .onClick(() => menuBridge.closeDocument())
+      }
+    }
+    if (menuBridge.showDocumentActions) {
+      MenuItemGroup() {
+        MenuItem({ content: '删除' })
+          .enabled(menuBridge.canDeleteDocument)
+          .onClick(() => menuBridge.deleteDocument())
       }
     }
     MenuItemGroup() {
