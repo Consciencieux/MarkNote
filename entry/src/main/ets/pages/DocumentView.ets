@@ -54,6 +54,9 @@ export struct DocumentView {
   // 由首页传入。
   @Prop theme: string = 'system';
   @Prop @Watch('onWideChange') wide: boolean = false;
+  @Prop canExpand: boolean = false;
+  @Prop expanded: boolean = false;
+  onToggleExpanded: () => void = (): void => {};
   /** 每打开一篇就加一，用来在路由已经存在时重新载入会话。 */
   @Prop @Watch('loadSession') revision: number = 0;
   onLeave: () => void = (): void => {};
@@ -129,6 +132,7 @@ export struct DocumentView {
         this.matchCount = TextSearch.count(this.source, this.query);
       });
     };
+    menuBridge.closeDocument = (): void => menuBridge.dismiss((): void => this.requestLeave());
     // 首页在换篇、返回列表前都要先问这里能否离开。
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => this.saveBeforeLeaving();
     documentBridge.requestLeave = (): void => this.requestLeave();
@@ -197,6 +201,7 @@ export struct DocumentView {
     menuBridge.saveAs = (): void => {};
     menuBridge.share = (): void => {};
     menuBridge.find = (): void => {};
+    menuBridge.closeDocument = (): void => {};
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
     documentBridge.requestLeave = (): void => {};
   }
@@ -251,6 +256,16 @@ export struct DocumentView {
       ]
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
+    content.backIcon = {
+      label: this.canExpand ? (this.expanded ? '恢复分栏' : '放大文稿') : '返回',
+      icon: this.canExpand ?
+        (this.expanded ? $r('sys.symbol.arrow_down_right_and_arrow_up_left') :
+          $r('sys.symbol.arrow_up_left_and_arrow_down_right')) : $r('sys.symbol.chevron_backward'),
+      action: (): void => {
+        if (this.canExpand) this.onToggleExpanded();
+        else this.requestLeave();
+      }
+    };
     if (this.searchVisible && this.selectedTab === TAB_EDIT) {
       // 搜索栏固定在导航标题下方，由 HDS 管理布局和组件安全区。
       // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
@@ -783,7 +798,7 @@ export struct DocumentView {
 
   @Builder
   private SplitPage() {
-    RowSplit() {
+    Row() {
       Column() {
         DocumentPreviewView({
           scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
@@ -791,13 +806,17 @@ export struct DocumentView {
           onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
         })
       }
-        .width('50%')
+        .layoutWeight(1)
         .height('100%')
+      Divider().vertical(true).height('100%')
       Column() { this.EditPage(this.splitEditScroller, this.splitCursor, 'marknote-split-editor') }
-        .width('50%')
+        .layoutWeight(1)
         .height('100%')
     }
-    // RowSplit (ts-container-rowsplit) supplies the divider; resizeable keeps its documented false default.
+    // RowSplit fixes divider positions after initialization; Row weights adapt to window resizing.
+    // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-container-rowsplit
+    // Permit both scroll surfaces to paint into the titlebar safe area.
+    .clip(false)
     .height('100%')
     .width('100%')
   }

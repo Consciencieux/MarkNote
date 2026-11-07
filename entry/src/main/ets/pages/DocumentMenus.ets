@@ -8,6 +8,8 @@ export class MenuBridge {
   share: () => void = (): void => {};
   openSettings: () => void = (): void => {};
   find: () => void = (): void => {};
+  closeDocument: () => void = (): void => {};
+  showCloseDocument: boolean = false;
   /** 打开文稿页标题栏的菜单；锚点 id 由文稿页的标题栏提供。 */
   openDocumentMenu: () => void = (): void => {};
   /** 先收起已打开的菜单再执行动作，首页提供实现。 */
@@ -49,6 +51,10 @@ export function DocumentMenuContent() {
     MenuItemGroup() {
       MenuItem({ content: '查找' })
         .onClick(() => menuBridge.find())
+      if (menuBridge.showCloseDocument) {
+        MenuItem({ content: '关闭文稿' })
+          .onClick(() => menuBridge.closeDocument())
+      }
     }
     MenuItemGroup() {
       MenuItem({ content: '设置' })
