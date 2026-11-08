@@ -9,6 +9,20 @@ export function searchFieldMaterial(): uiMaterial.Material | undefined {
     new uiMaterial.ImmersiveMaterial({ style: uiMaterial.ImmersiveStyle.THIN, colorInvert: true }) : undefined;
 }
 
+/**
+ * 分段按钮使用《SegmentButtonV2》示例中的系统材质；不支持时使用组件默认背板。
+ * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ohos-arkui-advanced-segmentbuttonv2
+ */
+export function segmentButtonMaterial(): uiMaterial.Material | undefined {
+  return uiMaterial.isImmersiveMaterialSupported() ?
+    new uiMaterial.ImmersiveMaterial({
+      style: uiMaterial.ImmersiveStyle.ULTRA_THIN,
+      colorInvert: true,
+      interactive: true,
+      lightEffect: {}
+    }) : undefined;
+}
+
 export function formatChipMaterial(): uiMaterial.Material | undefined {
   return uiMaterial.isImmersiveMaterialSupported() ?
     new uiMaterial.ImmersiveMaterial({

@@ -36,6 +36,10 @@ export function copyInfo(source: DocumentInfo): DocumentInfo {
 export class RecentDocument {
   uri: string = '';
   name: string = '';
+  openedAt: number = 0;
+  modifiedAt: number = 0;
+  favorite: boolean = false;
+  recent: boolean = true;
 
   constructor(uri: string = '', name: string = '') {
     this.uri = uri;

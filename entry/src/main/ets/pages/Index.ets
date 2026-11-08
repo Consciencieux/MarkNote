@@ -1,5 +1,7 @@
 import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
-import { ComponentContent, mediaquery } from '@kit.ArkUI';
+import {
+  ColorMetrics, ComponentContent, mediaquery, SegmentButtonV2Items, TabSegmentButtonV2
+} from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import {
   HdsNavigation, HdsNavigationTitleMode,
@@ -8,11 +10,13 @@ import {
 } from '@kit.UIDesignKit';
 import { RecentDocument } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
+import { sortRecentDocuments } from '../document/RecentOrder';
 import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
 import { HomeView } from './HomeView';
 import { DocumentView } from './DocumentView';
 import { SettingsPage } from './SettingsPage';
 import { scrollingTitleBar } from './HdsMaterialStyles';
+import { segmentButtonMaterial } from './ImmersiveMaterials';
 import { menuMaterialOptions } from './MenuMaterialOptions';
 import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
@@ -29,12 +33,19 @@ struct Index {
   @State private legalText: string = '';
   @State private projectLicenseText: string = '';
   @State private recents: RecentDocument[] = [];
+  @State private sortOrder: string = 'modified';
   @State private theme: string = 'system';
   @State private version: string = '';
   @State private wide: boolean = false;
   @State private navigationMode: NavigationMode = NavigationMode.Stack;
   @State private documentExpanded: boolean = false;
   @State private documentOpen: boolean = false;
+  /** 首页分段按钮：0 是全部，1 是收藏。 */
+  @State private librarySegment: number = 0;
+  private readonly librarySegmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+    { text: '全部' }, { text: '收藏' }
+  ]);
+  private readonly librarySegmentMaterial = segmentButtonMaterial();
   /** 每开一篇加一，文稿页据此重新载入会话。 */
   @State private revision: number = 0;
   private context: common.UIAbilityContext | null = null;
@@ -43,6 +54,7 @@ struct Index {
   private wideQuery: mediaquery.MediaQueryListener | null = null;
   private homeMenu: ComponentContent<Object> | null = null;
   private documentMenu: ComponentContent<Object> | null = null;
+  private recentTask: Promise<void> = Promise.resolve();
 
   aboutToAppear(): void {
     menuBridge.openFile = (): void => {
@@ -52,6 +64,12 @@ struct Index {
       this.afterMenu(() => {
         this.documentExpanded = false;
         this.routes.pushPathByName('settings', '');
+      });
+    };
+    menuBridge.setSortOrder = (order: string): void => {
+      this.afterMenu(() => {
+        this.sortOrder = order;
+        if (this.context) void LocalState.writeSort(this.context, order).catch(() => this.toast('排序方式保存失败'));
       });
     };
     // 文稿页的标题栏菜单由这里打开：锚点 id 是全局的，菜单关闭也由这里统一收。
@@ -90,6 +108,8 @@ struct Index {
     this.readVersion();
     try {
       this.recents = await LocalState.readRecent(this.context);
+      this.sortOrder = await LocalState.readSort(this.context);
+      void this.refreshRecentTimes(this.recents);
       this.changeTheme(await LocalState.readTheme(this.context), false);
     } catch {
       this.toast('读取设置失败，已使用系统默认值');
@@ -172,10 +192,47 @@ struct Index {
     return item;
   }
 
+  @Builder
+  private HomeSegment() {
+    // 标题栏自定义区域按官方示例给两侧操作保留空间。
+    // 150vp 是示例中的双选项宽度上限，空间不足时随容器收缩。
+    Row() {
+      Blank().width(40)
+      Blank().width($r('sys.float.padding_level4'))
+      Row() {
+        Row() {
+          TabSegmentButtonV2({
+            items: this.librarySegmentItems,
+            selectedIndex: this.librarySegment,
+            $selectedIndex: (index: number): void => { this.librarySegment = index; },
+            itemSelectedFontColor: ColorMetrics.resourceColor($r('sys.color.font_emphasize')),
+            // 默认选中背景与强调文字在深色模式下对比不足；使用随主题变化的系统强调背景。
+            // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ohos-arkui-advanced-segmentbuttonv2/
+            itemSelectedBackgroundColor: ColorMetrics.resourceColor($r('sys.color.comp_emphasize_tertiary')),
+            backgroundSystemMaterial: this.librarySegmentMaterial
+          })
+        }
+        .width('100%')
+        .constraintSize({ maxWidth: 150 })
+      }
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      Blank().width($r('sys.float.padding_level4'))
+      Blank().width(40)
+    }
+    .width('100%')
+    .padding({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
+    .hitTestBehavior(HitTestMode.Transparent)
+  }
+
   private homeTitle(): HdsNavigationTitleBarOptions {
-    const content: TitleBarContentOptions = { title: { mainTitle: '全部' } };
+    // 《设置自定义区域》要求自定义节点不要挡住标题文字和菜单。
+    const content: TitleBarContentOptions = {
+      title: { mainTitle: '' },
+      stackBuilder: (): void => { this.HomeSegment(); }
+    };
     content.menu = {
-      value: this.documentOpen && this.navigationMode === NavigationMode.Split ? [] : [
+      value: [
         this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
           (): void => this.openHomeMenu())
       ]
@@ -185,6 +242,7 @@ struct Index {
 
   private openHomeMenu(): void {
     const uiContext = this.getUIContext();
+    menuBridge.sortOrder = this.sortOrder;
     this.homeMenu = new ComponentContent<Object>(uiContext, wrapBuilder(HomeMenuContent));
     uiContext.getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }, menuMaterialOptions()).catch(() => {
       // The menu stays closed when its anchor is not on screen.
@@ -278,7 +336,7 @@ struct Index {
     this.documentOpen = true;
     this.showDocumentRoute();
     const info = DocumentService.current().info;
-    if (info.uri.length > 0 && info.persistent) void this.rememberRecent(info.uri, info.name);
+    if (info.uri.length > 0 && info.persistent) this.rememberRecent(info.uri, info.name, true);
   }
 
   private async startNew(kind: string): Promise<void> {
@@ -308,9 +366,11 @@ struct Index {
       this.presentOpened();
     } catch {
       // 华为《固定样式弹出框》：需要用户决定后续操作时使用警告弹窗。
+      const fromFavorites = this.librarySegment === 1 && item.favorite === true;
       this.getUIContext().showAlertDialog({
         title: '无法打开文稿',
-        message: '是否从最近文稿中移除此记录？移除记录不会删除文件。',
+        message: fromFavorites ? '是否取消收藏？文件不会被删除。' :
+          '是否从最近文稿中移除此记录？移除记录不会删除文件。',
         buttons: [
           {
             value: '保留',
@@ -319,7 +379,10 @@ struct Index {
           },
           {
             value: '移除',
-            action: (): void => { void this.forgetRecent(item.uri); }
+            action: (): void => {
+              if (fromFavorites) this.toggleFavorite(item.uri, item.name);
+              else void this.forgetRecent(item.uri);
+            }
           }
         ]
       });
@@ -336,43 +399,99 @@ struct Index {
     }
   }
 
-  private async forgetRecent(uri: string): Promise<void> {
+  private async forgetRecent(uri: string, deleted: boolean = false): Promise<void> {
     if (!this.context || uri.length === 0) return;
     try {
-      this.recents = await LocalState.removeRecent(this.context, uri);
-      void DocumentFiles.release(uri);
+      const context = this.context;
+      this.recentTask = this.recentTask.then(async (): Promise<void> => {
+        this.recents = await LocalState.removeRecent(context, uri, this.recents, deleted);
+        const retained = this.recents.some((item: RecentDocument): boolean => item.uri === uri);
+        if (!retained && (!this.documentOpen || DocumentService.current().info.uri !== uri)) {
+          await DocumentFiles.release(uri);
+        }
+      });
+      await this.recentTask;
     } catch {
+      this.recentTask = Promise.resolve();
       this.toast('最近文稿列表未能更新');
     }
   }
 
-  private async rememberRecent(uri: string, name: string): Promise<void> {
+  private rememberRecent(uri: string, name: string, opened: boolean): void {
     if (!this.context || uri.length === 0) return;
-    const previous = this.recents;
-    try {
-      const items = await LocalState.addRecent(this.context, uri, name);
-      this.recents = items;
-      for (let index = 0; index < previous.length; index++) {
-        const oldUri = previous[index].uri;
-        let stillListed = false;
-        for (let next = 0; next < items.length; next++) {
-          if (items[next].uri === oldUri) stillListed = true;
-        }
-        if (!stillListed) void DocumentFiles.release(oldUri);
-      }
-    } catch {
+    const context = this.context;
+    this.recentTask = this.recentTask.then(async (): Promise<void> => {
+      const modifiedAt = await DocumentFiles.recentModifiedAt(uri);
+      this.recents = await LocalState.addRecent(context, uri, name, modifiedAt, opened, this.recents);
+    }).catch((): void => {
       this.toast('最近文稿列表未能更新');
+    });
+  }
+
+  private toggleFavorite(uri: string, name: string): void {
+    if (!this.context || uri.length === 0) return;
+    const context = this.context;
+    this.recentTask = this.recentTask.then(async (): Promise<void> => {
+      const modifiedAt = await DocumentFiles.recentModifiedAt(uri);
+      this.recents = await LocalState.toggleFavorite(context, uri, name, modifiedAt, this.recents);
+      const retained = this.recents.some((item: RecentDocument): boolean => item.uri === uri);
+      if (!retained && (!this.documentOpen || DocumentService.current().info.uri !== uri)) {
+        await DocumentFiles.release(uri);
+      }
+    }).catch((): void => this.toast('收藏状态保存失败'));
+  }
+
+  private async refreshRecentTimes(items: RecentDocument[]): Promise<void> {
+    const refreshed: RecentDocument[] = [];
+    for (const item of items) {
+      const copy = new RecentDocument(item.uri, item.name);
+      copy.openedAt = item.openedAt || 0;
+      copy.modifiedAt = await DocumentFiles.recentModifiedAt(item.uri);
+      copy.favorite = item.favorite === true;
+      copy.recent = item.recent !== false;
+      refreshed.push(copy);
     }
+    const merged: RecentDocument[] = [];
+    for (const current of this.recents) {
+      const index = items.findIndex((item: RecentDocument): boolean => item.uri === current.uri);
+      if (index >= 0 && items[index].name === current.name &&
+        (items[index].openedAt || 0) === (current.openedAt || 0) &&
+        (items[index].modifiedAt || 0) === (current.modifiedAt || 0) &&
+        (items[index].favorite === true) === (current.favorite === true) &&
+        (items[index].recent !== false) === (current.recent !== false)) {
+        merged.push(refreshed[index]);
+      } else {
+        merged.push(current);
+      }
+    }
+    this.recents = merged;
   }
 
   @Builder
   private LibraryPage() {
     HomeView({
-      recents: this.recents,
+      title: this.librarySegment === 1 ? '收藏' : '全部',
+      favoritesOnly: this.librarySegment === 1,
+      recents: sortRecentDocuments(this.recents.filter((item: RecentDocument): boolean =>
+        this.librarySegment === 1 ? item.favorite === true : item.recent !== false), this.sortOrder) as RecentDocument[],
       scroller: this.libraryScroller,
       onNew: (id: string): void => { this.confirmSwitch(() => this.startNew(id)); },
       onOpen: (): void => this.confirmSwitch(() => this.pickOpen()),
-      onRecent: (item: RecentDocument): void => this.openRecent(item)
+      onRecent: (item: RecentDocument): void => this.openRecent(item),
+      onRemoveRecent: (item: RecentDocument): void => {
+        if (this.librarySegment === 1) {
+          this.toggleFavorite(item.uri, item.name);
+          return;
+        }
+        this.getUIContext().showAlertDialog({
+          title: '移除记录',
+          message: '从最近文稿中移除“' + item.name + '”？文件不会被删除。',
+          buttons: [
+            { value: '取消', action: (): void => {} },
+            { value: '移除', action: (): void => { void this.forgetRecent(item.uri); } }
+          ]
+        });
+      }
     })
   }
 
@@ -393,19 +512,32 @@ struct Index {
         wide: this.wide,
         canExpand: this.wide && (this.navigationMode === NavigationMode.Split || this.documentExpanded),
         expanded: this.documentExpanded,
+        favorite: this.recents.some((item: RecentDocument): boolean =>
+          item.uri === DocumentService.current().info.uri && item.favorite === true),
         onToggleExpanded: (): void => { this.documentExpanded = !this.documentExpanded; },
         revision: this.revision,
         onLeave: (): void => {
+          const closed = DocumentService.current().info;
           this.documentExpanded = false;
           this.documentOpen = false;
           if (this.routes.size() > 0) this.routes.pop();
+          // A removed record may still be in use by the open document until it is closed.
+          if (closed.persistent && closed.uri.length > 0) {
+            const uri = closed.uri;
+            void this.recentTask.then((): void => {
+              const listed = this.recents.some((item: RecentDocument): boolean => item.uri === uri);
+              const inUse = this.documentOpen && DocumentService.current().info.uri === uri;
+              if (!listed && !inUse) void DocumentFiles.release(uri);
+            });
+          }
         },
         onSaved: (uri: string, name: string): void => {
-          void this.rememberRecent(uri, name);
+          this.rememberRecent(uri, name, false);
         },
         onDeleted: (uri: string): void => {
-          void this.forgetRecent(uri);
-        }
+          void this.forgetRecent(uri, true);
+        },
+        onToggleFavorite: (uri: string, name: string): void => this.toggleFavorite(uri, name)
       })
     } else {
       SettingsPage({

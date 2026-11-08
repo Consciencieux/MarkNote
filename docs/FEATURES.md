@@ -7,7 +7,8 @@
 | 功能 | 当前行为与限制 | 主要代码 |
 | --- | --- | --- |
 | 新建与打开 | 首页可新建 Markdown、纯文本、SVG 和 LaTeX 文稿，也可通过系统选择器打开文件。文件管理器可以通过系统文件关联打开受支持的文稿，默认进入预览。格式优先按文件后缀识别，其次使用系统声明的类型 | [HomeView.ets](../entry/src/main/ets/pages/HomeView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[module.json5](../entry/src/main/module.json5) |
-| 最近文稿 | 本机最多保存 12 条记录，只收录已经持久化授权的文件。临时授权的文件可以查看和编辑，但不加入最近文稿。再次打开失败时可选择保留或移除记录；移除记录不会删除文件 | [LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
+| 最近文稿 | 记录已获得持久化授权的文件。首页“全部”显示这些记录，不包含从未打开的文件。首页更多菜单支持按修改时间、最近打开、名称或类型排序，双栏打开文稿时仍可通过首页更多菜单调整列表排序。默认按文件修改时间倒序；无法获取修改时间的文件排在后面。打开文件不会改变修改时间，保存后刷新文件时间。临时授权文件不加入列表；长按或再次打开失败时可以移除记录，移除记录不会删除文件，收藏的文件仍保留在收藏中 | [LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)、[RecentOrder.ts](../entry/src/main/ets/document/RecentOrder.ts)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
+| 收藏 | 预览和大纲标题栏、编辑和分栏的更多菜单可收藏或取消收藏具有持久授权的文件；首页“收藏”显示本机收藏。未保存或无法持久授权的文稿需要先保存或另存为。删除原文件后同步移除收藏；收藏只记录文件 URI，不复制文件 | [Index.ets](../entry/src/main/ets/pages/Index.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
 | 保存与另存为 | 有写入授权时可保存到原 URI；原文件无法写入或保存失败时可另存为。另存成功后继续编辑新文件；授权未持久化时保存后会提示。写入前检查文件是否被外部修改，发现冲突时拒绝覆盖。保存后重新读取并校验内容；文件提供方不保证写入操作具有原子性 | [DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
 | 分享 | 预览和大纲标题栏、编辑和分栏的更多菜单可通过系统分享面板分享当前编辑内容，包括尚未保存的修改；分享文件为 UTF-8 临时副本，不修改原文件 | [DocumentShare.ets](../entry/src/main/ets/document/DocumentShare.ets)、[DocumentMenus.ets](../entry/src/main/ets/pages/DocumentMenus.ets) |
 | 删除文件 | 已保存文稿可以在预览、大纲标题栏或编辑、分栏的更多菜单中请求移入系统回收站；删除前确认，未保存修改会明确提示。原文件发生外部变化、文件提供方不支持或授权不足时不删除，保留当前文稿及草稿；尚未保存为文件的文稿不能删除 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
@@ -46,8 +47,6 @@
 “开源许可证”页分别提供本项目和第三方许可证全文。“关于”页显示应用名称、版本，提供离线使用帮助和 GitHub 项目主页入口；主页交给系统浏览器打开。
 
 标题栏使用 HDS 导航组件，菜单使用系统菜单组件。文稿标题栏显示文件名，不显示行数、字符数或保存状态。菜单在高、中材质等级使用沉浸材质，在低材质等级或能力查询失败时关闭菜单材质并使用系统默认背板，以避免菜单内容与正文重叠。
-
-预览和大纲标题栏的收藏入口暂不可用，不保存收藏记录；编辑和分栏的更多菜单也保留该禁用入口。
 
 主要代码：[SettingsView.ets](../entry/src/main/ets/pages/SettingsView.ets)、[SettingsDetail.ets](../entry/src/main/ets/pages/SettingsDetail.ets)、[SettingsPage.ets](../entry/src/main/ets/pages/SettingsPage.ets)、[MenuMaterialOptions.ets](../entry/src/main/ets/pages/MenuMaterialOptions.ets)。
 
