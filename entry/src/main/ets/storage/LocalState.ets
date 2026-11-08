@@ -3,9 +3,11 @@ import { fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { preferences } from '@kit.ArkData';
 import { RecentDocument, RecoveryData } from '../model/Document';
+import { RecentEntry, removeRecentDocument, toggleFavoriteDocument, updateRecentDocument } from '../document/RecentOrder';
 
 const RECENT_KEY: string = 'recent_files';
 const THEME_KEY: string = 'color_choice';
+const SORT_KEY: string = 'recent_sort';
 const DRAFT: string = '/unsaved-draft.json';
 const TEMP: string = '/unsaved-draft.tmp';
 
@@ -35,28 +37,43 @@ export class LocalState {
     }
   }
 
-  static async addRecent(context: common.UIAbilityContext, uri: string, filename: string): Promise<RecentDocument[]> {
-    const previous = await LocalState.readRecent(context);
-    const updated: RecentDocument[] = [new RecentDocument(uri, filename)];
-    for (const recent of previous) {
-      if (recent.uri !== uri && updated.length < 12) updated.push(recent);
-    }
+  static async readSort(context: common.UIAbilityContext): Promise<string> {
     const store = await preferences.getPreferences(context, 'marknote-settings');
-    await store.put(RECENT_KEY, JSON.stringify(updated));
-    await store.flush();
-    return updated;
+    const order = await store.get(SORT_KEY, 'modified') as string;
+    return order === 'opened' || order === 'name' || order === 'type' ? order : 'modified';
   }
 
-  static async removeRecent(context: common.UIAbilityContext, uri: string): Promise<RecentDocument[]> {
-    const previous = await LocalState.readRecent(context);
-    const updated: RecentDocument[] = [];
-    for (const recent of previous) {
-      if (recent.uri !== uri) updated.push(recent);
-    }
+  static async writeSort(context: common.UIAbilityContext, order: string): Promise<void> {
+    const store = await preferences.getPreferences(context, 'marknote-settings');
+    await store.put(SORT_KEY, order);
+    await store.flush();
+  }
+
+  static async addRecent(context: common.UIAbilityContext, uri: string, filename: string,
+    modifiedAt: number, opened: boolean, previous: RecentDocument[]): Promise<RecentDocument[]> {
+    const updated: RecentEntry[] = updateRecentDocument(previous, uri, filename, Date.now(), modifiedAt, opened);
     const store = await preferences.getPreferences(context, 'marknote-settings');
     await store.put(RECENT_KEY, JSON.stringify(updated));
     await store.flush();
-    return updated;
+    return updated as RecentDocument[];
+  }
+
+  static async removeRecent(context: common.UIAbilityContext, uri: string,
+    previous: RecentDocument[], deleted: boolean): Promise<RecentDocument[]> {
+    const updated: RecentEntry[] = removeRecentDocument(previous, uri, deleted);
+    const store = await preferences.getPreferences(context, 'marknote-settings');
+    await store.put(RECENT_KEY, JSON.stringify(updated));
+    await store.flush();
+    return updated as RecentDocument[];
+  }
+
+  static async toggleFavorite(context: common.UIAbilityContext, uri: string, filename: string,
+    modifiedAt: number, previous: RecentDocument[]): Promise<RecentDocument[]> {
+    const updated = toggleFavoriteDocument(previous, uri, filename, modifiedAt);
+    const store = await preferences.getPreferences(context, 'marknote-settings');
+    await store.put(RECENT_KEY, JSON.stringify(updated));
+    await store.flush();
+    return updated as RecentDocument[];
   }
 
   static readDraft(context: common.UIAbilityContext): RecoveryData | null {

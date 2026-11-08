@@ -57,6 +57,7 @@ export struct DocumentView {
   @Prop @Watch('onWideChange') wide: boolean = false;
   @Prop canExpand: boolean = false;
   @Prop expanded: boolean = false;
+  @Prop favorite: boolean = false;
   onToggleExpanded: () => void = (): void => {};
   /** 每打开一篇就加一，用来在路由已经存在时重新载入会话。 */
   @Prop @Watch('loadSession') revision: number = 0;
@@ -64,6 +65,7 @@ export struct DocumentView {
   /** 具有持久授权的文件保存成功后通知首页更新最近文稿。 */
   onSaved: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
   onDeleted: (uri: string) => void = (_uri: string): void => {};
+  onToggleFavorite: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
 
   private tabContentPolicy: PageTabContentPolicy = new PageTabContentPolicy();
   private tabsPolicy: PageTabsPolicy = new PageTabsPolicy();
@@ -125,6 +127,9 @@ export struct DocumentView {
     };
     menuBridge.share = (): void => {
       menuBridge.dismiss((): void => { void this.shareDocument(); });
+    };
+    menuBridge.toggleFavorite = (): void => {
+      menuBridge.dismiss((): void => this.toggleFavorite());
     };
     menuBridge.save = (): void => {
       menuBridge.dismiss((): void => { void this.saveFile(false); });
@@ -209,6 +214,7 @@ export struct DocumentView {
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     menuBridge.saveAs = (): void => {};
     menuBridge.share = (): void => {};
+    menuBridge.toggleFavorite = (): void => {};
     menuBridge.save = (): void => {};
     menuBridge.deleteDocument = (): void => {};
     menuBridge.find = (): void => {};
@@ -235,6 +241,18 @@ export struct DocumentView {
     } catch {
       this.toast('无法分享文稿，请重试');
     }
+  }
+
+  private toggleFavorite(): void {
+    if (this.info.uri.length === 0) {
+      this.toast('请先保存文稿再收藏');
+      return;
+    }
+    if (!this.info.persistent) {
+      this.toast('当前文件无法长期访问，请另存为后收藏');
+      return;
+    }
+    this.onToggleFavorite(this.info.uri, this.info.name);
   }
 
   private menuIcon(label: string, symbol: Resource, id: string, action: () => void,
@@ -265,7 +283,9 @@ export struct DocumentView {
     ] : [
       this.menuIcon('分享', $r('sys.symbol.share'), 'marknote-share',
         (): void => { void this.shareDocument(); }),
-      this.menuIcon('收藏', $r('sys.symbol.star'), 'marknote-favorite', (): void => {}, false),
+      this.menuIcon(this.favorite ? '取消收藏' : '收藏',
+        this.favorite ? $r('sys.symbol.star_fill') : $r('sys.symbol.star'), 'marknote-favorite',
+        (): void => this.toggleFavorite()),
       this.menuIcon('删除', $r('sys.symbol.trash'), 'marknote-delete',
         (): void => this.confirmDelete(), this.info.uri.length > 0 && !this.deleting),
       more
@@ -300,6 +320,7 @@ export struct DocumentView {
   private openDocumentMenu(): void {
     menuBridge.showDocumentActions = this.inEditTab();
     menuBridge.canDeleteDocument = this.info.uri.length > 0 && !this.deleting;
+    menuBridge.favorite = this.favorite;
     menuBridge.openDocumentMenu();
   }
 

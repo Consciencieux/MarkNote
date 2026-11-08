@@ -87,6 +87,22 @@ async function retain(uri: string, mode: number): Promise<boolean> {
 }
 
 export class DocumentFiles {
+  /** Return the file provider's modification time, or zero when it is unavailable. */
+  static async recentModifiedAt(uri: string): Promise<number> {
+    try {
+      const active = await persisted(uri, READ_WRITE) || await persisted(uri, fileShare.OperationMode.READ_MODE);
+      if (!active) return 0;
+      const file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
+      try {
+        const info = await fileIo.stat(file.fd);
+        return info.mtime > 0 ? info.mtime : 0;
+      } finally {
+        await fileIo.close(file);
+      }
+    } catch {
+      return 0;
+    }
+  }
   /** Move the opened version to the system recycle bin; never fall back to permanent deletion. */
   static async moveToTrash(info: DocumentInfo): Promise<void> {
     if (info.uri.length === 0) throw new Error('文稿尚未保存为文件');

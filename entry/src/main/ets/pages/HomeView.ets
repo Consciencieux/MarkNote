@@ -10,12 +10,14 @@ import { menuMaterialOptions } from './MenuMaterialOptions';
 @Component
 export struct HomeView {
   @Prop title: string = '全部';
+  @Prop favoritesOnly: boolean = false;
   @Prop recents: RecentDocument[] = [];
   private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
   scroller: Scroller = new Scroller();
   onNew: (id: string) => void = (_id: string): void => {};
   onOpen: () => void = (): void => {};
   onRecent: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
+  onRemoveRecent: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
 
   /** 新建菜单的条目来自文稿格式注册表，新增格式不用改这里。 */
   private newDocumentMenu(): MenuElement[] {
@@ -49,11 +51,20 @@ export struct HomeView {
   }
 
   @Builder
+  private RecentMenu(item: RecentDocument) {
+    Menu() {
+      MenuItem({ content: this.favoritesOnly ? '取消收藏' : '移除记录' })
+        .onClick(() => this.onRemoveRecent(item))
+    }
+  }
+
+  @Builder
   private RecentRow(item: RecentDocument) {
     ListItem() {
       this.DocumentRow(item.name, FormatRegistry.byFilename(item.name).sheetTitle, $r('sys.symbol.doc_text'))
     }
     .onClick(() => this.onRecent(item))
+    .bindContextMenu(this.RecentMenu(item), ResponseType.LongPress, menuMaterialOptions())
   }
 
   build() {

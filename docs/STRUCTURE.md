@@ -48,7 +48,7 @@ marknote/
 | 搜索框、分段按钮与编辑工具栏材质 | `pages/ImmersiveMaterials.ets` |
 | 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets` |
 | 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
-| 文稿打开、保存和草稿恢复 | `document/DocumentService.ets`、`storage/DocumentFiles.ets`、`storage/LocalState.ets` |
+| 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/LocalState.ets` |
 | Markdown 本地图片 | `document/LocalImages.ets`、`pages/DocumentPreviewView.ets`，以及仓库根目录下的 `renderer/src/renderers/markdown.ts` |
 | 文稿分享 | `document/DocumentShare.ets`、`pages/DocumentMenus.ets` |
 | 文件编码与换行 | `document/TextEncoding.ets` |
