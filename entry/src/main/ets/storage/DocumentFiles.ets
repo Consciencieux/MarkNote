@@ -90,8 +90,9 @@ export class DocumentFiles {
   /** Return the file provider's modification time, or zero when it is unavailable. */
   static async recentModifiedAt(uri: string): Promise<number> {
     try {
-      const active = await persisted(uri, READ_WRITE) || await persisted(uri, fileShare.OperationMode.READ_MODE);
-      if (!active) return 0;
+      // A URI may be readable through a current grant even without a persisted policy.
+      // Activate any stored grant first, then let the file provider decide access.
+      await persisted(uri, READ_WRITE) || await persisted(uri, fileShare.OperationMode.READ_MODE);
       const file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
       try {
         const info = await fileIo.stat(file.fd);
@@ -231,6 +232,9 @@ export class DocumentFiles {
       }
     }
     const encoded = TextEncoding.encode(text, info);
+    if (encoded.bytes.length > MAX_BYTES) {
+      throw new Error('保存后的文稿不能超过 8 MiB，文件未写入');
+    }
     info.newline = encoded.newline;
     info.lineEndings = encoded.lineEndings;
     const bytes = encoded.bytes;

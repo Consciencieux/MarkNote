@@ -43,6 +43,11 @@ function utf16Encoding(bytes: Uint8Array): string {
 /** Editor text uses '\n'. Original endings are restored on save when the line count is unchanged. */
 function normalizeNewlines(raw: string): DecodedText {
   const decoded = new DecodedText();
+  // Most documents use LF only; avoid constructing a new string one character at a time.
+  if (raw.indexOf('\r') < 0) {
+    decoded.text = raw;
+    return decoded;
+  }
   let sawLf = false;
   let sawCrLf = false;
   for (let index = 0; index < raw.length; index++) {
