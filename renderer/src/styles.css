@@ -20,6 +20,9 @@ table{display:block;overflow-x:auto;border-collapse:collapse;width:100%;}
 td,th { border:1px solid var(--line);padding:6px 10px;text-align:left; }
 hr { border:none; border-top:1px solid var(--line); }
 a { color:inherit; text-decoration:underline; }
+.preview img { display:block; max-width:100%; height:auto; margin:1em 0; }
+.missing-image { color:var(--secondary); }
+.image-slot-loaded { display:block; }
 .svg-canvas { width:100%; overflow:auto; min-height:140px; }
 .svg-canvas > svg { display:block;max-width:100%;height:auto;margin:auto; }
 .math-canvas { width:100%; overflow-x:auto; }

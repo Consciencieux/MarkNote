@@ -2,26 +2,32 @@ import { uiMaterial } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 
 /**
- * 应用级沉浸光感默认覆盖菜单；MatePad 的 SMOOTH 档实机出现菜单背板透明。
- * 对低算力或不支持材质的设备，单独关闭菜单材质，让系统菜单绘制默认背板；
- * 这是兼容处理，并非华为要求所有低算力设备关闭材质。
+ * 菜单在 SMOOTH 档位实测可能失去背板；仅对菜单关闭应用级材质，使用系统默认背板。
+ * 这是针对菜单透明问题的兼容处理，不表示低算力设备不支持沉浸材质。
+ * Material.empty 是华为提供的组件级关闭接口：
  * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/arkts-apis-uimaterial
- * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-immersive-light-sense-enable
+ * 高、中算力档沿用华为菜单栏适配示例：
+ * https://developer.huawei.com/consumer/cn/doc/best-practices/bpta-spatiality-immersive
  */
 export function menuMaterialOptions(): MenuOptions {
-  if (!deviceInfo.apiAvailable('26.0.0')) {
-    return {};
-  }
-
-  try {
-    if (!uiMaterial.isImmersiveMaterialSupported() ||
-      uiMaterial.getGlobalMaterialLevel() === uiMaterial.MaterialLevel.SMOOTH) {
+  if (deviceInfo.apiAvailable('26.0.0')) {
+    try {
+      if (!uiMaterial.isImmersiveMaterialSupported() ||
+        uiMaterial.getGlobalMaterialLevel() === uiMaterial.MaterialLevel.SMOOTH) {
+        return { systemMaterial: uiMaterial.Material.empty };
+      }
+      return {
+        backgroundBlurStyle: BlurStyle.COMPONENT_THICK,
+        systemMaterial: new uiMaterial.ImmersiveMaterial({
+          style: uiMaterial.ImmersiveStyle.THICK,
+          interactive: true,
+          lightEffect: {}
+        })
+      };
+    } catch {
+      // 查询失败时避免应用级材质使菜单背板透明。
       return { systemMaterial: uiMaterial.Material.empty };
     }
-  } catch {
-    // 无法判断设备能力时，优先让菜单回到系统默认样式。
-    return { systemMaterial: uiMaterial.Material.empty };
   }
-
   return {};
 }

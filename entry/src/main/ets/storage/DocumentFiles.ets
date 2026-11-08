@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo, fileShare } from '@kit.CoreFileKit';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
+import { fileManagerService } from '@kit.FileManagerServiceKit';
 import { DocumentInfo } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
 import { TextEncoding } from '../document/TextEncoding';
@@ -86,6 +87,33 @@ async function retain(uri: string, mode: number): Promise<boolean> {
 }
 
 export class DocumentFiles {
+  /** Return the file provider's modification time, or zero when it is unavailable. */
+  static async recentModifiedAt(uri: string): Promise<number> {
+    try {
+      // A URI may be readable through a current grant even without a persisted policy.
+      // Activate any stored grant first, then let the file provider decide access.
+      await persisted(uri, READ_WRITE) || await persisted(uri, fileShare.OperationMode.READ_MODE);
+      const file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
+      try {
+        const info = await fileIo.stat(file.fd);
+        return info.mtime > 0 ? info.mtime : 0;
+      } finally {
+        await fileIo.close(file);
+      }
+    } catch {
+      return 0;
+    }
+  }
+  /** Move the opened version to the system recycle bin; never fall back to permanent deletion. */
+  static async moveToTrash(info: DocumentInfo): Promise<void> {
+    if (info.uri.length === 0) throw new Error('文稿尚未保存为文件');
+    if (!info.writable) throw new Error('没有删除权限，请在文件管理器中删除');
+    if (info.fingerprint.length === 0 || fingerprintOf(DocumentFiles.readBytes(info.uri)) !== info.fingerprint) {
+      throw new Error('原文件已改变或无法确认，请重新打开后再删除');
+    }
+    // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/filemanagerservice-arkts-filemanagerservice
+    await fileManagerService.deleteToTrash(info.uri);
+  }
   /**
    * A persisted picker grant stays inactive across launches until activatePermission.
    * Activate both stored modes before canOpen. Opening first makes a still-valid
@@ -204,6 +232,9 @@ export class DocumentFiles {
       }
     }
     const encoded = TextEncoding.encode(text, info);
+    if (encoded.bytes.length > MAX_BYTES) {
+      throw new Error('保存后的文稿不能超过 8 MiB，文件未写入');
+    }
     info.newline = encoded.newline;
     info.lineEndings = encoded.lineEndings;
     const bytes = encoded.bytes;

@@ -9,12 +9,15 @@ import { menuMaterialOptions } from './MenuMaterialOptions';
  */
 @Component
 export struct HomeView {
+  @Prop title: string = '全部';
+  @Prop favoritesOnly: boolean = false;
   @Prop recents: RecentDocument[] = [];
   private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
   scroller: Scroller = new Scroller();
   onNew: (id: string) => void = (_id: string): void => {};
   onOpen: () => void = (): void => {};
   onRecent: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
+  onRemoveRecent: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
 
   /** 新建菜单的条目来自文稿格式注册表，新增格式不用改这里。 */
   private newDocumentMenu(): MenuElement[] {
@@ -48,18 +51,33 @@ export struct HomeView {
   }
 
   @Builder
+  private RecentMenu(item: RecentDocument) {
+    Menu() {
+      MenuItem({ content: this.favoritesOnly ? '取消收藏' : '移除记录' })
+        .onClick(() => this.onRemoveRecent(item))
+    }
+  }
+
+  @Builder
   private RecentRow(item: RecentDocument) {
     ListItem() {
       this.DocumentRow(item.name, FormatRegistry.byFilename(item.name).sheetTitle, $r('sys.symbol.doc_text'))
     }
     .onClick(() => this.onRecent(item))
+    .bindContextMenu(this.RecentMenu(item), ResponseType.LongPress, menuMaterialOptions())
   }
 
   build() {
     // 首页只承担两件事：开始一篇新文稿/打开已有文件，和回到最近打开过的文稿。
-    // 标题「全部」由导航标题栏给出，页面里不再写标语和分组标题。
+    // 标题位于内容区，避免占用标题栏中分段按钮的空间。
     // List keeps its native row layout; the shared policy owns safe areas and scrolling behavior.
     List({ scroller: this.scroller, spaceWidth: $r('sys.float.padding_level6') }) {
+      ListItem() {
+        Text(this.title)
+          .fontSize(26)
+          .fontWeight(FontWeight.Bold)
+      }
+
       ListItem() {
         Row() {
           Button('新建文稿')

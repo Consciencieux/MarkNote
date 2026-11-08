@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { FrameCallback, SymbolGlyphModifier } from '@kit.ArkUI';
+import { FrameCallback, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -7,6 +7,7 @@ import {
 } from '@kit.UIDesignKit';
 import { DocumentInfo, Heading, RecoveryData } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
+import { DocumentShare } from '../document/DocumentShare';
 import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
 import { EditHistory, EditStep } from '../document/EditHistory';
@@ -18,7 +19,9 @@ import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { scrollingTitleBar } from './HdsMaterialStyles';
+import { searchFieldMaterial } from './ImmersiveMaterials';
 import { LocalState } from '../storage/LocalState';
+import { DocumentFiles } from '../storage/DocumentFiles';
 
 /**
  * Tab positions on the document page. Preview comes first so a document opens in reading
@@ -52,11 +55,17 @@ export struct DocumentView {
   // 由首页传入。
   @Prop theme: string = 'system';
   @Prop @Watch('onWideChange') wide: boolean = false;
+  @Prop canExpand: boolean = false;
+  @Prop expanded: boolean = false;
+  @Prop favorite: boolean = false;
+  onToggleExpanded: () => void = (): void => {};
   /** 每打开一篇就加一，用来在路由已经存在时重新载入会话。 */
   @Prop @Watch('loadSession') revision: number = 0;
   onLeave: () => void = (): void => {};
   /** 具有持久授权的文件保存成功后通知首页更新最近文稿。 */
   onSaved: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
+  onDeleted: (uri: string) => void = (_uri: string): void => {};
+  onToggleFavorite: (uri: string, name: string) => void = (_uri: string, _name: string): void => {};
 
   private tabContentPolicy: PageTabContentPolicy = new PageTabContentPolicy();
   private tabsPolicy: PageTabsPolicy = new PageTabsPolicy();
@@ -74,10 +83,15 @@ export struct DocumentView {
   @State private headings: Heading[] = [];
   @State private parseRevision: number = 0;
   @State private saving: boolean = false;
+  @State private deleting: boolean = false;
   @State private searchVisible: boolean = false;
   @State private query: string = '';
   @State private replacement: string = '';
   @State private currentMatch: number = -1;
+  @State private matchCount: number = 0;
+  @State private matchOrdinal: number = 0;
+  @State private findBarHeight: number = 112;
+  @State private searchControlsWidth: number = 80;
   /** Drives the enabled state of the title bar undo and redo icons. */
   @State private undoAvailable: boolean = false;
   @State private redoAvailable: boolean = false;
@@ -92,22 +106,78 @@ export struct DocumentView {
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
   private recoveryTimer: number = -1;
+  /**
+   * 底部导航避让高度为 0 时，页签栏与 HdsTabs 底边留出一段应用自己的距离。
+   * 这段用 sys.float.margin_left，不是华为规定的底边距；有导航避让区时不再加。
+   */
+  @Provide('documentNavigationInsetAbsent') private navigationInsetAbsent: boolean = false;
+  private hostWindow: window.Window | null = null;
+  private watchingIndicator: boolean = false;
+  private readonly onAvoidArea = (data: window.AvoidAreaOptions): void => {
+    if (data.type !== window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) return;
+    this.navigationInsetAbsent = data.area.bottomRect.height === 0;
+  };
+  // 官方沉浸光感指南将 THIN 列为搜索框适用样式；不支持时保留系统输入框样式。
+  private searchMaterial = searchFieldMaterial();
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     // 文稿页自己的菜单项：另存为和查找只对当前文稿有意义。
     menuBridge.saveAs = (): void => {
       menuBridge.dismiss((): void => { void this.saveFile(true); });
     };
+    menuBridge.share = (): void => {
+      menuBridge.dismiss((): void => { void this.shareDocument(); });
+    };
+    menuBridge.toggleFavorite = (): void => {
+      menuBridge.dismiss((): void => this.toggleFavorite());
+    };
+    menuBridge.save = (): void => {
+      menuBridge.dismiss((): void => { void this.saveFile(false); });
+    };
+    menuBridge.deleteDocument = (): void => {
+      menuBridge.dismiss((): void => this.confirmDelete());
+    };
     menuBridge.find = (): void => {
       menuBridge.dismiss((): void => {
         this.searchVisible = true;
         this.selectedTab = TAB_EDIT;
+        this.currentMatch = -1;
+        this.matchOrdinal = 0;
+        this.matchCount = TextSearch.count(this.source, this.query);
       });
     };
+    menuBridge.closeDocument = (): void => menuBridge.dismiss((): void => this.requestLeave());
     // 首页在换篇、返回列表前都要先问这里能否离开。
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => this.saveBeforeLeaving();
     documentBridge.requestLeave = (): void => this.requestLeave();
     this.loadSession();
+    this.watchNavigationIndicator();
+  }
+
+  /**
+   * 《开发应用沉浸式效果》：全屏、悬浮窗、分屏切换会改变避让区，高度可以为 0。
+   * 这里只判断高度是否为 0，高度单位是 px，不换算成 vp。
+   * 注销时传入本次注册的回调，避免拆掉窗口上其他监听。
+   */
+  private watchNavigationIndicator(): void {
+    if (!this.context) return;
+    this.watchingIndicator = true;
+    window.getLastWindow(this.context).then((host: window.Window) => {
+      if (!this.watchingIndicator) return;
+      this.hostWindow = host;
+      const area = host.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
+      this.navigationInsetAbsent = area.bottomRect.height === 0;
+      host.on('avoidAreaChange', this.onAvoidArea);
+    }).catch(() => {
+      // 读不到窗口时保持默认，不额外抬高底栏。
+    });
+  }
+
+  private stopNavigationIndicator(): void {
+    this.watchingIndicator = false;
+    const host = this.hostWindow;
+    this.hostWindow = null;
+    if (host !== null) host.off('avoidAreaChange', this.onAvoidArea);
   }
 
 
@@ -126,6 +196,8 @@ export struct DocumentView {
     this.history.reset(this.source, 0);
     this.refreshHistoryState();
     this.currentMatch = -1;
+    this.matchOrdinal = 0;
+    this.matchCount = 0;
     this.selectionStart = 0;
     this.selectionEnd = 0;
     this.selectedTab = TAB_PREVIEW;
@@ -137,10 +209,16 @@ export struct DocumentView {
   }
 
   aboutToDisappear(): void {
+    this.stopNavigationIndicator();
     this.flushRecovery();
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     menuBridge.saveAs = (): void => {};
+    menuBridge.share = (): void => {};
+    menuBridge.toggleFavorite = (): void => {};
+    menuBridge.save = (): void => {};
+    menuBridge.deleteDocument = (): void => {};
     menuBridge.find = (): void => {};
+    menuBridge.closeDocument = (): void => {};
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
     documentBridge.requestLeave = (): void => {};
   }
@@ -154,6 +232,27 @@ export struct DocumentView {
 
   private toast(message: string): void {
     this.getUIContext().getPromptAction().showToast({ message });
+  }
+
+  private async shareDocument(): Promise<void> {
+    if (!this.context) return;
+    try {
+      await DocumentShare.show(this.context, this.info.name, this.source);
+    } catch {
+      this.toast('无法分享文稿，请重试');
+    }
+  }
+
+  private toggleFavorite(): void {
+    if (this.info.uri.length === 0) {
+      this.toast('请先保存文稿再收藏');
+      return;
+    }
+    if (!this.info.persistent) {
+      this.toast('当前文件无法长期访问，请另存为后收藏');
+      return;
+    }
+    this.onToggleFavorite(this.info.uri, this.info.name);
   }
 
   private menuIcon(label: string, symbol: Resource, id: string, action: () => void,
@@ -171,22 +270,46 @@ export struct DocumentView {
 
   private documentTitle(): HdsNavigationTitleBarOptions {
     const heading: HdsNavigationTitle = { mainTitle: this.title };
+    const more = this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
+      (): void => this.openDocumentMenu());
+    const actions: HdsNavigationMenuItemOptions[] = this.inEditTab() ? [
+      this.menuIcon('撤销', $r('sys.symbol.undo'), 'marknote-undo',
+        (): void => this.undo(), this.undoAvailable),
+      this.menuIcon('重做', $r('sys.symbol.redo'), 'marknote-redo',
+        (): void => this.redo(), this.redoAvailable),
+      more,
+      this.menuIcon('保存', $r('sys.symbol.checkmark'), 'marknote-save',
+        (): void => { void this.saveFile(false); })
+    ] : [
+      this.menuIcon('分享', $r('sys.symbol.share'), 'marknote-share',
+        (): void => { void this.shareDocument(); }),
+      this.menuIcon(this.favorite ? '取消收藏' : '收藏',
+        this.favorite ? $r('sys.symbol.star_fill') : $r('sys.symbol.star'), 'marknote-favorite',
+        (): void => this.toggleFavorite()),
+      this.menuIcon('删除', $r('sys.symbol.trash'), 'marknote-delete',
+        (): void => this.confirmDelete(), this.info.uri.length > 0 && !this.deleting),
+      more
+    ];
     const menu: HdsNavigationMenuContentOptions = {
       maxCount: 4,
-      value: [
-        // Keep the document actions in one navigation menu; find remains in the overflow menu.
-        this.menuIcon('撤销', $r('sys.symbol.undo'), 'marknote-undo',
-          (): void => this.undo(), this.undoAvailable),
-        this.menuIcon('重做', $r('sys.symbol.redo'), 'marknote-redo',
-          (): void => this.redo(), this.redoAvailable),
-        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
-          (): void => this.openDocumentMenu()),
-        this.menuIcon('保存', $r('sys.symbol.checkmark'), 'marknote-save',
-          (): void => { void this.saveFile(false); })
-      ]
+      value: actions
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
-    if (this.formatBarWanted()) {
+    content.backIcon = {
+      label: this.canExpand ? (this.expanded ? '恢复分栏' : '放大文稿') : '返回',
+      icon: this.canExpand ?
+        (this.expanded ? $r('sys.symbol.arrow_down_right_and_arrow_up_left') :
+          $r('sys.symbol.arrow_up_left_and_arrow_down_right')) : $r('sys.symbol.chevron_backward'),
+      action: (): void => {
+        if (this.canExpand) this.onToggleExpanded();
+        else this.requestLeave();
+      }
+    };
+    if (this.searchVisible && this.selectedTab === TAB_EDIT) {
+      // 搜索栏固定在导航标题下方，由 HDS 管理布局和组件安全区。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
+      content.bottomBuilder = { builder: (): void => this.FindBar(), height: this.findBarHeight };
+    } else if (this.formatBarWanted()) {
       // 官方导航自定义区域：标题栏负责底部区域布局和安全区。
       // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
       content.bottomBuilder = { builder: (): void => this.TopFormatBar() };
@@ -195,7 +318,62 @@ export struct DocumentView {
   }
 
   private openDocumentMenu(): void {
+    menuBridge.showDocumentActions = this.inEditTab();
+    menuBridge.canDeleteDocument = this.info.uri.length > 0 && !this.deleting;
+    menuBridge.favorite = this.favorite;
     menuBridge.openDocumentMenu();
+  }
+
+  private confirmDelete(): void {
+    if (this.saving || this.deleting || this.info.uri.length === 0) return;
+    const uri = this.info.uri;
+    const confirmedSource = this.source;
+    this.getUIContext().showAlertDialog({
+      title: '删除文件',
+      message: this.isDirty() ?
+        '将文件移入回收站？未保存的修改将被丢弃。' : '将文件移入回收站？',
+      buttons: [
+        { value: '取消', action: (): void => {} },
+        { value: '删除', action: (): void => { void this.deleteDocument(uri, confirmedSource); } }
+      ]
+    });
+  }
+
+  private async deleteDocument(uri: string, confirmedSource: string): Promise<void> {
+    const session = DocumentService.current();
+    if (this.deleting || this.saving || !session.editing || session.info.uri !== uri) return;
+    if (this.source !== confirmedSource) {
+      this.confirmDelete();
+      return;
+    }
+    const sourceBefore = this.source;
+    this.deleting = true;
+    try {
+      await DocumentFiles.moveToTrash(session.info);
+      this.onDeleted(uri);
+      if (DocumentService.current() === session && session.editing && session.info.uri === uri) {
+        if (this.source !== sourceBefore) {
+          // An edit arriving while the file manager was working becomes an unsaved document.
+          session.info.uri = '';
+          session.info.writable = false;
+          session.info.persistent = false;
+          session.info.fingerprint = '';
+          session.savedText = this.source + '\n';
+          this.savedText = session.savedText;
+          this.scheduleRecovery();
+          this.toast('文件已移入回收站，新修改请保存为新文件');
+        } else {
+          this.clearRecovery();
+          DocumentService.close();
+          this.onLeave();
+          this.toast('文件已移入回收站');
+        }
+      }
+    } catch (error) {
+      this.toast('删除失败：' + String(error));
+    } finally {
+      this.deleting = false;
+    }
   }
 
   private currentFormat(): DocumentFormat {
@@ -221,6 +399,7 @@ export struct DocumentView {
    * 草稿副本只用于崩溃兜底，不再作为「未保存」的常驻入口。
    */
   private async saveBeforeLeaving(): Promise<boolean> {
+    if (this.deleting) return false;
     if (!DocumentService.current().editing || !this.isDirty()) return true;
     return await this.askSaveOrDiscard();
   }
@@ -296,7 +475,7 @@ export struct DocumentView {
   }
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
-    if (!this.context || this.saving) return false;
+    if (!this.context || this.saving || this.deleting) return false;
     if (!asNewFile && this.info.uri.length > 0 && !this.info.writable) {
       this.offerSaveCopy('原文件无法写入，请另存为其他文件。');
       return false;
@@ -396,6 +575,8 @@ export struct DocumentView {
     DocumentService.edit(text);
     this.source = text;
     this.currentMatch = -1;
+    this.matchOrdinal = 0;
+    this.matchCount = this.searchVisible ? TextSearch.count(text, this.query) : 0;
     this.updateHeadings();
     const position = caret >= 0 ? caret : this.selectionEnd;
     this.history.record(text, position, Date.now());
@@ -427,6 +608,8 @@ export struct DocumentView {
     DocumentService.edit(step.text);
     this.source = step.text;
     this.currentMatch = -1;
+    this.matchOrdinal = 0;
+    this.matchCount = this.searchVisible ? TextSearch.count(step.text, this.query) : 0;
     this.updateHeadings();
     this.refreshHistoryState();
     this.scheduleRecovery();
@@ -436,17 +619,41 @@ export struct DocumentView {
     setTimeout(() => this.activeCursor().caretPosition(caret), 20);
   }
 
-  private findNext(): void {
+  private findNext(forward: boolean = true): void {
     if (!this.query) return;
     this.selectedTab = TAB_EDIT;
-    const hit: SearchHit | null = TextSearch.following(this.source, this.query, this.currentMatch);
+    const hit: SearchHit | null = forward ? TextSearch.following(this.source, this.query, this.currentMatch) :
+      TextSearch.preceding(this.source, this.query, this.currentMatch);
     if (hit === null) {
       this.currentMatch = -1;
       this.toast('没有找到匹配内容');
       return;
     }
     this.currentMatch = hit.start;
-    setTimeout(() => this.activeCursor().setTextSelection(hit.start, hit.start + hit.length), 20);
+    this.matchOrdinal = TextSearch.count(this.source, this.query, hit.start) + 1;
+    const query = this.query;
+    const revision = this.revision;
+    this.getUIContext().postFrameCallback(new AfterFrame((): void => {
+      if (!this.searchVisible || this.selectedTab !== TAB_EDIT || this.revision !== revision ||
+        this.query !== query || this.currentMatch !== hit.start) return;
+      // TextArea 的文本选区需要组件获焦；编辑框随内容增高，因此由外层 Scroll 定位。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-basic-components-textarea
+      this.getUIContext().getFocusController().requestFocus('marknote-main-editor');
+      this.cursor.caretPosition(hit.start);
+      this.getUIContext().postFrameCallback(new AfterFrame((): void => {
+        if (!this.searchVisible || this.selectedTab !== TAB_EDIT || this.revision !== revision ||
+          this.query !== query || this.currentMatch !== hit.start) return;
+        const caret = this.cursor.getCaretOffset();
+        if (caret && caret.index === hit.start) {
+          this.editScroller.scrollTo({
+            xOffset: 0,
+            yOffset: Math.max(0, this.editTop + this.getUIContext().px2vp(caret.y)),
+            animation: false
+          });
+        }
+        this.cursor.setTextSelection(hit.start, hit.start + hit.length, { menuPolicy: MenuPolicy.HIDE });
+      }));
+    }));
   }
 
   private replaceMatch(): void {
@@ -519,36 +726,89 @@ export struct DocumentView {
     }));
   }
 
-  /**
-   * 查找栏用官方 Search 的 searchButton 承载「下一处」，onSubmit 与按钮点击共用同一入口，
-   * 不再在 Search 旁边另放一个文字按钮。关闭用系统符号的文本按钮。
-   * 行内间距和上下留白取系统间距资源（`Row` 的 `space` 只接受数字，所以间距写成子项 margin）。
-   */
+  /** 搜索框与结果导航共享系统材质；替换操作的右边缘与搜索区域对齐。 */
   @Builder
   private FindBar() {
     Column() {
       Row() {
-        Search({ value: this.query, placeholder: '查找文稿内容' })
-          .searchButton('下一处')
-          .onSubmit(() => this.findNext())
-          .onChange((value: string) => { this.query = value; this.currentMatch = -1; })
-          .layoutWeight(1)
-          .margin({ right: $r('sys.float.padding_level4') })
-        Button({ type: ButtonType.Circle }) {
+        Stack({ alignContent: Alignment.End }) {
+          Search({ value: this.query, placeholder: '查找文稿内容' })
+            .onSubmit(() => this.findNext())
+            .onChange((value: string) => {
+              this.query = value;
+              this.currentMatch = -1;
+              this.matchOrdinal = 0;
+              this.matchCount = TextSearch.count(this.source, value);
+            })
+            .width('100%')
+            // 清除按钮由 Search 提供；仅有文字时为它预留位置。
+            .cancelButton({ style: this.query.length > 0 ? CancelButtonStyle.CONSTANT : CancelButtonStyle.INVISIBLE })
+            .padding({ right: this.query.length > 0 ? this.searchControlsWidth + 40 : 0 })
+            .systemMaterial(this.searchMaterial)
+          if (this.query.length > 0) {
+            Row() {
+              Text(this.matchOrdinal > 0 ? `${this.matchOrdinal}/${this.matchCount}` : `共 ${this.matchCount} 处`)
+                .fontColor($r('sys.color.font_secondary'))
+                .accessibilityText(this.matchOrdinal > 0 ?
+                  `第 ${this.matchOrdinal} 处，共 ${this.matchCount} 处` : `共 ${this.matchCount} 处`)
+              Button() {
+                SymbolGlyph($r('sys.symbol.chevron_up'))
+                  .fontColor([$r('sys.color.icon_primary')])
+                  .fontSize(24)
+              }
+              .buttonStyle(ButtonStyleMode.TEXTUAL)
+              .width(40)
+              .height(40)
+              .accessibilityText('上一处')
+              .enabled(this.matchCount > 0)
+              .onClick(() => this.findNext(false))
+              Button() {
+                SymbolGlyph($r('sys.symbol.chevron_down'))
+                  .fontColor([$r('sys.color.icon_primary')])
+                  .fontSize(24)
+              }
+              .buttonStyle(ButtonStyleMode.TEXTUAL)
+              .width(40)
+              .height(40)
+              .accessibilityText('下一处')
+              .enabled(this.matchCount > 0)
+              .onClick(() => this.findNext())
+            }
+            .margin({ right: 40 })
+            .onAreaChange((_oldArea: Area, newArea: Area) => {
+              const width = parseFloat(String(newArea.width)) || 0;
+              if (width > 0 && width !== this.searchControlsWidth) this.searchControlsWidth = width;
+            })
+          }
+        }
+        .layoutWeight(1)
+        .margin({ right: $r('sys.float.padding_level4') })
+        Button() {
           SymbolGlyph($r('sys.symbol.xmark'))
+            .fontColor([$r('sys.color.icon_primary')])
+            .fontSize(24)
         }
         .buttonStyle(ButtonStyleMode.TEXTUAL)
+        // 华为通用应用 UX 体验标准：交互热区不得小于 40vp × 40vp。
+        .width(40)
+        .height(40)
         .accessibilityText('关闭查找')
         .onClick(() => this.searchVisible = false)
       }
       .width('100%')
       Row() {
-        TextInput({ text: this.replacement, placeholder: '替换为' })
-          .onChange((value: string) => { this.replacement = value; })
-          .layoutWeight(1)
-          .margin({ right: $r('sys.float.padding_level4') })
-        Button('替换')
-          .onClick(() => this.replaceMatch())
+        Row() {
+          TextInput({ text: this.replacement, placeholder: '替换为' })
+            .onChange((value: string) => { this.replacement = value; })
+            .layoutWeight(1)
+            .margin({ right: $r('sys.float.padding_level4') })
+            .systemMaterial(this.searchMaterial)
+          Button('替换')
+            .onClick(() => this.replaceMatch())
+        }
+        .layoutWeight(1)
+        .margin({ right: $r('sys.float.padding_level4') })
+        Blank().width(40)
       }
       .width('100%')
       .margin({ top: $r('sys.float.padding_level4') })
@@ -560,15 +820,16 @@ export struct DocumentView {
       bottom: $r('sys.float.padding_level4')
     })
     .width('100%')
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      const height = parseFloat(String(newArea.height)) || 0;
+      if (height > 0 && height !== this.findBarHeight) this.findBarHeight = height;
+    })
   }
 
   @Builder
   private EditPage(scroller: Scroller, controller: TextAreaController, editorId: string) {
     DocumentScrollLayer({ scroller: scroller }) {
       Column() {
-        if (this.searchVisible) {
-          this.FindBar()
-        }
         TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: controller })
           .id(editorId)
           .onAreaChange((_oldArea: Area, newArea: Area) => {
@@ -632,21 +893,25 @@ export struct DocumentView {
 
   @Builder
   private SplitPage() {
-    RowSplit() {
+    Row() {
       Column() {
         DocumentPreviewView({
           scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
-          kind: this.currentFormat().id, parseRevision: this.parseRevision,
+          kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
           onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
         })
       }
-        .width('50%')
+        .layoutWeight(1)
         .height('100%')
+      Divider().vertical(true).height('100%')
       Column() { this.EditPage(this.splitEditScroller, this.splitCursor, 'marknote-split-editor') }
-        .width('50%')
+        .layoutWeight(1)
         .height('100%')
     }
-    // RowSplit (ts-container-rowsplit) supplies the divider; resizeable keeps its documented false default.
+    // RowSplit fixes divider positions after initialization; Row weights adapt to window resizing.
+    // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-container-rowsplit
+    // Permit both scroll surfaces to paint into the titlebar safe area.
+    .clip(false)
     .height('100%')
     .width('100%')
   }
@@ -666,7 +931,7 @@ export struct DocumentView {
         TabContent() {
           DocumentPreviewView({
             scroller: this.previewScroller, theme: this.theme, source: this.source,
-            kind: this.currentFormat().id, parseRevision: this.parseRevision,
+            kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
             onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
           })
         }
@@ -703,11 +968,15 @@ export struct DocumentView {
       .barMode(BarMode.Fixed)
       // 按华为《沉浸光感》(ui-design-hds-component-material) 推荐值启用系统自适应材质。
       .barOverlap(true)
+      // barBottomMargin 是页签栏到 HdsTabs 底边的距离，默认 0。
+      // 导航避让高度大于 0 时不设置，避免和组件已有的安全区扩展叠成两段。
+      // 高度为 0 时用应用自己的边距，不是文档规定的底部间距。
       .barFloatingStyle({
         systemMaterialEffect: {
           materialType: hdsMaterial.MaterialType.ADAPTIVE,
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
-        }
+        },
+        barBottomMargin: this.navigationInsetAbsent ? $r('sys.float.margin_left') : 0
       })
       .attributeModifier(this.tabsPolicy)
       .width('100%')
