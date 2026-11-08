@@ -110,7 +110,7 @@ export struct DocumentView {
    * 底部导航避让高度为 0 时，页签栏与 HdsTabs 底边留出一段应用自己的距离。
    * 这段用 sys.float.margin_left，不是华为规定的底边距；有导航避让区时不再加。
    */
-  @State private navigationInsetAbsent: boolean = false;
+  @Provide('documentNavigationInsetAbsent') private navigationInsetAbsent: boolean = false;
   private hostWindow: window.Window | null = null;
   private watchingIndicator: boolean = false;
   private readonly onAvoidArea = (data: window.AvoidAreaOptions): void => {
