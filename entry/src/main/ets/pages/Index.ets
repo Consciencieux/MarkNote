@@ -1,6 +1,6 @@
 import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
 import {
-  ComponentContent, ItemRestriction, mediaquery, SegmentButton, SegmentButtonOptions, SegmentButtonTextItem
+  ColorMetrics, ComponentContent, mediaquery, SegmentButtonV2Items, TabSegmentButtonV2
 } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import {
@@ -23,20 +23,6 @@ import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 
 /**
- * 《设置自定义区域》把分段按钮放在标题栏 stackBuilder。
- * 只传按钮文字，颜色、字号和圆角用 SegmentButton 的系统默认值，不用示例里的演示色和固定宽度。
- * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
- */
-function homeSegmentOptions(): SegmentButtonOptions {
-  const buttons: ItemRestriction<SegmentButtonTextItem> =
-    [{ text: '全部' }, { text: '收藏' }] as ItemRestriction<SegmentButtonTextItem>;
-  const options = SegmentButtonOptions.tab({ buttons: buttons });
-  const material = segmentButtonMaterial();
-  if (material !== undefined) options.backgroundSystemMaterial = material;
-  return options;
-}
-
-/**
  * 首页外壳：导航栈、主题、设置与关于，以及新建/打开/恢复的编排。
  * 文稿页自己的状态和保存逻辑在 DocumentView，两边通过 MenuBridge 和 DocumentBridge 通信。
  */
@@ -53,13 +39,11 @@ struct Index {
   @State private documentExpanded: boolean = false;
   @State private documentOpen: boolean = false;
   /** 首页分段按钮：0 是全部，1 是收藏。收藏还没有记录。 */
-  @State private librarySegment: number[] = [0];
-  @State private librarySegmentOptions: SegmentButtonOptions = homeSegmentOptions();
-  /**
-   * 分段按钮的宽度等于所在区域的最大宽度，不能靠组件自己的 width。
-   * 这里按两个页签文字和文字按钮的默认内边距算出区域宽度。
-   */
-  @State private segmentAreaWidth: number = 0;
+  @State private librarySegment: number = 0;
+  private readonly librarySegmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+    { text: '全部' }, { text: '收藏' }
+  ]);
+  private readonly librarySegmentMaterial = segmentButtonMaterial();
   /** 每开一篇加一，文稿页据此重新载入会话。 */
   @State private revision: number = 0;
   private context: common.UIAbilityContext | null = null;
@@ -83,29 +67,8 @@ struct Index {
     menuBridge.openDocumentMenu = (): void => this.openDocumentMenu();
     menuBridge.dismiss = (next: () => void): void => this.afterMenu(next);
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    this.updateSegmentArea();
     this.bindWideBreakpoint();
     void this.initialize();
-  }
-
-  /**
-   * 《SegmentButton》：组件不支持通用属性，使用当前区域的最大宽度，并按按钮个数平分。
-   * 纯文字按钮的默认 buttonPadding 是左右各 8vp。选中态字重是 Medium，按更宽的那一档测量。
-   * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ohos-arkui-advanced-segmentbutton
-   */
-  private updateSegmentArea(): void {
-    const ui = this.getUIContext();
-    const measure = ui.getMeasureUtils();
-    const fontSize: Resource = $r('sys.float.ohos_id_text_size_body2');
-    const all = measure.measureText({
-      textContent: '全部', fontSize: fontSize, fontWeight: FontWeight.Medium
-    });
-    const saved = measure.measureText({
-      textContent: '收藏', fontSize: fontSize, fontWeight: FontWeight.Medium
-    });
-    const horizontalPadding = ui.vp2px(8) * 2;
-    const wider = all > saved ? all : saved;
-    this.segmentAreaWidth = ui.px2vp((wider + horizontalPadding) * 2);
   }
 
   aboutToDisappear(): void {
@@ -220,24 +183,41 @@ struct Index {
 
   @Builder
   private HomeSegment() {
-    // 外层只负责居中。内层宽度才是分段按钮的可用区域，避免它按整行标题栏平分。
-    // 左右空白不拦截点击，标题栏自己的菜单按钮仍可点。
+    // 标题栏自定义区域按官方示例给两侧操作保留空间。
+    // 150vp 是示例中的双选项宽度上限，空间不足时随容器收缩。
     Row() {
+      Blank().width(40)
+      Blank().width($r('sys.float.padding_level4'))
       Row() {
-        SegmentButton({ options: this.librarySegmentOptions, selectedIndexes: $librarySegment })
+        Row() {
+          TabSegmentButtonV2({
+            items: this.librarySegmentItems,
+            selectedIndex: this.librarySegment,
+            $selectedIndex: (index: number): void => { this.librarySegment = index; },
+            itemSelectedFontColor: ColorMetrics.resourceColor($r('sys.color.font_emphasize')),
+            // 默认选中背景与强调文字在深色模式下对比不足；使用随主题变化的系统强调背景。
+            // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ohos-arkui-advanced-segmentbuttonv2/
+            itemSelectedBackgroundColor: ColorMetrics.resourceColor($r('sys.color.comp_emphasize_tertiary')),
+            backgroundSystemMaterial: this.librarySegmentMaterial
+          })
+        }
+        .width('100%')
+        .constraintSize({ maxWidth: 150 })
       }
-      .width(this.segmentAreaWidth)
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      Blank().width($r('sys.float.padding_level4'))
+      Blank().width(40)
     }
     .width('100%')
-    .justifyContent(FlexAlign.Center)
+    .padding({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
     .hitTestBehavior(HitTestMode.Transparent)
   }
 
   private homeTitle(): HdsNavigationTitleBarOptions {
-    const showingFavorites = this.librarySegment.length > 0 && this.librarySegment[0] === 1;
     // 《设置自定义区域》要求自定义节点不要挡住标题文字和菜单。
     const content: TitleBarContentOptions = {
-      title: { mainTitle: showingFavorites ? '收藏' : '全部' },
+      title: { mainTitle: '' },
       stackBuilder: (): void => { this.HomeSegment(); }
     };
     content.menu = {
@@ -434,7 +414,8 @@ struct Index {
   @Builder
   private LibraryPage() {
     HomeView({
-      recents: this.librarySegment.length > 0 && this.librarySegment[0] === 1 ? [] : this.recents,
+      title: this.librarySegment === 1 ? '收藏' : '全部',
+      recents: this.librarySegment === 1 ? [] : this.recents,
       scroller: this.libraryScroller,
       onNew: (id: string): void => { this.confirmSwitch(() => this.startNew(id)); },
       onOpen: (): void => this.confirmSwitch(() => this.pickOpen()),

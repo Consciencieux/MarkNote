@@ -10,8 +10,7 @@ export function searchFieldMaterial(): uiMaterial.Material | undefined {
 }
 
 /**
- * 分段按钮背板用系统材质。样式取自《SegmentButtonV2》背景板材质示例的 ULTRA_THIN，
- * 并与编辑工具栏一样开启自动反色。不支持时由分段按钮使用自己的系统默认色。
+ * 分段按钮使用《SegmentButtonV2》示例中的系统材质；不支持时使用组件默认背板。
  * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ohos-arkui-advanced-segmentbuttonv2
  */
 export function segmentButtonMaterial(): uiMaterial.Material | undefined {
