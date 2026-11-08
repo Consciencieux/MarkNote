@@ -90,8 +90,8 @@ export struct SettingsDetail {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           this.InfoRow('应用名称', 'MarkNote')
           this.InfoRow('版本', this.version.length > 0 ? this.version : '版本信息不可用')
-          this.LinkRow('使用帮助', () => this.onOpen('help'))
           this.LinkRow('GitHub 项目主页', () => this.onOpenProject())
+          this.LinkRow('开源许可证', () => this.onOpen('license-list'))
         }.attributeModifier(this.groupStyle)
       } else {
         ListItem() {
@@ -123,6 +123,8 @@ export struct SettingsDetail {
                     '最近文稿只显示已获得持久访问授权的文件；更多菜单可以调整排序，长按记录可以移除。' +
                     '文稿页可收藏或取消收藏，首页上方可以切换到收藏列表。' +
                     '尚未保存或无法获得持久访问授权的文件需要先保存或另存为后才能收藏。')
+                  this.HelpSection('问题与建议', '在设置中点击“问题与建议”，通过邮件应用发送反馈；' +
+                    '也可以直接发送邮件至 zhouyi1227@outlook.com。')
                 } else {
                   this.Paragraph('文稿在设备本地编辑。应用没有账号、广告、遥测或联网接口，也不上传文稿。' +
                     '文件由系统文件选择器授权，草稿保存在应用私有目录。')

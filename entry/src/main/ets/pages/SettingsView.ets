@@ -37,6 +37,7 @@ export struct SettingsView {
   /** @Link keeps the displayed theme in sync with the owner when returning from its detail page. */
   @Link theme: string;
   onOpen: (section: string) => void = (_section: string): void => {};
+  onFeedback: () => void = (): void => {};
 
   @Builder
   private LinkRow(title: string, status: string, section: string) {
@@ -52,8 +53,13 @@ export struct SettingsView {
         this.LinkRow('外观', themeLabel(this.theme), 'appearance')
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+        this.LinkRow('使用帮助', '', 'help')
+        ListItem({ style: ListItemStyle.CARD }) {
+          SettingsListRow({ title: '问题与建议', showArrow: true })
+        }.onClick(() => this.onFeedback())
+      }.attributeModifier(this.groupStyle)
+      ListItemGroup({ style: ListItemGroupStyle.CARD }) {
         this.LinkRow('隐私说明', '', 'privacy')
-        this.LinkRow('开源许可证', '', 'license-list')
         this.LinkRow('关于', '', 'about')
       }.attributeModifier(this.groupStyle)
     }

@@ -24,7 +24,7 @@ devecocli --version
 ### 获取项目并配置签名
 
 ```sh
-git clone https://github.com/Consciencieux/marknote.git
+git clone https://github.com/Consciencieux/MarkNote.git
 cd marknote
 cp build-profile.example.json5 build-profile.json5
 ```
@@ -88,4 +88,4 @@ devecocli build --modules entry
 
 ## 参与贡献
 
-可以在 [Issues](https://github.com/Consciencieux/marknote/issues) 中查看已有问题，或提交新问题和建议。报告问题时，请说明设备、系统版本、复现步骤和实际结果，以便定位。
+可以在 [Issues](https://github.com/Consciencieux/MarkNote/issues) 中查看已有问题，或提交新问题和建议。报告问题时，请说明设备、系统版本、复现步骤和实际结果，以便定位。

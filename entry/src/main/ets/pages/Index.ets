@@ -293,8 +293,17 @@ struct Index {
     this.context.startAbility({
       action: 'ohos.want.action.viewData',
       entities: ['entity.system.browsable'],
-      uri: 'https://github.com/Consciencieux/marknote'
+      uri: 'https://github.com/Consciencieux/MarkNote'
     }).catch(() => this.toast('无法打开项目主页'));
+  }
+
+  /** 华为《拉起邮件类应用（mailto方式）》：由邮件应用处理发送。 */
+  private openFeedback(): void {
+    if (!this.context) return;
+    this.context.startAbility({
+      action: 'ohos.want.action.sendToData',
+      uri: 'mailto:zhouyi1227@outlook.com?subject=MarkNote%20Feedback'
+    }).catch(() => this.toast('无法打开邮件应用，请发送至 zhouyi1227@outlook.com'));
   }
 
   private readRawLicense(path: string, failure: string): string {
@@ -545,6 +554,7 @@ struct Index {
         text: name === 'project-license' ? this.projectLicenseText : this.legalText,
         onOpen: (section: string): void => this.openSetting(section),
         onOpenProject: (): void => this.openProjectHome(),
+        onFeedback: (): void => this.openFeedback(),
         onBack: (): void => { this.routes.pop(); },
         onChooseTheme: (choice: string): void => this.changeTheme(choice)
       })
