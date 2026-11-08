@@ -107,7 +107,10 @@ export struct DocumentOutlineView {
     DocumentScrollLayer({ scroller: this.scroller }) {
       List({ initialIndex: 0 }) {
         if (this.headings.length === 0) {
-          ListItem() { Text('暂无大纲') }
+          ListItem() {
+            Text('暂无大纲')
+              .padding({ left: $r('sys.float.padding_level4'), right: $r('sys.float.padding_level4') })
+          }
         }
         ForEach(this.outlineRows(), (row: OutlineRow) => {
           ListItem() {

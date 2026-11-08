@@ -157,7 +157,6 @@ struct Index {
     this.wide = this.wideQuery.matches;
     this.wideQuery.on('change', (result: mediaquery.MediaQueryResult) => {
       this.wide = result.matches;
-      if (!result.matches) this.documentExpanded = false;
     });
   }
 
@@ -251,8 +250,7 @@ struct Index {
 
   private openDocumentMenu(): void {
     const uiContext = this.getUIContext();
-    menuBridge.showCloseDocument = this.wide &&
-      (this.navigationMode === NavigationMode.Split || this.documentExpanded);
+    menuBridge.showCloseDocument = this.navigationMode === NavigationMode.Split || this.documentExpanded;
     this.documentMenu = new ComponentContent<Object>(uiContext, wrapBuilder(DocumentMenuContent));
     uiContext.getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }, menuMaterialOptions()).catch(() => {
       // The menu stays closed when its anchor is not on screen.
@@ -510,7 +508,7 @@ struct Index {
       DocumentView({
         theme: this.theme,
         wide: this.wide,
-        canExpand: this.wide && (this.navigationMode === NavigationMode.Split || this.documentExpanded),
+        canExpand: this.navigationMode === NavigationMode.Split || this.documentExpanded,
         expanded: this.documentExpanded,
         favorite: this.recents.some((item: RecentDocument): boolean =>
           item.uri === DocumentService.current().info.uri && item.favorite === true),
@@ -566,6 +564,14 @@ struct Index {
       // https://developer.huawei.com/consumer/cn/doc/best-practices/multi-business-office/
       .mode(this.documentExpanded ? NavigationMode.Stack : NavigationMode.Auto)
       .onNavigationModeChange((mode: NavigationMode): void => { this.navigationMode = mode; })
+      // 窗口宽度变化后交还给 Auto，避免手机单栏仍显示“恢复分栏”。
+      .onAreaChange((oldArea: Area, newArea: Area) => {
+        const oldWidth = Number(oldArea.width);
+        const newWidth = Number(newArea.width);
+        if (this.documentExpanded && oldWidth > 0 && newWidth > 0 && oldWidth !== newWidth) {
+          this.documentExpanded = false;
+        }
+      })
       .hideBackButton(true)
       .bindToScrollable([this.libraryScroller])
       .width('100%')
