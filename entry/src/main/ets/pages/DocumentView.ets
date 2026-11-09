@@ -152,6 +152,8 @@ export struct DocumentView {
     documentBridge.requestLeave = (): void => this.requestLeave();
     this.loadSession();
     this.watchNavigationIndicator();
+    // 这里只标记文稿数据载入完毕；实际可见由 HdsNavDestination.onShown 标记。
+    documentBridge.markAttached();
   }
 
   /**
@@ -219,6 +221,7 @@ export struct DocumentView {
     menuBridge.deleteDocument = (): void => {};
     menuBridge.find = (): void => {};
     menuBridge.closeDocument = (): void => {};
+    documentBridge.markDetached();
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
     documentBridge.requestLeave = (): void => {};
   }
@@ -1011,6 +1014,8 @@ export struct DocumentView {
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable(this.activeScrollers())
     .backgroundColor($r('sys.color.ohos_id_color_background'))
+    .onShown((): void => documentBridge.markShown())
+    .onHidden((): void => documentBridge.markHidden())
     // Keep the same destination layout contract as SettingsPage. HDS ignoreLayoutSafeArea
     // expands layout into the system avoid areas; it is not a paint-only transparency switch.
     // Scroll content extends through clipContent(SAFE_AREA) + PageTabsPolicy + PageTabContentPolicy.

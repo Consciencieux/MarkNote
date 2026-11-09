@@ -55,8 +55,13 @@ struct Index {
   private homeMenu: ComponentContent<Object> | null = null;
   private documentMenu: ComponentContent<Object> | null = null;
   private recentTask: Promise<void> = Promise.resolve();
+  /** 草稿恢复先入队，外部打开接在后面，避免两边同时替换会话。 */
+  private openQueue: Promise<void> = Promise.resolve();
+  private externalWaiting: number = 0;
+  private disposed: boolean = false;
 
   aboutToAppear(): void {
+    this.disposed = false;
     menuBridge.openFile = (): void => {
       this.afterMenu(() => this.confirmSwitch(() => this.pickOpen()));
     };
@@ -81,7 +86,9 @@ struct Index {
   }
 
   aboutToDisappear(): void {
+    this.disposed = true;
     LaunchRequests.unbind();
+    documentBridge.cancelWait();
     if (this.wideQuery !== null) {
       this.wideQuery.off('change');
       this.wideQuery = null;
@@ -114,10 +121,46 @@ struct Index {
     } catch {
       this.toast('读取设置失败，已使用系统默认值');
     }
-    LaunchRequests.bind((request: OpenRequest) => {
-      this.confirmSwitch(() => this.openExternal(request));
-    });
-    await this.resumeDraft();
+    // 先开始恢复草稿，再接入外部打开。绑定若立刻交出暂存请求，也会排到恢复之后。
+    this.openQueue = this.resumeDraft();
+    LaunchRequests.bind((request: OpenRequest): void => this.enqueueExternal(request));
+    await this.openQueue;
+  }
+
+  /** 外部打开一次只处理一个，并等上一次离开确认结束。 */
+  private enqueueExternal(request: OpenRequest): void {
+    this.externalWaiting++;
+    this.openQueue = this.openQueue
+      .catch((): void => {})
+      .then(async (): Promise<void> => {
+        try {
+          await this.openAfterReady(request);
+        } catch (error) {
+          if (!this.disposed) this.toast('处理外部打开请求失败：' + String(error));
+        } finally {
+          this.externalWaiting--;
+        }
+      });
+  }
+
+  /**
+   * 已有文稿时先确保文稿页显示并载入，再走离开确认。
+   * 这样崩溃草稿不会在外部文件打开前被当成干净文稿清掉。
+   */
+  private async openAfterReady(request: OpenRequest): Promise<void> {
+    if (this.disposed) return;
+    if (this.documentOpen) {
+      this.revealDocumentRoute();
+      const visible = await documentBridge.whenVisible();
+      if (this.disposed) return;
+      if (!visible) {
+        this.toast('文稿页面未能显示，请重试打开文件');
+        return;
+      }
+      const accepted = await documentBridge.saveBeforeLeaving();
+      if (!accepted) return;
+    }
+    if (!this.disposed) await this.openExternal(request);
   }
 
   /** 版本号只读一次，供「关于」页显示；读取失败时由页面显示提示。 */
@@ -141,7 +184,7 @@ struct Index {
     try {
       await DocumentService.restore(draft);
       this.presentOpened();
-      this.toast('已恢复上次未保存的编辑');
+      if (this.externalWaiting === 0) this.toast('已恢复上次未保存的编辑');
     } catch {
       if (this.context) LocalState.clearDraft(this.context);
       this.toast('上次的编辑无法恢复，已丢弃');
@@ -333,6 +376,18 @@ struct Index {
     this.routes.pushPathByName('document', '');
   }
 
+  /** 外部文件到达时，设置页可能盖住文稿页；先回到文稿才能可靠地询问未保存修改。 */
+  private revealDocumentRoute(): void {
+    const names = this.routes.getAllPathName();
+    if (!names.includes('document')) {
+      // 会话存在却没有文稿路由时，丢弃设置页路由，再恢复文稿页。
+      this.routes.clear();
+      this.showDocumentRoute();
+      return;
+    }
+    if (names[names.length - 1] !== 'document') this.routes.popToName('document');
+  }
+
   private leaveDocument(): void {
     if (this.routes.size() > 0) documentBridge.requestLeave();
   }
@@ -400,6 +455,8 @@ struct Index {
     const writeRequested = request.writeGranted || !request.readGranted;
     try {
       await DocumentService.openUri(request.uri, request.declaredType, writeRequested, true);
+      // 没有现有文稿时，不能把设置页留在新文稿的返回路径下面。
+      if (!this.documentOpen) this.routes.clear();
       this.presentOpened();
     } catch (error) {
       this.toast('打开失败：' + String(error));

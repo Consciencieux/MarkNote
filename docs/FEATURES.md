@@ -12,8 +12,8 @@
 | 保存与另存为 | 有写入授权时可保存到原 URI；原文件无法写入或保存失败时可另存为。另存成功后继续编辑新文件；授权未持久化时保存后会提示。写入前检查文件是否被外部修改，发现冲突时拒绝覆盖。保存后重新读取并校验内容；文件提供方不保证写入操作具有原子性 | [DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
 | 分享 | 预览和大纲标题栏、编辑和分栏的更多菜单可通过系统分享面板分享当前编辑内容，包括尚未保存的修改；分享文件为 UTF-8 临时副本，不修改原文件 | [DocumentShare.ets](../entry/src/main/ets/document/DocumentShare.ets)、[DocumentMenus.ets](../entry/src/main/ets/pages/DocumentMenus.ets) |
 | 删除文件 | 已保存文稿可以在预览、大纲标题栏或编辑、分栏的更多菜单中请求移入系统回收站；删除前确认，未保存修改会明确提示。原文件发生外部变化、文件提供方不支持或授权不足时不删除，保留当前文稿及草稿；尚未保存为文件的文稿不能删除 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
-| 未保存内容 | 离开已修改的文稿前，应用询问是否保存。编辑时会在应用私有目录保存草稿，供异常退出后恢复；正常离开时清除草稿 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
-| 编码与换行 | 支持 UTF-8、UTF-16 LE/BE 和 GB18030，保存时保留原编码、BOM 和换行方式。混合换行的文件在行数改变后不能直接按原方式保存；另存为时使用 LF。当前不能手动选择编码 | [TextEncoding.ets](../entry/src/main/ets/document/TextEncoding.ets)、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets) |
+| 未保存内容 | 离开已修改的文稿前，应用询问是否保存。编辑时会在应用私有目录保存草稿，供异常退出后恢复；正常离开时清除草稿。冷启动先恢复该草稿；若同时收到外部打开请求，先回到文稿页并确认离开，再打开外部文件 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
+| 编码与换行 | 支持 UTF-8、UTF-16 LE/BE 和 GB18030，保存时保留原编码、BOM，以及 LF、CRLF 和 CR 换行。混合换行的文件在行数改变后不能直接按原方式保存；另存为时使用 LF。当前不能手动选择编码 | [TextEncoding.ets](../entry/src/main/ets/document/TextEncoding.ets)、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets) |
 | 文件大小 | 超过 8 MiB 的文件不能打开；保存后的编码字节超过 8 MiB 时拒绝写入。文件读写目前在 UI 线程同步执行 | [DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
 
 ## 编辑与预览

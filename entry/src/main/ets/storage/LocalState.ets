@@ -84,7 +84,10 @@ export class LocalState {
           typeof parsed.name !== 'string' || typeof parsed.uri !== 'string') return null;
       if (typeof parsed.encoding !== 'string' || parsed.encoding.length === 0) parsed.encoding = 'utf-8';
       if (typeof parsed.lineEndings !== 'string') parsed.lineEndings = '';
-      if (parsed.newline !== '\n' && parsed.newline !== '\r\n' && parsed.newline !== 'mixed') parsed.newline = '\n';
+      if (parsed.newline !== '\n' && parsed.newline !== '\r' && parsed.newline !== '\r\n' &&
+        parsed.newline !== 'mixed') {
+        parsed.newline = '\n';
+      }
       if (typeof parsed.fingerprint !== 'string') parsed.fingerprint = '';
       if (typeof parsed.formatId !== 'string') parsed.formatId = '';
       parsed.writable = parsed.writable === true;
