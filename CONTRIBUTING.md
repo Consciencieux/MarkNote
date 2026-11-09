@@ -70,6 +70,14 @@ devecocli build --modules entry
 
 功能和普通修复使用 Squash merge。合并后删除短期分支，后续工作从最新 `dev` 创建新分支。
 
+### 发布
+
+版本号、更新日志和标签的关系见[项目开发约定](AGENTS.md)。
+
+仓库变量 `DEVECO_CLI_VERSION` 必须是 DevEco CLI 的确切版本，不能使用 `stable` 或 `latest`。发布构建使用标签为 `hmos` 的自托管 runner。Linux runner 需要设置 `DEVECO_CLI_CLT_PATH`；macOS runner 使用本机已安装的 DevEco Studio。
+
+签名材料不进入仓库，也不放入 GitHub Release。预览和许可证的生成文件必须已经提交，并且与一次干净的 `renderer` 构建结果一致。正在发布的版本日志不能再写「安装包将另行发布」。
+
 ### 提交 Pull Request
 
 1. 从对应基线创建分支并完成修改。

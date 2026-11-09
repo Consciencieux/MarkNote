@@ -6,44 +6,352 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  NODE_VERSION: '22.23.4'
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      source_sha: ${{ steps.prepare.outputs.source_sha }}
+      cli_version: ${{ steps.prepare.outputs.cli_version }}
+      artifact_name: ${{ steps.prepare.outputs.artifact_name }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check version and prepare release notes
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify tag belongs to main
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main || {
+            echo '::error::标签对应的提交不在 main 历史中'
+            exit 1
+          }
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "${GITHUB_REF}^{commit}")"
+
+      - name: Install JSON5 parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/release-python"
+          "$RUNNER_TEMP/release-python/bin/python" -m pip install 'json5==0.16.0'
+
+      - name: Validate version and prepare release inputs
+        id: prepare
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          DEVECO_CLI_VERSION: ${{ vars.DEVECO_CLI_VERSION }}
         run: |
-          python3 - <<'PY'
+          "$RUNNER_TEMP/release-python/bin/python" - <<'PY'
           import json
           import os
           import re
+          import subprocess
           from pathlib import Path
+          import json5
 
           tag = os.environ['RELEASE_TAG']
-          with open('AppScope/app.json5', encoding='utf-8') as f:
-              version = json.load(f)['app']['versionName']
-          if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag) or tag != f'v{version}':
-              raise SystemExit(f'标签 {tag} 与应用版本 {version} 不一致')
+          cli = os.environ['DEVECO_CLI_VERSION'].strip()
+          if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', cli):
+              raise SystemExit('请设置仓库变量 DEVECO_CLI_VERSION，必须是确切版本号，不能用 stable/latest')
+
+          app = json5.loads(Path('AppScope/app.json5').read_text(encoding='utf-8'),
+                            allow_duplicate_keys=False)['app']
+          version = app['versionName']
+          if not re.fullmatch(r'v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', tag) or tag != f'v{version}':
+              raise SystemExit(f'标签 {tag} 与应用版本 {version} 不一致，或不是正式版本标签')
+          sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
 
           changelog = Path('CHANGELOG.md').read_text(encoding='utf-8')
-          match = re.search(r'^## ' + re.escape(version) + r'\s*\n(.*?)(?=^## |\Z)',
+          match = re.search(r'^##[ \t]+' + re.escape(version) + r'[ \t]*\n(.*?)(?=^##[ \t]|\Z)',
                             changelog, re.MULTILINE | re.DOTALL)
           if not match or not match.group(1).strip():
               raise SystemExit(f'CHANGELOG.md 中缺少 {version} 的更新日志')
           notes = match.group(1).strip()
-          notes = notes.replace('](docs/FEATURES.md)', '](https://github.com/' +
-                                os.environ['GITHUB_REPOSITORY'] + '/blob/' + tag +
-                                '/docs/FEATURES.md)')
-          Path('release-notes.md').write_text(notes + '\n', encoding='utf-8')
+          if '本版本先提供源码，安装包将另行发布。' in notes:
+              raise SystemExit('请先更新本版本日志：现在会同时发布开发者 HAP，不再是仅发布源码')
+          repo = os.environ['GITHUB_REPOSITORY']
+          notes = notes.replace('](docs/FEATURES.md)',
+                                f'](https://github.com/{repo}/blob/{sha}/docs/FEATURES.md)')
+          notes += ('\n\n此 HAP 可在兼容的模拟器中验证；'
+                    '真机安装需要自行配置调试签名。'
+                    f'\n\n构建提交：`{sha}`\n\n<!-- marknote-release:{sha} -->\n')
+
+          profile = json5.loads(Path('build-profile.example.json5').read_text(encoding='utf-8'),
+                                allow_duplicate_keys=False)
+          profile['app']['signingConfigs'] = []
+          for product in profile['app']['products']:
+              product.pop('signingConfig', None)
+          product = next((p for p in profile['app']['products'] if p['name'] == 'default'), None)
+          if product is None:
+              raise SystemExit('构建配置中缺少 default 产品')
+
+          out = Path(os.environ['RUNNER_TEMP']) / 'release-inputs'
+          out.mkdir(parents=True, exist_ok=True)
+          (out / 'release-notes.md').write_text(notes, encoding='utf-8')
+          (out / 'build-profile.json5').write_text(
+              json.dumps(profile, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          metadata = {
+              'tag': tag, 'commit': sha,
+              'versionName': version, 'versionCode': app['versionCode'],
+              'targetSdkVersion': product['targetSdkVersion'],
+              'compatibleSdkVersion': product['compatibleSdkVersion'],
+              'nodeVersion': os.environ['NODE_VERSION'], 'devecoCliVersion': cli,
+              'product': 'default', 'module': 'entry', 'buildMode': 'debug'
+          }
+          (out / 'build-info.json').write_text(
+              json.dumps(metadata, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          name = f"release-inputs-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'source_sha={sha}\ncli_version={cli}\nartifact_name={name}\n')
           PY
-      - name: Publish source release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.prepare.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-inputs/
+          if-no-files-found: error
+          retention-days: 7
+
+  build-hap:
+    needs: prepare
+    runs-on: [self-hosted, hmos]
+    timeout-minutes: 45
+    env:
+      DEVECO_CLI_VERSION: ${{ needs.prepare.outputs.cli_version }}
+    outputs:
+      artifact_name: ${{ steps.package.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+          clean: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-inputs
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Check runner environment
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Linux)
+              : "${DEVECO_CLI_CLT_PATH:?请在执行器环境中设置鸿蒙命令行工具链路径}"
+              test -d "$DEVECO_CLI_CLT_PATH"
+              ;;
+            macOS) ;;
+            *) echo '::error::此工作流的构建执行器需使用 Linux 或 macOS'; exit 1 ;;
+          esac
+          python3 --version
+          node --version
+          npm --version
+          node -e "if (typeof require('node:module').stripTypeScriptTypes !== 'function') throw new Error('Node 版本无法执行 ArkTS 逻辑测试')"
+
+      - name: Install pinned DevEco CLI in a temporary directory
+        run: |
+          prefix="$RUNNER_TEMP/marknote-cli-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          npm install --global --prefix "$prefix" \
+            "@deveco/deveco-cli@$DEVECO_CLI_VERSION" --no-audit --no-fund
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+
+      - name: Check, test and rebuild renderer
+        working-directory: renderer
+        run: |
+          npm ci
+          npm run check
+          npm test
+          npm run build
+
+      - name: Require generated resources to match the tag
+        run: |
+          paths=(
+            entry/src/main/resources/rawfile/preview/index.html
+            entry/src/main/resources/rawfile/licenses
+          )
+          changes="$(git status --porcelain --untracked-files=all -- "${paths[@]}")"
+          if [[ -n "$changes" ]]; then
+            printf '%s\n' "$changes"
+            echo '::error::预览或许可证生成文件与标签不一致，请重新生成并提交后发布新标签'
+            exit 1
+          fi
+
+      - name: Build unsigned debug HAP
+        run: |
+          cp "$RUNNER_TEMP/release-inputs/build-profile.json5" build-profile.json5
+          rm -rf entry/build build .hvigor dist
+          devecocli --version
+          devecocli build --product default --modules entry --build-mode debug
+
+      - name: Package HAP and checksums
+        id: package
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import shutil
+          import subprocess
+          from pathlib import Path
+
+          inputs = Path(os.environ['RUNNER_TEMP']) / 'release-inputs'
+          info = json.loads((inputs / 'build-info.json').read_text(encoding='utf-8'))
+          sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          if sha != info['commit']:
+              raise SystemExit('构建源码提交与准备阶段不一致')
+          haps = sorted(Path('entry/build/default/outputs').rglob('*.hap'))
+          if len(haps) != 1 or not haps[0].name.endswith('-unsigned.hap'):
+              raise SystemExit(f'预期只有一个未签名 HAP，实际找到：{haps}')
+          if haps[0].stat().st_size == 0:
+              raise SystemExit('生成的 HAP 为空')
+
+          dist = Path('dist')
+          dist.mkdir()
+          hap = dist / f"MarkNote-{info['tag']}-unsigned.hap"
+          shutil.copyfile(haps[0], hap)
+          info['npmVersion'] = subprocess.check_output(['npm', '--version'], text=True).strip()
+          info['runnerOS'] = os.environ['RUNNER_OS']
+          info['runnerArch'] = os.environ['RUNNER_ARCH']
+          manifest = dist / 'build-info.json'
+          manifest.write_text(json.dumps(info, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          checksums = ''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n'
+                              for p in (hap, manifest))
+          (dist / 'SHA256SUMS').write_text(checksums, encoding='utf-8')
+          name = f"marknote-hap-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'artifact_name={name}\n')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    needs: [prepare, build-hap]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.artifact_name }}
+          path: release-inputs
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-hap.outputs.artifact_name }}
+          path: dist
+
+      - name: Verify downloaded artifacts
         env:
-          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" --verify-tag \
-            --title "MarkNote $RELEASE_TAG" --notes-file release-notes.md
+          (cd dist && sha256sum --check SHA256SUMS)
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          info = json.loads(Path('dist/build-info.json').read_text(encoding='utf-8'))
+          if info['commit'] != os.environ['SOURCE_SHA'] or info['tag'] != os.environ['RELEASE_TAG']:
+              raise SystemExit('附件的标签或源码提交不匹配，拒绝发布')
+          PY
+
+      # 不检出源码、不执行仓库中的构建脚本；写权限只用于发布。
+      - name: Create or resume draft, upload, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          verify_tag() {
+            remote_sha="$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq '.sha')"
+            if [[ "$remote_sha" != "$SOURCE_SHA" ]]; then
+              echo '::error::远端标签已发生变化，拒绝发布'
+              exit 1
+            fi
+          }
+          verify_tag
+
+          # 列表接口可以查到草稿；API 请求失败时直接失败，不当作“版本不存在”。
+          gh api --paginate "repos/$GH_REPO/releases?per_page=100" |
+            jq -s --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)]' \
+              > "$RUNNER_TEMP/matching-releases.json"
+          state="$RUNNER_TEMP/matching-releases.json"
+          count="$(jq 'length' "$state")"
+          marker="<!-- marknote-release:$SOURCE_SHA -->"
+
+          case "$count" in
+            0)
+              gh release create "$RELEASE_TAG" --draft --verify-tag \
+                --target "$SOURCE_SHA" --title "MarkNote $RELEASE_TAG" \
+                --notes-file release-inputs/release-notes.md
+              ;;
+            1)
+              if ! jq -e '.[0].draft == true' "$state" > /dev/null; then
+                echo '::error::该版本已经正式发布，不自动覆盖；修改后请发布新版本'
+                exit 1
+              fi
+              if ! jq -e --arg marker "$marker" \
+                '(.[0].body // "") | contains($marker)' "$state" > /dev/null; then
+                echo '::error::已有草稿不是本工作流为同一提交创建的，请先人工检查'
+                exit 1
+              fi
+              gh release edit "$RELEASE_TAG" --draft --verify-tag \
+                --title "MarkNote $RELEASE_TAG" \
+                --notes-file release-inputs/release-notes.md
+              ;;
+            *) echo '::error::同一标签存在多个 Release，请人工检查'; exit 1 ;;
+          esac
+
+          # 只对已确认属于本次源码的草稿重传附件。
+          hap="MarkNote-$RELEASE_TAG-unsigned.hap"
+          gh release upload "$RELEASE_TAG" \
+            "dist/$hap" dist/SHA256SUMS dist/build-info.json --clobber
+
+          # 回读并校验上传结果，失败时保留草稿供重跑。
+          verify_dir="$RUNNER_TEMP/verify-release"
+          mkdir -p "$verify_dir"
+          gh release download "$RELEASE_TAG" --dir "$verify_dir" \
+            --pattern "$hap" --pattern SHA256SUMS --pattern build-info.json
+          cmp dist/SHA256SUMS "$verify_dir/SHA256SUMS"
+          (cd "$verify_dir" && sha256sum --check SHA256SUMS)
+
+          # 公开前，确认草稿只有本次预期的三个附件。
+          if ! gh release view "$RELEASE_TAG" --json assets |
+            jq -e --arg hap "$hap" '
+              ([.assets[].name] | sort) ==
+              ([$hap, "SHA256SUMS", "build-info.json"] | sort)
+            ' >/dev/null; then
+            echo '::error::Release 附件集合不符合预期，请检查是否存在遗漏或遗留附件'
+            exit 1
+          fi
+
+          verify_tag
+          gh release edit "$RELEASE_TAG" --draft=false --verify-tag
+          gh release view "$RELEASE_TAG" --json url --jq '.url'
