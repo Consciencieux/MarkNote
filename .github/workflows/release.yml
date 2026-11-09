@@ -342,6 +342,16 @@ jobs:
           cmp dist/SHA256SUMS "$verify_dir/SHA256SUMS"
           (cd "$verify_dir" && sha256sum --check SHA256SUMS)
 
+          # 公开前，确认草稿只有本次预期的三个附件。
+          if ! gh release view "$RELEASE_TAG" --json assets |
+            jq -e --arg hap "$hap" '
+              ([.assets[].name] | sort) ==
+              ([$hap, "SHA256SUMS", "build-info.json"] | sort)
+            ' >/dev/null; then
+            echo '::error::Release 附件集合不符合预期，请检查是否存在遗漏或遗留附件'
+            exit 1
+          fi
+
           verify_tag
           gh release edit "$RELEASE_TAG" --draft=false --verify-tag
           gh release view "$RELEASE_TAG" --json url --jq '.url'
