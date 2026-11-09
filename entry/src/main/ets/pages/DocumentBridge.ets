@@ -1,35 +1,65 @@
 /**
- * 首页和文稿页之间的两个询问。
+ * 首页和文稿页之间的离开确认以及页面显示状态。
  *
- * 文稿状态在 DocumentView 里，首页只负责导航，所以「这篇能离开吗」和「请先处理未保存
- * 的改动再离开」都得由首页通过这个桥问过去。文稿页在 aboutToAppear 里接上，
- * 在 aboutToDisappear 里复位成安全默认值（允许离开），避免首页对着已经销毁的实例调用。
+ * aboutToAppear 只保证完成载入；HdsNavDestination.onShown 才表示页面完成显示。
+ * 外部打开请求在文稿可见后才询问未保存的修改，避免弹窗出现在导航转场中。
  */
 export class DocumentBridge {
   /** 处理未保存的改动，true 表示可以继续。 */
   saveBeforeLeaving: () => Promise<boolean> = (): Promise<boolean> => Promise.resolve(true);
   /** 保存后关闭会话并请首页弹栈。 */
   requestLeave: () => void = (): void => {};
-  /** 文稿页 aboutToAppear 完成载入后为 true。首页据此等待真正的离开确认。 */
   private attached: boolean = false;
-  private pendingReady: (() => void) | null = null;
+  private visible: boolean = false;
+  private pendingReady: ((ready: boolean) => void) | null = null;
+  private readyTimer: number = -1;
 
   markAttached(): void {
     this.attached = true;
-    const ready = this.pendingReady;
-    this.pendingReady = null;
-    if (ready !== null) ready();
+    this.resolveIfVisible();
+  }
+
+  markShown(): void {
+    this.visible = true;
+    this.resolveIfVisible();
+  }
+
+  markHidden(): void {
+    this.visible = false;
   }
 
   markDetached(): void {
     this.attached = false;
+    this.visible = false;
+    this.cancelWait();
   }
 
-  /** 打开队列同一时刻只等待一次，所以只需记住一个回调。 */
-  whenAttached(): Promise<void> {
-    if (this.attached) return Promise.resolve();
-    return new Promise<void>((resolve: () => void): void => {
+  private resolveIfVisible(): void {
+    if (this.attached && this.visible) this.finishWait(true);
+  }
+
+  private finishWait(ready: boolean): void {
+    if (this.readyTimer >= 0) {
+      clearTimeout(this.readyTimer);
+      this.readyTimer = -1;
+    }
+    const resolve = this.pendingReady;
+    this.pendingReady = null;
+    if (resolve !== null) resolve(ready);
+  }
+
+  /** 页面销毁或首页退出时中断等待，不让打开队列永久挂起。 */
+  cancelWait(): void {
+    this.finishWait(false);
+  }
+
+  /** 同一时刻仅有一个外部打开请求等待，超时或销毁则拒绝本次切换。 */
+  whenVisible(timeoutMs: number = 15000): Promise<boolean> {
+    if (this.attached && this.visible) return Promise.resolve(true);
+    if (this.pendingReady !== null) return Promise.resolve(false);
+    return new Promise<boolean>((resolve: (ready: boolean) => void): void => {
       this.pendingReady = resolve;
+      this.readyTimer = setTimeout((): void => this.finishWait(false), timeoutMs);
     });
   }
 }
