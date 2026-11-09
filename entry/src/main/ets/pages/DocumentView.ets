@@ -152,6 +152,8 @@ export struct DocumentView {
     documentBridge.requestLeave = (): void => this.requestLeave();
     this.loadSession();
     this.watchNavigationIndicator();
+    // 载入后再标记就绪，避免首页在正文同步前误判为没有未保存修改。
+    documentBridge.markAttached();
   }
 
   /**
@@ -219,6 +221,7 @@ export struct DocumentView {
     menuBridge.deleteDocument = (): void => {};
     menuBridge.find = (): void => {};
     menuBridge.closeDocument = (): void => {};
+    documentBridge.markDetached();
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
     documentBridge.requestLeave = (): void => {};
   }

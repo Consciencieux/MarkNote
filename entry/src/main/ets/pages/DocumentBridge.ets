@@ -10,6 +10,28 @@ export class DocumentBridge {
   saveBeforeLeaving: () => Promise<boolean> = (): Promise<boolean> => Promise.resolve(true);
   /** 保存后关闭会话并请首页弹栈。 */
   requestLeave: () => void = (): void => {};
+  /** 文稿页 aboutToAppear 完成载入后为 true。首页据此等待真正的离开确认。 */
+  private attached: boolean = false;
+  private pendingReady: (() => void) | null = null;
+
+  markAttached(): void {
+    this.attached = true;
+    const ready = this.pendingReady;
+    this.pendingReady = null;
+    if (ready !== null) ready();
+  }
+
+  markDetached(): void {
+    this.attached = false;
+  }
+
+  /** 打开队列同一时刻只等待一次，所以只需记住一个回调。 */
+  whenAttached(): Promise<void> {
+    if (this.attached) return Promise.resolve();
+    return new Promise<void>((resolve: () => void): void => {
+      this.pendingReady = resolve;
+    });
+  }
 }
 
 export const documentBridge: DocumentBridge = new DocumentBridge();
