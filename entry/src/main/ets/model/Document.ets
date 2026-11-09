@@ -3,9 +3,9 @@ export class DocumentInfo {
   uri: string = '';
   name: string = '未命名.md';
   hasBom: boolean = false;
-  /** '\n', '\r\n', or 'mixed'. Editor text always uses '\n'. */
+  /** '\n', '\r', '\r\n', or 'mixed'. Editor text always uses '\n'. */
   newline: string = '\n';
-  /** Compact per-line endings when newline is mixed: 'n' or 'r' for each break. */
+  /** Compact per-line endings when newline is mixed: 'n' LF, 'r' CRLF, 'c' CR. */
   lineEndings: string = '';
   encoding: string = 'utf-8';
   /** SHA-256 of the bytes last read or successfully written. Empty when there is no file yet. */

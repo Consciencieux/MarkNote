@@ -40,7 +40,7 @@ function utf16Encoding(bytes: Uint8Array): string {
   return '';
 }
 
-/** Editor text uses '\n'. Original endings are restored on save when the line count is unchanged. */
+/** Editor text uses '\n'. LF, CR and CRLF are restored on save. */
 function normalizeNewlines(raw: string): DecodedText {
   const decoded = new DecodedText();
   // Most documents use LF only; avoid constructing a new string one character at a time.
@@ -49,14 +49,20 @@ function normalizeNewlines(raw: string): DecodedText {
     return decoded;
   }
   let sawLf = false;
+  let sawCr = false;
   let sawCrLf = false;
   for (let index = 0; index < raw.length; index++) {
     const code = raw.charCodeAt(index);
     if (code === 13) {
-      if (index + 1 < raw.length && raw.charCodeAt(index + 1) === 10) index++;
       decoded.text += '\n';
-      decoded.lineEndings += 'r';
-      sawCrLf = true;
+      if (index + 1 < raw.length && raw.charCodeAt(index + 1) === 10) {
+        index++;
+        decoded.lineEndings += 'r';
+        sawCrLf = true;
+      } else {
+        decoded.lineEndings += 'c';
+        sawCr = true;
+      }
     } else if (code === 10) {
       decoded.text += '\n';
       decoded.lineEndings += 'n';
@@ -65,10 +71,14 @@ function normalizeNewlines(raw: string): DecodedText {
       decoded.text += raw[index];
     }
   }
-  if (sawCrLf && sawLf) {
+  const kinds = (sawLf ? 1 : 0) + (sawCr ? 1 : 0) + (sawCrLf ? 1 : 0);
+  if (kinds > 1) {
     decoded.newline = 'mixed';
   } else if (sawCrLf) {
     decoded.newline = '\r\n';
+    decoded.lineEndings = '';
+  } else if (sawCr) {
+    decoded.newline = '\r';
     decoded.lineEndings = '';
   } else {
     decoded.newline = '\n';
@@ -77,13 +87,19 @@ function normalizeNewlines(raw: string): DecodedText {
   return decoded;
 }
 
+function endingMark(mark: string): string {
+  if (mark === 'r') return '\r\n';
+  if (mark === 'c') return '\r';
+  return '\n';
+}
+
 function serialize(text: string, newline: string, lineEndings: string, encoding: string): EncodedText {
   const result = new EncodedText();
   const parts = text.split('\n');
   if (newline === 'mixed' && parts.length === lineEndings.length + 1) {
     let mixed = parts[0];
     for (let index = 0; index < lineEndings.length; index++) {
-      mixed += (lineEndings[index] === 'r' ? '\r\n' : '\n') + parts[index + 1];
+      mixed += endingMark(lineEndings[index]) + parts[index + 1];
     }
     result.newline = 'mixed';
     result.lineEndings = lineEndings;
@@ -95,13 +111,9 @@ function serialize(text: string, newline: string, lineEndings: string, encoding:
     result.bytes = encodeBody(text.replace(/\n/g, '\r\n'), encoding);
     return result;
   }
-  let crlf = 0;
-  for (let index = 0; index < lineEndings.length; index++) {
-    if (lineEndings[index] === 'r') crlf++;
-  }
-  if (newline === 'mixed' && lineEndings.length > 0 && crlf * 2 >= lineEndings.length) {
-    result.newline = '\r\n';
-    result.bytes = encodeBody(text.replace(/\n/g, '\r\n'), encoding);
+  if (newline === '\r') {
+    result.newline = '\r';
+    result.bytes = encodeBody(text.replace(/\n/g, '\r'), encoding);
     return result;
   }
   result.newline = '\n';

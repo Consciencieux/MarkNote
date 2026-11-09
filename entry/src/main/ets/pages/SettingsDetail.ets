@@ -90,8 +90,8 @@ export struct SettingsDetail {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           this.InfoRow('应用名称', 'MarkNote')
           this.InfoRow('版本', this.version.length > 0 ? this.version : '版本信息不可用')
-          this.LinkRow('使用帮助', () => this.onOpen('help'))
           this.LinkRow('GitHub 项目主页', () => this.onOpenProject())
+          this.LinkRow('开源许可证', () => this.onOpen('license-list'))
         }.attributeModifier(this.groupStyle)
       } else {
         ListItem() {
@@ -110,6 +110,7 @@ export struct SettingsDetail {
                   this.HelpSection('打开与保存', '在首页新建文稿或选择文件，也可以从其他应用打开支持的文件。' +
                     '打开和保存的文稿不能超过 8 MiB。' +
                     '如果原文件无法写入，保存时可以另存为；另存成功后会继续编辑新文件。' +
+                    '保存时保留原来的编码，以及 LF、CRLF 和 CR 换行。' +
                     '文稿页可以分享当前内容，包括未保存的修改。分享的是临时副本，不会保存或覆盖原文件。' +
                     '删除会将原文件移入系统回收站，并提示未保存的修改；授权不足或文件已被其他应用修改时无法删除。')
                   this.HelpSection('编辑与预览', '在文稿底部切换预览、编辑和大纲。Markdown 和 LaTeX 文稿支持大纲；' +
@@ -120,9 +121,12 @@ export struct SettingsDetail {
                     'Markdown 可以显示文稿同目录或子目录中、系统允许读取的本地图片；网络图片和未授权的图片只显示占位文字。' +
                     'LaTeX 可以预览常见文稿和数学公式，不编译 PDF；部分命令、引用的图片和 TikZ 图形暂无法显示。')
                   this.HelpSection('草稿与最近文稿', '编辑时会在设备上保存草稿，供异常退出后恢复。' +
+                    '若这时从其他应用打开文件，会先回到文稿页并询问是否保存上次的编辑，再打开新文件。' +
                     '最近文稿只显示已获得持久访问授权的文件；更多菜单可以调整排序，长按记录可以移除。' +
                     '文稿页可收藏或取消收藏，首页上方可以切换到收藏列表。' +
                     '尚未保存或无法获得持久访问授权的文件需要先保存或另存为后才能收藏。')
+                  this.HelpSection('问题与建议', '在设置中点击“问题与建议”，通过邮件应用发送反馈；' +
+                    '也可以直接发送邮件至 zhouyi1227@outlook.com。')
                 } else {
                   this.Paragraph('文稿在设备本地编辑。应用没有账号、广告、遥测或联网接口，也不上传文稿。' +
                     '文件由系统文件选择器授权，草稿保存在应用私有目录。')

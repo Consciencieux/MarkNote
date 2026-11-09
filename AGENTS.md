@@ -6,6 +6,8 @@
 
 新功能和普通修复从 `dev` 创建短期分支，通过 PR 以 Squash merge 合并到 `dev`。发布通过 PR 将 `dev` 以 Merge commit 合并到 `main`，再在 `main` 的发布提交上打版本标签。紧急修复从 `main` 创建分支，通过 PR 合并到 `main`；发布后通过 PR 以 Merge commit 将 `main` 回合并到 `dev`。日常贡献见[构建与贡献](CONTRIBUTING.md)。
 
+日常开发的变更记在 `CHANGELOG.md` 顶部的 `Unreleased`。发布准备时，把本次内容归档到 `## X.Y.Z`，顶部仍保留空的 `Unreleased`，并同步确认 `AppScope/app.json5` 中的应用版本。`Unreleased` 与待发布的版本章节可以同时存在：前者给下一轮开发，后者表示已经确定、尚未公开发布的版本。归档在打标签之前完成。Release 工作流只检查日志和应用版本，不修改源码。PR 合并到 `main` 后，在该发布提交上创建对应的 `vX.Y.Z` 标签。
+
 ## 开发工具
 
 处理鸿蒙工程的构建、运行、设备和模拟器操作、界面检查及调试时，Agent 应优先使用 DevEco CLI 提供的命令，不建议通过 computer use 等通用图形界面自动化方式操作。DevEco CLI 不支持所需操作时，再选择其他合适的工具。安装方法见[构建与贡献](CONTRIBUTING.md)。

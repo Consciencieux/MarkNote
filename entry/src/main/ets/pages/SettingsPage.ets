@@ -13,6 +13,7 @@ export struct SettingsPage {
   private scroller: Scroller = new Scroller();
   onOpen: (section: string) => void = (_section: string): void => {};
   onOpenProject: () => void = (): void => {};
+  onFeedback: () => void = (): void => {};
   onBack: () => void = (): void => {};
   onChooseTheme: (choice: string) => void = (_choice: string): void => {};
 
@@ -21,7 +22,7 @@ export struct SettingsPage {
       if (this.section === 'settings') {
         SettingsView({
           scroller: this.scroller, theme: $theme,
-          onOpen: this.onOpen
+          onOpen: this.onOpen, onFeedback: this.onFeedback
         })
       } else {
         SettingsDetail({
