@@ -5,6 +5,7 @@ import { preferences } from '@kit.ArkData';
 import { RecentDocument, RecoveryData } from '../model/Document';
 import { RecentEntry, removeRecentDocument, toggleFavoriteDocument, updateRecentDocument } from '../document/RecentOrder';
 import { AppText } from '../i18n/AppText';
+import { normalizeAppLanguage } from '../i18n/AppLanguage';
 
 const RECENT_KEY: string = 'recent_files';
 const THEME_KEY: string = 'color_choice';
@@ -29,7 +30,7 @@ export class LocalState {
   static async readLanguage(context: common.UIAbilityContext): Promise<string> {
     const store = await preferences.getPreferences(context, 'marknote-settings');
     const value = await store.get(LANGUAGE_KEY, 'default') as string;
-    return value === 'zh-Hans' || value === 'en-US' ? value : 'default';
+    return normalizeAppLanguage(value);
   }
 
   static async writeLanguage(context: common.UIAbilityContext, choice: string): Promise<void> {

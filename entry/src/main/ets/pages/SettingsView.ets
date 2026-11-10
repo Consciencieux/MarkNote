@@ -28,7 +28,11 @@ export function themeLabel(choice: string): string {
 /** 把保存的语言取值翻成设置行右侧显示的文字。 */
 export function languageLabel(choice: string): string {
   if (choice === 'zh-Hans') return AppText.text($r('app.string.language_zh'));
+  if (choice === 'zh-Hant') return AppText.text($r('app.string.language_zh_hant'));
   if (choice === 'en-US') return AppText.text($r('app.string.language_en'));
+  if (choice === 'ja') return AppText.text($r('app.string.language_ja'));
+  if (choice === 'ko') return AppText.text($r('app.string.language_ko'));
+  if (choice === 'ru') return AppText.text($r('app.string.language_ru'));
   return AppText.text($r('app.string.language_system'));
 }
 

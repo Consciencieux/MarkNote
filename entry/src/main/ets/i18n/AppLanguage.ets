@@ -1,7 +1,19 @@
 import { i18n } from '@kit.LocalizationKit';
 
-/** Values stored for the language setting. `default` follows the system language. */
-export const LANGUAGE_VALUES: string[] = ['default', 'zh-Hans', 'en-US'];
+/**
+ * Values stored for the language setting. `default` follows the system language.
+ * Resource directories: `zh_Hant`, `en_US`, `ja`, `ko`, `ru`. `zh-Hans` uses `base`.
+ */
+export const LANGUAGE_VALUES: string[] = ['default', 'zh-Hans', 'zh-Hant', 'en-US', 'ja', 'ko', 'ru'];
+
+/** Keep an unknown stored value on Follow system. */
+export function normalizeAppLanguage(choice: string): string {
+  if (choice === 'zh-Hans' || choice === 'zh-Hant' || choice === 'en-US' ||
+    choice === 'ja' || choice === 'ko' || choice === 'ru') {
+    return choice;
+  }
+  return 'default';
+}
 
 /**
  * Apply the language chosen in Settings.
@@ -9,6 +21,5 @@ export const LANGUAGE_VALUES: string[] = ['default', 'zh-Hans', 'en-US'];
  * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/i18n-preferred-language
  */
 export function applyAppLanguage(choice: string): void {
-  const language = choice === 'zh-Hans' || choice === 'en-US' ? choice : 'default';
-  i18n.System.setAppPreferredLanguage(language);
+  i18n.System.setAppPreferredLanguage(normalizeAppLanguage(choice));
 }
