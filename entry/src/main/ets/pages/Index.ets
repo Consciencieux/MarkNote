@@ -578,7 +578,6 @@ struct Index {
   @Builder
   private LibraryPage() {
     HomeView({
-      language: this.language,
       favoritesOnly: this.librarySegment === 1,
       recents: sortRecentDocuments(this.recents.filter((item: RecentDocument): boolean =>
         this.librarySegment === 1 ? item.favorite === true : item.recent !== false), this.sortOrder) as RecentDocument[],

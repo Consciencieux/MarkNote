@@ -3,13 +3,35 @@ import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { LANGUAGE_VALUES, THEME_VALUES, languageLabel, themeLabel } from './SettingsView';
 
 /**
+ * 单选行不用 @Builder 传递 selected。官方规定两个及以上参数的 @Builder 不会随状态刷新。
+ * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
+ */
+@Component
+struct SettingsChoiceRow {
+  @Prop title: Resource = $r('app.string.settings');
+  @Prop selected: boolean = false;
+  onSelect: () => void = (): void => {};
+
+  build() {
+    ListItem({ style: ListItemStyle.CARD }) {
+      SettingsListRow({ title: this.title, selected: this.selected })
+    }
+    .onClick(() => this.onSelect())
+    .accessibilityGroup(true)
+    .accessibilityText(this.title)
+    .accessibilityRole(AccessibilityRoleType.RADIO)
+    .accessibilityChecked(this.selected)
+  }
+}
+
+/**
  * 设置的内容页，按 section 渲染外观、隐私说明、许可证、关于或使用帮助。
  *
  * 标题栏和返回键由外层 HdsNavDestination 提供，这里只排内容。设置通过 HdsNavigation 路由展示，
  * 见 Index 里 Destination 的说明。
  *
  * 列表单选参考华为组件体验示例 ListSingleSelection：整行选择、仅在已选行显示系统勾选。
- * 选中状态来自 theme，切换颜色模式重新渲染时仍使用同一状态。
+ * 选中状态来自主题和语言，返回这一页时仍对应当前选项。
  */
 @Component
 export struct SettingsDetail {
@@ -28,18 +50,6 @@ export struct SettingsDetail {
   onOpenProject: () => void = (): void => {};
   onChooseTheme: (choice: string) => void = (_choice: string): void => {};
   onChooseLanguage: (choice: string) => void = (_choice: string): void => {};
-
-  @Builder
-  private RadioRow(title: Resource, selected: boolean, onSelect: () => void) {
-    ListItem({ style: ListItemStyle.CARD }) {
-      SettingsListRow({ title: title, selected: selected })
-    }
-    .onClick(onSelect)
-    .accessibilityGroup(true)
-    .accessibilityText(title)
-    .accessibilityRole(AccessibilityRoleType.RADIO)
-    .accessibilityChecked(selected)
-  }
 
   @Builder
   private InfoRow(title: ResourceStr, status: ResourceStr) {
@@ -81,13 +91,21 @@ export struct SettingsDetail {
       if (this.section === 'appearance') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           ForEach(THEME_VALUES, (choice: string) => {
-            this.RadioRow(themeLabel(choice), this.theme === choice, (): void => this.onChooseTheme(choice))
-          }, (choice: string) => choice)
+            SettingsChoiceRow({
+              title: themeLabel(choice),
+              selected: this.theme === choice,
+              onSelect: (): void => this.onChooseTheme(choice)
+            })
+          }, (choice: string) => `${this.theme}:${choice}`)
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'language') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           ForEach(LANGUAGE_VALUES, (choice: string) => {
-            this.RadioRow(languageLabel(choice), this.language === choice, (): void => this.onChooseLanguage(choice))
+            SettingsChoiceRow({
+              title: languageLabel(choice),
+              selected: this.language === choice,
+              onSelect: (): void => this.onChooseLanguage(choice)
+            })
           }, (choice: string) => `${this.language}:${choice}`)
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'license-list') {

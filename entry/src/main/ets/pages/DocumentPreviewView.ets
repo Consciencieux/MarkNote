@@ -38,8 +38,12 @@ export struct DocumentPreviewView {
   @Prop @Watch('scheduleUpdate') parseRevision: number = 0;
   /** 当前文稿 URI。空字符串表示还没有文件，本地图片无法定位。 */
   @Prop @Watch('scheduleUpdate') documentUri: string = '';
-  /** 界面语言。变化时重新发送预览文案，正文未变也要刷新占位和错误提示。 */
-  @Prop @Watch('scheduleUpdate') language: string = 'default';
+  /**
+   * 界面语言。预览创建在 @Builder 里，按值传入的 language 不会更新。
+   * 变化时重新发送预览文案，正文未变也要刷新占位和错误提示。
+   * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
+   */
+  @StorageLink('marknote_language') @Watch('scheduleUpdate') language: string = 'default';
   onOutline: (revision: number, headings: Heading[]) => void = (_revision: number, _headings: Heading[]): void => {};
   scroller: Scroller = new Scroller();
   private controller: webview.WebviewController = new webview.WebviewController();

@@ -3,13 +3,17 @@ import { FormatRegistry, InsertAction } from '../document/FormatRegistry';
 import { AppText } from '../i18n/AppText';
 import { formatChipMaterial } from './ImmersiveMaterials';
 
-/** 编辑快捷操作放在导航标题栏的 bottomBuilder 中。 */
-@ComponentV2
+/**
+ * 编辑快捷操作放在导航标题栏的 bottomBuilder 中。
+ * 标题栏用 @Builder 创建本组件，按值传入的 language 不会更新，所以语言直接订阅 AppStorage。
+ * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
+ */
+@Component
 export struct FormatBarView {
-  @Param formatId: string = '';
+  @Prop formatId: string = '';
   /** 放进列表键里，语言切换后重新取快捷操作的文字。 */
-  @Param language: string = '';
-  @Param onInsert: (action: InsertAction) => void = (_action: InsertAction): void => {};
+  @StorageLink('marknote_language') language: string = 'default';
+  onInsert: (action: InsertAction) => void = (_action: InsertAction): void => {};
   private material = formatChipMaterial();
 
   build() {

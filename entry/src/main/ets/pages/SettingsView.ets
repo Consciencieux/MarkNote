@@ -54,9 +54,9 @@ export struct SettingsView {
   onFeedback: () => void = (): void => {};
 
   @Builder
-  private LinkRow(title: ResourceStr, status: ResourceStr, section: string) {
+  private LinkRow(title: ResourceStr, section: string) {
     ListItem({ style: ListItemStyle.CARD }) {
-      SettingsListRow({ title: title, value: status, showArrow: true })
+      SettingsListRow({ title: title, showArrow: true })
     }
     .onClick(() => this.onOpen(section))
   }
@@ -64,18 +64,39 @@ export struct SettingsView {
   build() {
     List({ spaceWidth: $r('sys.float.padding_level6'), scroller: this.scroller }) {
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow($r('app.string.settings_appearance'), themeLabel(this.theme), 'appearance')
-        this.LinkRow($r('app.string.settings_language'), languageLabel(this.language), 'language')
+        // 右侧小字取决于当前选项。@Builder 默认按值传参，两个及以上参数时状态变化不会刷新函数内的 UI。
+        // 所以这两行直接写在 build 里，并用当前选项当键重建。
+        // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
+        ForEach([this.theme], (choice: string) => {
+          ListItem({ style: ListItemStyle.CARD }) {
+            SettingsListRow({
+              title: $r('app.string.settings_appearance'),
+              value: themeLabel(choice),
+              showArrow: true
+            })
+          }
+          .onClick(() => this.onOpen('appearance'))
+        }, (choice: string) => choice)
+        ForEach([this.language], (choice: string) => {
+          ListItem({ style: ListItemStyle.CARD }) {
+            SettingsListRow({
+              title: $r('app.string.settings_language'),
+              value: languageLabel(choice),
+              showArrow: true
+            })
+          }
+          .onClick(() => this.onOpen('language'))
+        }, (choice: string) => choice)
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow($r('app.string.settings_help'), '', 'help')
+        this.LinkRow($r('app.string.settings_help'), 'help')
         ListItem({ style: ListItemStyle.CARD }) {
           SettingsListRow({ title: $r('app.string.settings_feedback'), showArrow: true })
         }.onClick(() => this.onFeedback())
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow($r('app.string.settings_privacy'), '', 'privacy')
-        this.LinkRow($r('app.string.settings_about'), '', 'about')
+        this.LinkRow($r('app.string.settings_privacy'), 'privacy')
+        this.LinkRow($r('app.string.settings_about'), 'about')
       }.attributeModifier(this.groupStyle)
     }
     .attributeModifier(this.scrollPolicy)

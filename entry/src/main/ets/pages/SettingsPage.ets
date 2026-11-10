@@ -45,6 +45,13 @@ export struct SettingsPage {
       title: { mainTitle: this.pageTitle() }
     }))
     .titleMode(HdsNavDestinationTitleMode.MINI)
+    // 从语言页返回时，被盖住的设置首页可能还停在切换前的选项。重新对上 AppStorage 后再画右侧小字。
+    .onShown((): void => {
+      const stored = AppStorage.get<string>('marknote_language');
+      if (stored !== undefined && stored !== this.language) {
+        this.language = stored;
+      }
+    })
     // HdsNavDestination onBackPressed：返回 true 后由调用方处理页面栈。
     .onBackPressed(() => {
       this.onBack();

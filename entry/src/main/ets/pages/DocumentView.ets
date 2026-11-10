@@ -286,6 +286,10 @@ export struct DocumentView {
   }
 
   private documentTitle(): HdsNavigationTitleBarOptions {
+    // 读取 language，语言切换后重新构建标题栏里的查找栏。查找栏的计数是取好的字符串。
+    if (this.language.length === 0) {
+      return scrollingTitleBar({ title: { mainTitle: this.title } });
+    }
     const heading: HdsNavigationTitle = { mainTitle: this.title };
     const more = this.menuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
       (): void => this.openDocumentMenu());
@@ -893,7 +897,6 @@ export struct DocumentView {
   private TopFormatBar() {
     FormatBarView({
       formatId: this.formatId,
-      language: this.language,
       onInsert: (action: InsertAction): void => this.insertToken(action)
     })
   }
@@ -919,7 +922,7 @@ export struct DocumentView {
     Row() {
       Column() {
         DocumentPreviewView({
-          scroller: this.splitPreviewScroller, theme: this.theme, language: this.language, source: this.source,
+          scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
           kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
           onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
         })
@@ -953,7 +956,7 @@ export struct DocumentView {
         // Preview is first so a newly opened document lands on its rendered content.
         TabContent() {
           DocumentPreviewView({
-            scroller: this.previewScroller, theme: this.theme, language: this.language, source: this.source,
+            scroller: this.previewScroller, theme: this.theme, source: this.source,
             kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
             onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
           })

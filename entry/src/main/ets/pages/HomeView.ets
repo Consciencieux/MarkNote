@@ -9,8 +9,12 @@ import { menuMaterialOptions } from './MenuMaterialOptions';
  */
 @Component
 export struct HomeView {
-  /** 语言变化时重建列表行，格式名称不会留在上一种语言。 */
-  @Prop language: string = 'default';
+  /**
+   * 格式名称是取好的字符串。首页被包在 @Builder 里，按值传入的 language 不会更新，
+   * 所以这里直接订阅 AppStorage，并用它作为列表键。
+   * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
+   */
+  @StorageLink('marknote_language') language: string = 'default';
   @Prop favoritesOnly: boolean = false;
   @Prop recents: RecentDocument[] = [];
   private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
@@ -23,6 +27,8 @@ export struct HomeView {
   /** 新建菜单的条目来自文稿格式注册表，新增格式不用改这里。 */
   private newDocumentMenu(): MenuElement[] {
     const items: MenuElement[] = [];
+    // build 会调用这里。列表为空时 ForEach 读不到 language，新建菜单仍要跟着语言重建。
+    if (this.language.length === 0) return items;
     const formats = FormatRegistry.all();
     for (let index = 0; index < formats.length; index++) {
       const format = formats[index];
