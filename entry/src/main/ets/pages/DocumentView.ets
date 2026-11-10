@@ -18,6 +18,7 @@ import { DocumentScrollLayer } from './DocumentScrollLayer';
 import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
+import { AppText } from '../i18n/AppText';
 import { scrollingTitleBar } from './HdsMaterialStyles';
 import { searchFieldMaterial } from './ImmersiveMaterials';
 import { LocalState } from '../storage/LocalState';
@@ -74,7 +75,7 @@ export struct DocumentView {
   private outlineScroller: Scroller = new Scroller();
   private splitEditScroller: Scroller = new Scroller();
   private splitPreviewScroller: Scroller = new Scroller();
-  @State private title: string = '未命名.md';
+  @State private title: string = AppText.text($r('app.string.file_untitled_md'));
   @State private source: string = '';
   @State private savedText: string = '';
   @State private selectedTab: number = TAB_PREVIEW;
@@ -233,7 +234,7 @@ export struct DocumentView {
     });
   }
 
-  private toast(message: string): void {
+  private toast(message: string | Resource): void {
     this.getUIContext().getPromptAction().showToast({ message });
   }
 
@@ -242,17 +243,17 @@ export struct DocumentView {
     try {
       await DocumentShare.show(this.context, this.info.name, this.source);
     } catch {
-      this.toast('无法分享文稿，请重试');
+      this.toast($r('app.string.share_failed'));
     }
   }
 
   private toggleFavorite(): void {
     if (this.info.uri.length === 0) {
-      this.toast('请先保存文稿再收藏');
+      this.toast($r('app.string.favorite_save_first'));
       return;
     }
     if (!this.info.persistent) {
-      this.toast('当前文件无法长期访问，请另存为后收藏');
+      this.toast($r('app.string.favorite_need_access'));
       return;
     }
     this.onToggleFavorite(this.info.uri, this.info.name);
@@ -273,23 +274,23 @@ export struct DocumentView {
 
   private documentTitle(): HdsNavigationTitleBarOptions {
     const heading: HdsNavigationTitle = { mainTitle: this.title };
-    const more = this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
+    const more = this.menuIcon(AppText.text($r('app.string.menu_more')), $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
       (): void => this.openDocumentMenu());
     const actions: HdsNavigationMenuItemOptions[] = this.inEditTab() ? [
-      this.menuIcon('撤销', $r('sys.symbol.undo'), 'marknote-undo',
+      this.menuIcon(AppText.text($r('app.string.menu_undo')), $r('sys.symbol.undo'), 'marknote-undo',
         (): void => this.undo(), this.undoAvailable),
-      this.menuIcon('重做', $r('sys.symbol.redo'), 'marknote-redo',
+      this.menuIcon(AppText.text($r('app.string.menu_redo')), $r('sys.symbol.redo'), 'marknote-redo',
         (): void => this.redo(), this.redoAvailable),
       more,
-      this.menuIcon('保存', $r('sys.symbol.checkmark'), 'marknote-save',
+      this.menuIcon(AppText.text($r('app.string.menu_save')), $r('sys.symbol.checkmark'), 'marknote-save',
         (): void => { void this.saveFile(false); })
     ] : [
-      this.menuIcon('分享', $r('sys.symbol.share'), 'marknote-share',
+      this.menuIcon(AppText.text($r('app.string.menu_share')), $r('sys.symbol.share'), 'marknote-share',
         (): void => { void this.shareDocument(); }),
-      this.menuIcon(this.favorite ? '取消收藏' : '收藏',
+      this.menuIcon(AppText.text(this.favorite ? $r('app.string.menu_unfavorite') : $r('app.string.menu_favorite')),
         this.favorite ? $r('sys.symbol.star_fill') : $r('sys.symbol.star'), 'marknote-favorite',
         (): void => this.toggleFavorite()),
-      this.menuIcon('删除', $r('sys.symbol.trash'), 'marknote-delete',
+      this.menuIcon(AppText.text($r('app.string.menu_delete')), $r('sys.symbol.trash'), 'marknote-delete',
         (): void => this.confirmDelete(), this.info.uri.length > 0 && !this.deleting),
       more
     ];
@@ -299,7 +300,9 @@ export struct DocumentView {
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
     content.backIcon = {
-      label: this.canExpand ? (this.expanded ? '恢复分栏' : '放大文稿') : '返回',
+      label: AppText.text(this.canExpand ?
+        (this.expanded ? $r('app.string.menu_restore_columns') : $r('app.string.menu_expand')) :
+        $r('app.string.menu_back')),
       icon: this.canExpand ?
         (this.expanded ? $r('sys.symbol.arrow_down_right_and_arrow_up_left') :
           $r('sys.symbol.arrow_up_left_and_arrow_down_right')) : $r('sys.symbol.chevron_backward'),
@@ -332,12 +335,11 @@ export struct DocumentView {
     const uri = this.info.uri;
     const confirmedSource = this.source;
     this.getUIContext().showAlertDialog({
-      title: '删除文件',
-      message: this.isDirty() ?
-        '将文件移入回收站？未保存的修改将被丢弃。' : '将文件移入回收站？',
+      title: AppText.text($r('app.string.delete_title')),
+      message: AppText.text(this.isDirty() ? $r('app.string.delete_dirty') : $r('app.string.delete_clean')),
       buttons: [
-        { value: '取消', action: (): void => {} },
-        { value: '删除', action: (): void => { void this.deleteDocument(uri, confirmedSource); } }
+        { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
+        { value: AppText.text($r('app.string.menu_delete')), action: (): void => { void this.deleteDocument(uri, confirmedSource); } }
       ]
     });
   }
@@ -364,16 +366,16 @@ export struct DocumentView {
           session.savedText = this.source + '\n';
           this.savedText = session.savedText;
           this.scheduleRecovery();
-          this.toast('文件已移入回收站，新修改请保存为新文件');
+          this.toast($r('app.string.delete_trashed_dirty'));
         } else {
           this.clearRecovery();
           DocumentService.close();
           this.onLeave();
-          this.toast('文件已移入回收站');
+          this.toast($r('app.string.delete_trashed'));
         }
       }
     } catch (error) {
-      this.toast('删除失败：' + String(error));
+      this.toast(AppText.format($r('app.string.delete_failed'), String(error)));
     } finally {
       this.deleting = false;
     }
@@ -416,7 +418,8 @@ export struct DocumentView {
    * 侧滑和返回键的 reason 是 PRESS_BACK（ts-methods-alert-dialog-box，DismissReason）。
    */
   private askSaveOrDiscard(): Promise<boolean> {
-    const saveLabel = this.info.uri.length > 0 && !this.info.writable ? '另存为' : '保存';
+    const saveLabel = AppText.text(this.info.uri.length > 0 && !this.info.writable ?
+      $r('app.string.menu_save_as') : $r('app.string.menu_save'));
     return new Promise<boolean>((resolve: (leave: boolean) => void) => {
       let settled = false;
       const finish = (leave: boolean): void => {
@@ -425,12 +428,13 @@ export struct DocumentView {
         resolve(leave);
       };
       this.getUIContext().showAlertDialog({
-        message: this.info.uri.length > 0 && !this.info.writable ? '原文件无法写入，是否另存更改？' : '是否保存更改？',
+        message: AppText.text(this.info.uri.length > 0 && !this.info.writable ?
+          $r('app.string.save_prompt_readonly') : $r('app.string.save_prompt')),
         autoCancel: true,
         buttonDirection: DialogButtonDirection.HORIZONTAL,
         buttons: [
           {
-            value: '不保存',
+            value: AppText.text($r('app.string.discard')),
             style: DialogButtonStyle.DEFAULT,
             action: (): void => finish(true)
           },
@@ -480,7 +484,7 @@ export struct DocumentView {
   private async saveFile(asNewFile: boolean): Promise<boolean> {
     if (!this.context || this.saving || this.deleting) return false;
     if (!asNewFile && this.info.uri.length > 0 && !this.info.writable) {
-      this.offerSaveCopy('原文件无法写入，请另存为其他文件。');
+      this.offerSaveCopy(AppText.text($r('app.string.save_copy_readonly')));
       return false;
     }
     this.saving = true;
@@ -488,7 +492,7 @@ export struct DocumentView {
       const result = await DocumentService.save(this.context, asNewFile);
       this.syncFromService();
       if (!result.saved) return false;
-      this.toast(result.message + (this.info.persistent ? '' : '。无法保留长期访问权限，未加入最近文稿'));
+      this.toast(result.message + (this.info.persistent ? '' : AppText.text($r('app.string.save_not_persistent'))));
       if (!this.isDirty()) this.clearRecovery();
       else this.scheduleRecovery();
       // 最近文稿列表在首页，保存成功只通知过去。
@@ -497,9 +501,9 @@ export struct DocumentView {
     } catch (error) {
       this.scheduleRecovery();
       if (!asNewFile && this.info.uri.length > 0) {
-        this.offerSaveCopy('保存失败：' + String(error) + '\n可另存为其他文件。');
+        this.offerSaveCopy(AppText.format($r('app.string.save_failed_copy'), String(error)));
       } else {
-        this.toast('保存失败：' + String(error));
+        this.toast(AppText.format($r('app.string.save_failed'), String(error)));
       }
       return false;
     } finally {
@@ -512,8 +516,8 @@ export struct DocumentView {
     this.getUIContext().showAlertDialog({
       message: message,
       buttons: [
-        { value: '取消', action: (): void => {} },
-        { value: '另存为', primary: true, action: (): void => { void this.saveFile(true); } }
+        { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
+        { value: AppText.text($r('app.string.menu_save_as')), primary: true, action: (): void => { void this.saveFile(true); } }
       ]
     });
   }
@@ -554,7 +558,7 @@ export struct DocumentView {
     try {
       LocalState.writeDraft(this.context, draft);
     } catch {
-      this.toast('草稿恢复副本写入失败，请尽快保存文件');
+      this.toast($r('app.string.draft_write_failed'));
     }
   }
 
@@ -629,7 +633,7 @@ export struct DocumentView {
       TextSearch.preceding(this.source, this.query, this.currentMatch);
     if (hit === null) {
       this.currentMatch = -1;
-      this.toast('没有找到匹配内容');
+      this.toast($r('app.string.no_match'));
       return;
     }
     this.currentMatch = hit.start;
@@ -710,14 +714,14 @@ export struct DocumentView {
         this.getUIContext().getFocusController().requestFocus('marknote-main-editor');
         this.cursor.caretPosition(offset);
       } catch {
-        this.toast('无法定位标题，请重试');
+        this.toast($r('app.string.heading_locate_failed'));
         return;
       }
       this.getUIContext().postFrameCallback(new AfterFrame((): void => {
         if (jump !== this.headingJump || this.selectedTab !== TAB_EDIT) return;
         const caret = this.cursor.getCaretOffset();
         if (!caret || caret.index !== offset) {
-          this.toast('无法定位标题，请重试');
+          this.toast($r('app.string.heading_locate_failed'));
           return;
         }
         this.editScroller.scrollTo({
@@ -735,7 +739,7 @@ export struct DocumentView {
     Column() {
       Row() {
         Stack({ alignContent: Alignment.End }) {
-          Search({ value: this.query, placeholder: '查找文稿内容' })
+          Search({ value: this.query, placeholder: $r('app.string.find_placeholder') })
             .onSubmit(() => this.findNext())
             .onChange((value: string) => {
               this.query = value;
@@ -750,10 +754,12 @@ export struct DocumentView {
             .systemMaterial(this.searchMaterial)
           if (this.query.length > 0) {
             Row() {
-              Text(this.matchOrdinal > 0 ? `${this.matchOrdinal}/${this.matchCount}` : `共 ${this.matchCount} 处`)
+              Text(this.matchOrdinal > 0 ? `${this.matchOrdinal}/${this.matchCount}` :
+                AppText.format($r('app.string.match_total'), String(this.matchCount)))
                 .fontColor($r('sys.color.font_secondary'))
                 .accessibilityText(this.matchOrdinal > 0 ?
-                  `第 ${this.matchOrdinal} 处，共 ${this.matchCount} 处` : `共 ${this.matchCount} 处`)
+                  AppText.format($r('app.string.match_position'), String(this.matchOrdinal), String(this.matchCount)) :
+                  AppText.format($r('app.string.match_total'), String(this.matchCount)))
               Button() {
                 SymbolGlyph($r('sys.symbol.chevron_up'))
                   .fontColor([$r('sys.color.icon_primary')])
@@ -762,7 +768,7 @@ export struct DocumentView {
               .buttonStyle(ButtonStyleMode.TEXTUAL)
               .width(40)
               .height(40)
-              .accessibilityText('上一处')
+              .accessibilityText($r('app.string.find_previous'))
               .enabled(this.matchCount > 0)
               .onClick(() => this.findNext(false))
               Button() {
@@ -773,7 +779,7 @@ export struct DocumentView {
               .buttonStyle(ButtonStyleMode.TEXTUAL)
               .width(40)
               .height(40)
-              .accessibilityText('下一处')
+              .accessibilityText($r('app.string.find_next'))
               .enabled(this.matchCount > 0)
               .onClick(() => this.findNext())
             }
@@ -795,18 +801,18 @@ export struct DocumentView {
         // 华为通用应用 UX 体验标准：交互热区不得小于 40vp × 40vp。
         .width(40)
         .height(40)
-        .accessibilityText('关闭查找')
+        .accessibilityText($r('app.string.find_close'))
         .onClick(() => this.searchVisible = false)
       }
       .width('100%')
       Row() {
         Row() {
-          TextInput({ text: this.replacement, placeholder: '替换为' })
+          TextInput({ text: this.replacement, placeholder: $r('app.string.replace_placeholder') })
             .onChange((value: string) => { this.replacement = value; })
             .layoutWeight(1)
             .margin({ right: $r('sys.float.padding_level4') })
             .systemMaterial(this.searchMaterial)
-          Button('替换')
+          Button($r('app.string.replace_action'))
             .onClick(() => this.replaceMatch())
         }
         .layoutWeight(1)
@@ -833,7 +839,7 @@ export struct DocumentView {
   private EditPage(scroller: Scroller, controller: TextAreaController, editorId: string) {
     DocumentScrollLayer({ scroller: scroller }) {
       Column() {
-        TextArea({ text: this.source, placeholder: '在这里开始写作…', controller: controller })
+        TextArea({ text: this.source, placeholder: $r('app.string.write_placeholder'), controller: controller })
           .id(editorId)
           .onAreaChange((_oldArea: Area, newArea: Area) => {
             if (editorId === 'marknote-main-editor') {
@@ -939,11 +945,11 @@ export struct DocumentView {
           })
         }
           .attributeModifier(this.tabContentPolicy)
-          .tabBar(this.bottomTab($r('sys.symbol.eye'), '预览'))
+          .tabBar(this.bottomTab($r('sys.symbol.eye'), AppText.text($r('app.string.tab_preview'))))
         TabContent() { this.EditPage(this.editScroller, this.cursor, 'marknote-main-editor') }
           .onWillShow(() => this.jumpToPendingHeading())
           .attributeModifier(this.tabContentPolicy)
-          .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), '编辑'))
+          .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), AppText.text($r('app.string.tab_edit'))))
         // Only formats that declare an outline get the tab; plain text and SVG have none.
         if (this.currentFormat().outline) {
           TabContent() {
@@ -953,12 +959,12 @@ export struct DocumentView {
             })
           }
             .attributeModifier(this.tabContentPolicy)
-            .tabBar(this.bottomTab($r('sys.symbol.list_bullet'), '大纲'))
+            .tabBar(this.bottomTab($r('sys.symbol.list_bullet'), AppText.text($r('app.string.tab_outline'))))
         }
         if (this.wide) {
           TabContent() { this.SplitPage() }
             .attributeModifier(this.tabContentPolicy)
-            .tabBar(this.bottomTab($r('sys.symbol.rectangle_split_2x1'), '分栏'))
+            .tabBar(this.bottomTab($r('sys.symbol.rectangle_split_2x1'), AppText.text($r('app.string.tab_split'))))
         }
       }
       // HdsTabs (ui-design-hdstabs)：存在 BottomTabBarStyle 时，未设置动画时长即使用官方默认值。

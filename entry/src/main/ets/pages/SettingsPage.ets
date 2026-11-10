@@ -1,6 +1,7 @@
 import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit';
 import { scrollingTitleBar } from './HdsMaterialStyles';
 import { SettingsView, settingTitle } from './SettingsView';
+import { AppText } from '../i18n/AppText';
 import { SettingsDetail } from './SettingsDetail';
 
 /** Each route owns its controller, including while a sibling destination is transitioning. */
@@ -34,7 +35,7 @@ export struct SettingsPage {
       }
     }
     .titleBar(scrollingTitleBar({
-      title: { mainTitle: this.section === 'settings' ? '设置' : settingTitle(this.section) }
+      title: { mainTitle: this.section === 'settings' ? AppText.text($r('app.string.settings')) : settingTitle(this.section) }
     }))
     .titleMode(HdsNavDestinationTitleMode.MINI)
     // HdsNavDestination onBackPressed：返回 true 后由调用方处理页面栈。

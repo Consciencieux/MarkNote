@@ -1,26 +1,25 @@
 import { PageScrollPolicy } from './PageScrollPolicy';
 import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
+import { AppText } from '../i18n/AppText';
 
 export const THEME_VALUES: string[] = ['system', 'light', 'dark'];
-export const THEME_LABELS: string[] = ['跟随系统', '浅色', '深色'];
 
 /** 二级页标题，和设置首页的行名一致。 */
 export function settingTitle(section: string): string {
-  if (section === 'appearance') return '外观';
-  if (section === 'privacy') return '隐私说明';
-  if (section === 'license-list') return '开源许可证';
-  if (section === 'project-license') return '本项目开源许可证';
-  if (section === 'licenses') return '第三方开源许可证';
-  if (section === 'help') return '使用帮助';
-  return '关于';
+  if (section === 'appearance') return AppText.text($r('app.string.settings_appearance'));
+  if (section === 'privacy') return AppText.text($r('app.string.settings_privacy'));
+  if (section === 'license-list') return AppText.text($r('app.string.settings_licenses'));
+  if (section === 'project-license') return AppText.text($r('app.string.settings_project_license'));
+  if (section === 'licenses') return AppText.text($r('app.string.settings_third_party'));
+  if (section === 'help') return AppText.text($r('app.string.settings_help'));
+  return AppText.text($r('app.string.settings_about'));
 }
 
 /** 把保存的主题取值翻成设置行右侧显示的文字。 */
 export function themeLabel(choice: string): string {
-  for (let index = 0; index < THEME_VALUES.length; index++) {
-    if (THEME_VALUES[index] === choice) return THEME_LABELS[index];
-  }
-  return THEME_LABELS[0];
+  if (choice === 'light') return AppText.text($r('app.string.theme_light'));
+  if (choice === 'dark') return AppText.text($r('app.string.theme_dark'));
+  return AppText.text($r('app.string.theme_system'));
 }
 
 /**
@@ -50,17 +49,17 @@ export struct SettingsView {
   build() {
     List({ spaceWidth: $r('sys.float.padding_level6'), scroller: this.scroller }) {
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow('外观', themeLabel(this.theme), 'appearance')
+        this.LinkRow(AppText.text($r('app.string.settings_appearance')), themeLabel(this.theme), 'appearance')
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow('使用帮助', '', 'help')
+        this.LinkRow(AppText.text($r('app.string.settings_help')), '', 'help')
         ListItem({ style: ListItemStyle.CARD }) {
-          SettingsListRow({ title: '问题与建议', showArrow: true })
+          SettingsListRow({ title: AppText.text($r('app.string.settings_feedback')), showArrow: true })
         }.onClick(() => this.onFeedback())
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow('隐私说明', '', 'privacy')
-        this.LinkRow('关于', '', 'about')
+        this.LinkRow(AppText.text($r('app.string.settings_privacy')), '', 'privacy')
+        this.LinkRow(AppText.text($r('app.string.settings_about')), '', 'about')
       }.attributeModifier(this.groupStyle)
     }
     .attributeModifier(this.scrollPolicy)

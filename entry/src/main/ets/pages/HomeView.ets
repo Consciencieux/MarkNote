@@ -9,7 +9,6 @@ import { menuMaterialOptions } from './MenuMaterialOptions';
  */
 @Component
 export struct HomeView {
-  @Prop title: string = '全部';
   @Prop favoritesOnly: boolean = false;
   @Prop recents: RecentDocument[] = [];
   private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
@@ -26,7 +25,7 @@ export struct HomeView {
     for (let index = 0; index < formats.length; index++) {
       const format = formats[index];
       items.push({
-        value: format.sheetTitle,
+        value: FormatRegistry.displayTitle(format),
         action: (): void => this.onNew(format.id)
       });
     }
@@ -53,7 +52,9 @@ export struct HomeView {
   @Builder
   private RecentMenu(item: RecentDocument) {
     Menu() {
-      MenuItem({ content: this.favoritesOnly ? '取消收藏' : '移除记录' })
+      MenuItem({
+        content: this.favoritesOnly ? $r('app.string.home_unfavorite') : $r('app.string.home_remove_record')
+      })
         .onClick(() => this.onRemoveRecent(item))
     }
   }
@@ -61,7 +62,8 @@ export struct HomeView {
   @Builder
   private RecentRow(item: RecentDocument) {
     ListItem() {
-      this.DocumentRow(item.name, FormatRegistry.byFilename(item.name).sheetTitle, $r('sys.symbol.doc_text'))
+      this.DocumentRow(item.name, FormatRegistry.displayTitle(FormatRegistry.byFilename(item.name)),
+        $r('sys.symbol.doc_text'))
     }
     .onClick(() => this.onRecent(item))
     .bindContextMenu(this.RecentMenu(item), ResponseType.LongPress, menuMaterialOptions())
@@ -73,18 +75,18 @@ export struct HomeView {
     // List keeps its native row layout; the shared policy owns safe areas and scrolling behavior.
     List({ scroller: this.scroller, spaceWidth: $r('sys.float.padding_level6') }) {
       ListItem() {
-        Text(this.title)
+        Text(this.favoritesOnly ? $r('app.string.home_favorites') : $r('app.string.home_all'))
           .fontSize(26)
           .fontWeight(FontWeight.Bold)
       }
 
       ListItem() {
         Row() {
-          Button('新建文稿')
+          Button($r('app.string.home_new'))
             .bindMenu(this.newDocumentMenu(), menuMaterialOptions())
             .layoutWeight(1)
             .margin({ right: $r('sys.float.padding_level6') })
-          Button('打开文件')
+          Button($r('app.string.home_open'))
             // Button API (ts-basic-components-button)：打开文件采用普通操作的 NORMAL 样式。
             .buttonStyle(ButtonStyleMode.NORMAL)
             .layoutWeight(1)

@@ -4,6 +4,7 @@ import { util } from '@kit.ArkTS';
 import { preferences } from '@kit.ArkData';
 import { RecentDocument, RecoveryData } from '../model/Document';
 import { RecentEntry, removeRecentDocument, toggleFavoriteDocument, updateRecentDocument } from '../document/RecentOrder';
+import { AppText } from '../i18n/AppText';
 
 const RECENT_KEY: string = 'recent_files';
 const THEME_KEY: string = 'color_choice';
@@ -109,7 +110,7 @@ export class LocalState {
       let offset = 0;
       while (offset < data.length) {
         const written = fileIo.writeSync(file.fd, data.slice(offset).buffer);
-        if (written <= 0) throw new Error('草稿写入中断');
+        if (written <= 0) throw new Error(AppText.text($r('app.string.draft_interrupted')));
         offset += written;
       }
       fileIo.fsyncSync(file.fd);

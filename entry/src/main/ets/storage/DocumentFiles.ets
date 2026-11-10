@@ -5,6 +5,7 @@ import { fileManagerService } from '@kit.FileManagerServiceKit';
 import { DocumentInfo } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
 import { TextEncoding } from '../document/TextEncoding';
+import { AppText } from '../i18n/AppText';
 
 const MAX_BYTES: number = 8 * 1024 * 1024;
 const READ_WRITE: number = fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE;
@@ -106,10 +107,10 @@ export class DocumentFiles {
   }
   /** Move the opened version to the system recycle bin; never fall back to permanent deletion. */
   static async moveToTrash(info: DocumentInfo): Promise<void> {
-    if (info.uri.length === 0) throw new Error('文稿尚未保存为文件');
-    if (!info.writable) throw new Error('没有删除权限，请在文件管理器中删除');
+    if (info.uri.length === 0) throw new Error(AppText.text($r('app.string.not_saved_file')));
+    if (!info.writable) throw new Error(AppText.text($r('app.string.no_delete_permission')));
     if (info.fingerprint.length === 0 || fingerprintOf(DocumentFiles.readBytes(info.uri)) !== info.fingerprint) {
-      throw new Error('原文件已改变或无法确认，请重新打开后再删除');
+      throw new Error(AppText.text($r('app.string.delete_conflict')));
     }
     // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/filemanagerservice-arkts-filemanagerservice
     await fileManagerService.deleteToTrash(info.uri);
@@ -127,7 +128,7 @@ export class DocumentFiles {
     const persistedRead = persistedWrite || await persisted(uri, fileShare.OperationMode.READ_MODE);
     const writable = writeRequested && canOpen(uri, fileIo.OpenMode.READ_WRITE);
     const readable = writable || canOpen(uri, fileIo.OpenMode.READ_ONLY);
-    if (!readable) throw new Error('原文件授权可能已经失效，请使用“打开”重新选取');
+    if (!readable) throw new Error(AppText.text($r('app.string.auth_expired')));
     const mode = writable ? READ_WRITE : fileShare.OperationMode.READ_MODE;
     let persistent = writable ? persistedWrite : persistedRead;
     if (!persistent) persistent = await retain(uri, mode);
@@ -169,13 +170,13 @@ export class DocumentFiles {
     const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
     try {
       const size = Number(fileIo.statSync(file.fd).size);
-      if (size > MAX_BYTES) throw new Error('暂时只支持不超过 8 MiB 的文稿');
+      if (size > MAX_BYTES) throw new Error(AppText.text($r('app.string.too_large')));
       const original = new Uint8Array(size);
       let readPosition = 0;
       while (readPosition < size) {
         const chunk = new ArrayBuffer(Math.min(64 * 1024, size - readPosition));
         const length = fileIo.readSync(file.fd, chunk);
-        if (length <= 0) throw new Error('读取不完整，请重试');
+        if (length <= 0) throw new Error(AppText.text($r('app.string.read_incomplete')));
         original.set(new Uint8Array(chunk, 0, length), readPosition);
         readPosition += length;
       }
@@ -200,7 +201,7 @@ export class DocumentFiles {
     const result = new FileContents();
     result.text = decoded.text;
     result.info.uri = uri;
-    result.info.name = name.length > 0 ? name : FormatRegistry.byId('plain').defaultFilename;
+    result.info.name = name.length > 0 ? name : FormatRegistry.defaultName(FormatRegistry.byId('plain'));
     result.info.newline = decoded.newline;
     result.info.lineEndings = decoded.lineEndings;
     result.info.hasBom = decoded.hasBom;
@@ -214,26 +215,26 @@ export class DocumentFiles {
    * taken at open or the last successful save, then verify the bytes written back.
    */
   static write(info: DocumentInfo, text: string, checkConflict: boolean): void {
-    if (info.uri.length === 0) throw new Error('没有可写入的文件');
-    if (!info.writable) throw new Error('当前文件没有写入权限，请使用“另存为”');
+    if (info.uri.length === 0) throw new Error(AppText.text($r('app.string.no_writable_file')));
+    if (!info.writable) throw new Error(AppText.text($r('app.string.no_write_use_save_as')));
     if (checkConflict) {
       if (info.fingerprint.length === 0) {
-        throw new Error('缺少原文件指纹，请使用“另存为”，避免覆盖其他修改。');
+        throw new Error(AppText.text($r('app.string.missing_fingerprint')));
       }
       const current = DocumentFiles.readBytes(info.uri);
       if (fingerprintOf(current) !== info.fingerprint) {
-        throw new Error('原文件已在其他应用中改变。请选择“另存为”，避免覆盖其他修改。');
+        throw new Error(AppText.text($r('app.string.external_change')));
       }
     }
     if (info.newline === 'mixed') {
       const parts = text.split('\n');
       if (parts.length !== info.lineEndings.length + 1) {
-        throw new Error('混合换行在行数变化后无法无损写回。请使用“另存为”。');
+        throw new Error(AppText.text($r('app.string.mixed_newlines')));
       }
     }
     const encoded = TextEncoding.encode(text, info);
     if (encoded.bytes.length > MAX_BYTES) {
-      throw new Error('保存后的文稿不能超过 8 MiB，文件未写入');
+      throw new Error(AppText.text($r('app.string.save_too_large')));
     }
     info.newline = encoded.newline;
     info.lineEndings = encoded.lineEndings;
@@ -244,7 +245,7 @@ export class DocumentFiles {
       while (offset < bytes.length) {
         const remaining = bytes.slice(offset);
         const written = fileIo.writeSync(file.fd, remaining.buffer);
-        if (written <= 0) throw new Error('文件写入中断');
+        if (written <= 0) throw new Error(AppText.text($r('app.string.write_interrupted')));
         offset += written;
       }
       fileIo.truncateSync(file.fd, bytes.length);
@@ -254,10 +255,10 @@ export class DocumentFiles {
     }
     const verified = DocumentFiles.readBytes(info.uri);
     if (fingerprintOf(verified) !== fingerprintOf(bytes)) {
-      throw new Error('保存后校验失败，已保留草稿');
+      throw new Error(AppText.text($r('app.string.verify_failed')));
     }
     const decoded = TextEncoding.decode(verified);
-    if (decoded.text !== text) throw new Error('保存后校验失败，已保留草稿');
+    if (decoded.text !== text) throw new Error(AppText.text($r('app.string.verify_failed')));
     info.fingerprint = fingerprintOf(verified);
     info.hasBom = decoded.hasBom;
     info.encoding = decoded.encoding;

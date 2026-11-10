@@ -12,6 +12,7 @@ marknote/
 │       │   ├── entryability/         应用启动及系统文件打开入口
 │       │   ├── pages/                首页、文稿、设置及公共界面组件
 │       │   ├── document/             文稿会话、格式、编辑历史、查找和编码
+│       │   ├── i18n/                 界面文字资源读取
 │       │   ├── model/                文稿及大纲数据结构
 │       │   └── storage/              文件访问和本机状态
 │       └── resources/rawfile/        构建生成的预览页与许可证文本
@@ -47,6 +48,7 @@ marknote/
 | 标题栏与滚动 | `pages/HdsMaterialStyles.ets`、`pages/PageScrollPolicy.ets`、`pages/DocumentScrollLayer.ets` |
 | 搜索框、分段按钮与编辑工具栏材质 | `pages/ImmersiveMaterials.ets` |
 | 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets` |
+| 界面语言 | `i18n/AppText.ets`，以及 `entry/src/main/resources/` 下 `base`（简体中文）和 `en_US` 的 `element/string.json` |
 | 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
 | 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/LocalState.ets` |
 | Markdown 本地图片 | `document/LocalImages.ets`、`pages/DocumentPreviewView.ets`，以及仓库根目录下的 `renderer/src/renderers/markdown.ts` |

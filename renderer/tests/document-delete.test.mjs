@@ -34,7 +34,9 @@ function documentFiles(content, trash) {
   const context = {
     fileIo, fileShare: { OperationMode: { READ_MODE: 1, WRITE_MODE: 2 } },
     cryptoFramework, fileManagerService: { deleteToTrash: trash },
-    Uint8Array, ArrayBuffer, Error
+    Uint8Array, ArrayBuffer, Error,
+    $r: (name) => name,
+    AppText: { text: (name) => String(name) }
   };
   return vm.runInNewContext(`${nodeModule.stripTypeScriptTypes(source)}\nDocumentFiles`, context);
 }
