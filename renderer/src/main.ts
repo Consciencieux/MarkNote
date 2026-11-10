@@ -80,6 +80,7 @@ function render(update: PreviewUpdate): void {
   if (typeof update.source !== 'string') return;
   const textStamp = usePreviewText(update.text);
   document.documentElement.lang = previewText().lang;
+  document.documentElement.dir = /^(ar|ug)(-|$)/i.test(previewText().lang) ? 'rtl' : 'ltr';
   document.documentElement.removeAttribute('data-theme');
   if (update.theme !== 'system') document.documentElement.dataset.theme = update.theme;
   // Theme changes only affect CSS. A language change still rebuilds the visible copy.

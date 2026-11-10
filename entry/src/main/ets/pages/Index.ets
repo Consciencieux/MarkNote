@@ -1,6 +1,6 @@
 import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
 import {
-  ColorMetrics, ComponentContent, mediaquery, SegmentButtonV2Items, TabSegmentButtonV2
+  ColorMetrics, ComponentContent, LengthMetrics, mediaquery, SegmentButtonV2Items, TabSegmentButtonV2
 } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import {
@@ -23,7 +23,7 @@ import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 import { AppText } from '../i18n/AppText';
-import { applyAppLanguage, normalizeAppLanguage, publishAppLanguage } from '../i18n/AppLanguage';
+import { applyAppLanguage, isRightToLeftLanguage, normalizeAppLanguage, publishAppLanguage } from '../i18n/AppLanguage';
 
 /**
  * 首页外壳：导航栈、主题、设置与关于，以及新建/打开/恢复的编排。
@@ -306,7 +306,12 @@ struct Index {
       Blank().width(40)
     }
     .width('100%')
-    .padding({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
+    // 镜像语言的左右间距用 start/end，RTL 时自动对调。
+    // https://developer.huawei.com/consumer/cn/doc/harmonyos-faqs/faqs-arkui-314
+    .padding({
+      start: LengthMetrics.resource($r('sys.float.margin_left')),
+      end: LengthMetrics.resource($r('sys.float.margin_right'))
+    })
     .hitTestBehavior(HitTestMode.Transparent)
   }
 
@@ -662,6 +667,16 @@ struct Index {
     }
   }
 
+  /**
+   * 《如何实现镜像语言功能》：跟随系统时用 Direction.Auto，方向由系统语言决定。
+   * 指定阿拉伯语或维吾尔语时改为从右向左，指定其他语言时改为从左向右。
+   * https://developer.huawei.com/consumer/cn/doc/harmonyos-faqs/faqs-arkui-556
+   */
+  private pageDirection(): Direction {
+    if (this.language === 'default') return Direction.Auto;
+    return isRightToLeftLanguage(this.language) ? Direction.Rtl : Direction.Ltr;
+  }
+
   build() {
     Column() {
       HdsNavigation(this.routes) {
@@ -690,6 +705,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .direction(this.pageDirection())
     // 页面底色只在这里给一次，整页（含标题栏所在区域）都是同一个系统底色。
     .backgroundColor($r('sys.color.ohos_id_color_background'))
   }

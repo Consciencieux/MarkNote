@@ -33,6 +33,8 @@ export function languageLabel(choice: string): Resource {
   if (choice === 'ja') return $r('app.string.language_ja');
   if (choice === 'ko') return $r('app.string.language_ko');
   if (choice === 'ru') return $r('app.string.language_ru');
+  if (choice === 'ar') return $r('app.string.language_ar');
+  if (choice === 'ug') return $r('app.string.language_ug');
   return $r('app.string.language_system');
 }
 

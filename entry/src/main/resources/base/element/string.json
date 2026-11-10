@@ -85,6 +85,8 @@
     { "name": "language_ko", "value": "한국어" },
     { "name": "language_ru", "value": "Русский" },
     { "name": "language_bo", "value": "བོད་ཡིག" },
+    { "name": "language_ar", "value": "العربية" },
+    { "name": "language_ug", "value": "ئۇيغۇرچە" },
     { "name": "language_save_failed", "value": "语言设置未能保存" },
     { "name": "settings_appearance", "value": "外观" },
     { "name": "settings_privacy", "value": "隐私说明" },

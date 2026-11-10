@@ -1,3 +1,4 @@
+import { LengthMetrics } from '@kit.ArkUI';
 import { PageScrollPolicy } from './PageScrollPolicy';
 import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { LANGUAGE_VALUES, THEME_VALUES, languageLabel, themeLabel } from './SettingsView';
@@ -149,7 +150,10 @@ export struct SettingsDetail {
             }
           }
           .width('100%')
-          .padding({ left: 24, right: 24 })
+          .padding({
+            start: LengthMetrics.vp(24),
+            end: LengthMetrics.vp(24)
+          })
         }
       }
     }

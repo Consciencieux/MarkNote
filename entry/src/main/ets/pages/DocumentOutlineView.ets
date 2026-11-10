@@ -1,3 +1,4 @@
+import { LengthMetrics } from '@kit.ArkUI';
 import { Heading } from '../model/Document';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
 
@@ -97,8 +98,8 @@ export struct DocumentOutlineView {
     }
     .width('100%')
     .padding({
-      left: $r('sys.float.padding_level4'),
-      right: $r('sys.float.padding_level4')
+      start: LengthMetrics.resource($r('sys.float.padding_level4')),
+      end: LengthMetrics.resource($r('sys.float.padding_level4'))
     })
   }
 
@@ -109,7 +110,10 @@ export struct DocumentOutlineView {
         if (this.headings.length === 0) {
           ListItem() {
             Text($r('app.string.outline_empty'))
-              .padding({ left: $r('sys.float.padding_level4'), right: $r('sys.float.padding_level4') })
+              .padding({
+                start: LengthMetrics.resource($r('sys.float.padding_level4')),
+                end: LengthMetrics.resource($r('sys.float.padding_level4'))
+              })
           }
         }
         ForEach(this.outlineRows(), (row: OutlineRow) => {

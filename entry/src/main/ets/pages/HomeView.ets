@@ -1,5 +1,5 @@
 import { PageScrollPolicy } from './PageScrollPolicy';
-import { ComposeListItem, IconType, SymbolGlyphModifier } from '@kit.ArkUI';
+import { ComposeListItem, IconType, LengthMetrics, SymbolGlyphModifier } from '@kit.ArkUI';
 import { RecentDocument } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
 import { menuMaterialOptions } from './MenuMaterialOptions';
@@ -93,7 +93,7 @@ export struct HomeView {
           Button($r('app.string.home_new'))
             .bindMenu(this.newDocumentMenu(), menuMaterialOptions())
             .layoutWeight(1)
-            .margin({ right: $r('sys.float.padding_level6') })
+            .margin({ end: LengthMetrics.resource($r('sys.float.padding_level6')) })
           Button($r('app.string.home_open'))
             // Button API (ts-basic-components-button)：打开文件采用普通操作的 NORMAL 样式。
             .buttonStyle(ButtonStyleMode.NORMAL)
@@ -109,7 +109,10 @@ export struct HomeView {
     }
     // Keep the list at the available width and use system margin resources for its edges.
     .layoutWeight(1)
-    .margin({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
+    .margin({
+      start: LengthMetrics.resource($r('sys.float.margin_left')),
+      end: LengthMetrics.resource($r('sys.float.margin_right'))
+    })
     .attributeModifier(this.scrollPolicy)
   }
 }

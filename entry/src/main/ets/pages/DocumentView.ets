@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { FrameCallback, SymbolGlyphModifier, window } from '@kit.ArkUI';
+import { FrameCallback, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -767,7 +767,7 @@ export struct DocumentView {
             .width('100%')
             // 清除按钮由 Search 提供；仅有文字时为它预留位置。
             .cancelButton({ style: this.query.length > 0 ? CancelButtonStyle.CONSTANT : CancelButtonStyle.INVISIBLE })
-            .padding({ right: this.query.length > 0 ? this.searchControlsWidth + 40 : 0 })
+            .padding({ end: LengthMetrics.vp(this.query.length > 0 ? this.searchControlsWidth + 40 : 0) })
             .systemMaterial(this.searchMaterial)
           if (this.query.length > 0) {
             Row() {
@@ -800,7 +800,7 @@ export struct DocumentView {
               .enabled(this.matchCount > 0)
               .onClick(() => this.findNext())
             }
-            .margin({ right: 40 })
+            .margin({ end: LengthMetrics.vp(40) })
             .onAreaChange((_oldArea: Area, newArea: Area) => {
               const width = parseFloat(String(newArea.width)) || 0;
               if (width > 0 && width !== this.searchControlsWidth) this.searchControlsWidth = width;
@@ -808,7 +808,7 @@ export struct DocumentView {
           }
         }
         .layoutWeight(1)
-        .margin({ right: $r('sys.float.padding_level4') })
+        .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
         Button() {
           SymbolGlyph($r('sys.symbol.xmark'))
             .fontColor([$r('sys.color.icon_primary')])
@@ -827,23 +827,23 @@ export struct DocumentView {
           TextInput({ text: this.replacement, placeholder: $r('app.string.replace_placeholder') })
             .onChange((value: string) => { this.replacement = value; })
             .layoutWeight(1)
-            .margin({ right: $r('sys.float.padding_level4') })
+            .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
             .systemMaterial(this.searchMaterial)
           Button($r('app.string.replace_action'))
             .onClick(() => this.replaceMatch())
         }
         .layoutWeight(1)
-        .margin({ right: $r('sys.float.padding_level4') })
+        .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
         Blank().width(40)
       }
       .width('100%')
       .margin({ top: $r('sys.float.padding_level4') })
     }
     .padding({
-      left: $r('sys.float.margin_left'),
-      right: $r('sys.float.margin_right'),
-      top: $r('sys.float.padding_level4'),
-      bottom: $r('sys.float.padding_level4')
+      start: LengthMetrics.resource($r('sys.float.margin_left')),
+      end: LengthMetrics.resource($r('sys.float.margin_right')),
+      top: LengthMetrics.resource($r('sys.float.padding_level4')),
+      bottom: LengthMetrics.resource($r('sys.float.padding_level4'))
     })
     .width('100%')
     .onAreaChange((_oldArea: Area, newArea: Area) => {
@@ -865,10 +865,10 @@ export struct DocumentView {
           })
           .width('100%')
           .padding({
-            top: 0,
-            right: 16,
-            bottom: 8,
-            left: 16
+            top: LengthMetrics.vp(0),
+            end: LengthMetrics.vp(16),
+            bottom: LengthMetrics.vp(8),
+            start: LengthMetrics.vp(16)
           })
           // Keep the official ArkUI TextArea, with a transparent fill and the system no-corner resource
           // so the editor surface remains the same page background instead of a separate card.

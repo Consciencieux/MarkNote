@@ -2,16 +2,18 @@ import { i18n } from '@kit.LocalizationKit';
 
 /**
  * Values stored for the language setting. `default` follows the system language.
- * Resource directories: `zh_Hant`, `bo`, `en_US`, `ja`, `ko`, `ru`. `zh-Hans` uses `base`.
- * 语言限定词取 ISO 639 的小写字母；藏语是 `bo`。
+ * Resource directories: `zh_Hant`, `bo`, `en_US`, `ja`, `ko`, `ru`, `ar`, `ug`. `zh-Hans` uses `base`.
+ * 语言限定词取 ISO 639 的小写字母。藏语是 `bo`，阿拉伯语是 `ar`，维吾尔语是 `ug`。
  * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/resource-categories-and-access
  */
-export const LANGUAGE_VALUES: string[] = ['default', 'zh-Hans', 'zh-Hant', 'bo', 'en-US', 'ja', 'ko', 'ru'];
+/** 跟随系统在最前。其余按汉语拼音：阿拉伯文、俄文、繁体中文、韩文、简体中文、日文、维吾尔文、英文、藏文。 */
+export const LANGUAGE_VALUES: string[] =
+  ['default', 'ar', 'ru', 'zh-Hant', 'ko', 'zh-Hans', 'ja', 'ug', 'en-US', 'bo'];
 
 /** Keep an unknown stored value on Follow system. */
 export function normalizeAppLanguage(choice: string): string {
   if (choice === 'zh-Hans' || choice === 'zh-Hant' || choice === 'bo' || choice === 'en-US' ||
-    choice === 'ja' || choice === 'ko' || choice === 'ru') {
+    choice === 'ja' || choice === 'ko' || choice === 'ru' || choice === 'ar' || choice === 'ug') {
     return choice;
   }
   return 'default';
@@ -68,7 +70,15 @@ function languageTag(value: string): string {
   if (kind === 'ja') return 'ja';
   if (kind === 'ko') return 'ko';
   if (kind === 'ru') return 'ru';
+  if (kind === 'ar') return 'ar';
+  if (kind === 'ug') return 'ug';
   return 'zh-Hans';
+}
+
+/** 阿拉伯语和维吾尔语从右向左。跟随系统时不在这里判断，交给 Direction.Auto。 */
+export function isRightToLeftLanguage(choice: string): boolean {
+  const kind = languageKind(normalizeAppLanguage(choice));
+  return kind === 'ar' || kind === 'ug';
 }
 
 function sameLanguage(left: string, right: string): boolean {
@@ -84,6 +94,8 @@ function languageKind(value: string): string {
   if (tag.startsWith('ja')) return 'ja';
   if (tag.startsWith('ko')) return 'ko';
   if (tag.startsWith('ru')) return 'ru';
+  if (tag.startsWith('ar')) return 'ar';
+  if (tag.startsWith('ug')) return 'ug';
   return tag;
 }
 

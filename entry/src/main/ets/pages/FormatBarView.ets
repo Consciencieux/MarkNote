@@ -1,4 +1,4 @@
-import { Chip, SymbolGlyphModifier } from '@kit.ArkUI';
+import { Chip, LengthMetrics, SymbolGlyphModifier } from '@kit.ArkUI';
 import { FormatRegistry, InsertAction } from '../document/FormatRegistry';
 import { AppText } from '../i18n/AppText';
 import { formatChipMaterial } from './ImmersiveMaterials';
@@ -34,7 +34,7 @@ export struct FormatBarView {
           })
         }, (action: InsertAction) => `${this.language}:${action.id}`)
       }
-      .padding({ left: 16, right: 16 })
+      .padding({ start: LengthMetrics.vp(16), end: LengthMetrics.vp(16) })
     }
     .width('100%')
     .scrollable(ScrollDirection.Horizontal)

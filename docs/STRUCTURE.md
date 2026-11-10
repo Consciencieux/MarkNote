@@ -48,7 +48,7 @@ marknote/
 | 标题栏与滚动 | `pages/HdsMaterialStyles.ets`、`pages/PageScrollPolicy.ets`、`pages/DocumentScrollLayer.ets` |
 | 搜索框、分段按钮与编辑工具栏材质 | `pages/ImmersiveMaterials.ets` |
 | 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets` |
-| 界面语言 | `i18n/AppText.ets`、`i18n/AppLanguage.ets`，以及 `entry/src/main/resources/` 下 `base`（简体中文）、`zh_Hant`、`bo`、`en_US`、`ja`、`ko`、`ru` 的 `element/string.json` |
+| 界面语言 | `i18n/AppText.ets`、`i18n/AppLanguage.ets`，以及 `entry/src/main/resources/` 下 `base`（简体中文）、`zh_Hant`、`bo`、`en_US`、`ja`、`ko`、`ru`、`ar`、`ug` 的 `element/string.json` |
 | 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
 | 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/LocalState.ets` |
 | Markdown 本地图片 | `document/LocalImages.ets`、`pages/DocumentPreviewView.ets`，以及仓库根目录下的 `renderer/src/renderers/markdown.ts` |
