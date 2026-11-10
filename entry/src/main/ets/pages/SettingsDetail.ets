@@ -1,6 +1,6 @@
 import { PageScrollPolicy } from './PageScrollPolicy';
 import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
-import { THEME_VALUES, themeLabel } from './SettingsView';
+import { LANGUAGE_VALUES, THEME_VALUES, languageLabel, themeLabel } from './SettingsView';
 import { AppText } from '../i18n/AppText';
 
 /**
@@ -19,24 +19,26 @@ export struct SettingsDetail {
   private groupStyle: SettingsGroupStyle = new SettingsGroupStyle();
   /** 路由名，同时就是这一页的 section。 */
   @Prop section: string = 'about';
-  /** 当前主题取值，和设置首页、Index 共用同一份状态。 */
+  /** 当前主题和语言取值，和设置首页、Index 共用同一份状态。 */
   @Link theme: string;
+  @Link language: string;
   @Prop version: string = '';
   @Prop text: string = '';
   onOpen: (section: string) => void = (_section: string): void => {};
   onOpenProject: () => void = (): void => {};
   onChooseTheme: (choice: string) => void = (_choice: string): void => {};
+  onChooseLanguage: (choice: string) => void = (_choice: string): void => {};
 
   @Builder
-  private RadioRow(title: string, choice: string) {
+  private RadioRow(title: string, selected: boolean, onSelect: () => void) {
     ListItem({ style: ListItemStyle.CARD }) {
-      SettingsListRow({ title: title, selected: this.theme === choice })
+      SettingsListRow({ title: title, selected: selected })
     }
-    .onClick(() => this.onChooseTheme(choice))
+    .onClick(onSelect)
     .accessibilityGroup(true)
     .accessibilityText(title)
     .accessibilityRole(AccessibilityRoleType.RADIO)
-    .accessibilityChecked(this.theme === choice)
+    .accessibilityChecked(selected)
   }
 
   @Builder
@@ -79,7 +81,13 @@ export struct SettingsDetail {
       if (this.section === 'appearance') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           ForEach(THEME_VALUES, (choice: string) => {
-            this.RadioRow(themeLabel(choice), choice)
+            this.RadioRow(themeLabel(choice), this.theme === choice, (): void => this.onChooseTheme(choice))
+          }, (choice: string) => choice)
+        }.attributeModifier(this.groupStyle)
+      } else if (this.section === 'language') {
+        ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+          ForEach(LANGUAGE_VALUES, (choice: string) => {
+            this.RadioRow(languageLabel(choice), this.language === choice, (): void => this.onChooseLanguage(choice))
           }, (choice: string) => choice)
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'license-list') {

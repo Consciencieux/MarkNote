@@ -8,6 +8,7 @@ import { AppText } from '../i18n/AppText';
 
 const RECENT_KEY: string = 'recent_files';
 const THEME_KEY: string = 'color_choice';
+const LANGUAGE_KEY: string = 'app_language';
 const SORT_KEY: string = 'recent_sort';
 const DRAFT: string = '/unsaved-draft.json';
 const TEMP: string = '/unsaved-draft.tmp';
@@ -22,6 +23,18 @@ export class LocalState {
   static async writeTheme(context: common.UIAbilityContext, choice: string): Promise<void> {
     const store = await preferences.getPreferences(context, 'marknote-settings');
     await store.put(THEME_KEY, choice);
+    await store.flush();
+  }
+
+  static async readLanguage(context: common.UIAbilityContext): Promise<string> {
+    const store = await preferences.getPreferences(context, 'marknote-settings');
+    const value = await store.get(LANGUAGE_KEY, 'default') as string;
+    return value === 'zh-Hans' || value === 'en-US' ? value : 'default';
+  }
+
+  static async writeLanguage(context: common.UIAbilityContext, choice: string): Promise<void> {
+    const store = await preferences.getPreferences(context, 'marknote-settings');
+    await store.put(LANGUAGE_KEY, choice);
     await store.flush();
   }
 

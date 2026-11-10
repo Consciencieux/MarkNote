@@ -23,6 +23,7 @@ import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 import { AppText } from '../i18n/AppText';
+import { applyAppLanguage } from '../i18n/AppLanguage';
 
 /**
  * 首页外壳：导航栈、主题、设置与关于，以及新建/打开/恢复的编排。
@@ -36,6 +37,7 @@ struct Index {
   @State private recents: RecentDocument[] = [];
   @State private sortOrder: string = 'modified';
   @State private theme: string = 'system';
+  @State private language: string = 'default';
   @State private version: string = '';
   @State private wide: boolean = false;
   @State private navigationMode: NavigationMode = NavigationMode.Stack;
@@ -43,7 +45,7 @@ struct Index {
   @State private documentOpen: boolean = false;
   /** 首页分段按钮：0 是全部，1 是收藏。 */
   @State private librarySegment: number = 0;
-  private readonly librarySegmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+  private librarySegmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
     { text: AppText.text($r('app.string.home_all')) },
     { text: AppText.text($r('app.string.home_favorites')) }
   ]);
@@ -120,6 +122,7 @@ struct Index {
       this.sortOrder = await LocalState.readSort(this.context);
       void this.refreshRecentTimes(this.recents);
       this.changeTheme(await LocalState.readTheme(this.context), false);
+      this.language = await LocalState.readLanguage(this.context);
     } catch {
       this.toast($r('app.string.settings_read_failed'));
     }
@@ -207,6 +210,29 @@ struct Index {
 
   private toast(message: string | Resource): void {
     this.getUIContext().getPromptAction().showToast({ message });
+  }
+
+  private refreshLibraryLabels(): void {
+    this.librarySegmentItems = new SegmentButtonV2Items([
+      { text: AppText.text($r('app.string.home_all')) },
+      { text: AppText.text($r('app.string.home_favorites')) }
+    ]);
+  }
+
+  private changeLanguage(choice: string): void {
+    const previous = this.language;
+    this.language = choice;
+    try {
+      applyAppLanguage(choice);
+    } catch {
+      this.language = previous;
+      this.toast($r('app.string.language_save_failed'));
+      return;
+    }
+    this.refreshLibraryLabels();
+    if (this.context) {
+      void LocalState.writeLanguage(this.context, choice).catch(() => this.toast($r('app.string.language_save_failed')));
+    }
   }
 
   private changeTheme(choice: string, persist: boolean = true): void {
@@ -609,13 +635,15 @@ struct Index {
       SettingsPage({
         section: name,
         theme: $theme,
+        language: $language,
         version: this.version,
         text: name === 'project-license' ? this.projectLicenseText : this.legalText,
         onOpen: (section: string): void => this.openSetting(section),
         onOpenProject: (): void => this.openProjectHome(),
         onFeedback: (): void => this.openFeedback(),
         onBack: (): void => { this.routes.pop(); },
-        onChooseTheme: (choice: string): void => this.changeTheme(choice)
+        onChooseTheme: (choice: string): void => this.changeTheme(choice),
+        onChooseLanguage: (choice: string): void => this.changeLanguage(choice)
       })
     }
   }

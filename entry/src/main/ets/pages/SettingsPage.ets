@@ -9,6 +9,7 @@ import { SettingsDetail } from './SettingsDetail';
 export struct SettingsPage {
   @Prop section: string = 'settings';
   @Link theme: string;
+  @Link language: string;
   @Prop version: string = '';
   @Prop text: string = '';
   private scroller: Scroller = new Scroller();
@@ -17,20 +18,21 @@ export struct SettingsPage {
   onFeedback: () => void = (): void => {};
   onBack: () => void = (): void => {};
   onChooseTheme: (choice: string) => void = (_choice: string): void => {};
+  onChooseLanguage: (choice: string) => void = (_choice: string): void => {};
 
   build() {
     HdsNavDestination() {
       if (this.section === 'settings') {
         SettingsView({
-          scroller: this.scroller, theme: $theme,
+          scroller: this.scroller, theme: $theme, language: $language,
           onOpen: this.onOpen, onFeedback: this.onFeedback
         })
       } else {
         SettingsDetail({
-          scroller: this.scroller, section: this.section, theme: $theme,
+          scroller: this.scroller, section: this.section, theme: $theme, language: $language,
           version: this.version, text: this.text,
           onOpen: this.onOpen, onOpenProject: this.onOpenProject,
-          onChooseTheme: this.onChooseTheme
+          onChooseTheme: this.onChooseTheme, onChooseLanguage: this.onChooseLanguage
         })
       }
     }
