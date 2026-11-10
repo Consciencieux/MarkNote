@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify';
+import { previewError, previewText } from '../preview-text.ts';
 
 function internalReference(value: string): boolean {
   const trimmed = value.trim().toLowerCase();
@@ -18,11 +19,11 @@ export function installReferenceHook(): void {
 // Keep fragment ids such as url(#gradient) intact. Scripts, animation, foreign
 // HTML and non-fragment links stay removed. CSP still blocks network loads.
 export function sanitizeSvg(source: string): string {
-  if (!DOMPurify.isSupported) return '<p class="error">当前浏览器无法安全渲染 SVG</p>';
+  if (!DOMPurify.isSupported) return previewError(previewText().svgUnsafe);
   installReferenceHook();
   const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
   if (parsed.documentElement.localName.toLowerCase() !== 'svg' || parsed.querySelector('parsererror')) {
-    return '<p class="error">SVG 文档格式错误</p>';
+    return previewError(previewText().svgInvalid);
   }
   const clean = DOMPurify.sanitize(source, {
     USE_PROFILES: { svg: true, svgFilters: true },
@@ -31,6 +32,6 @@ export function sanitizeSvg(source: string): string {
     SANITIZE_NAMED_PROPS: false,
     KEEP_CONTENT: false
   });
-  if (!/^\s*<svg(?:\s|>)/i.test(clean)) return '<p class="error">SVG 内容未通过安全检查</p>';
+  if (!/^\s*<svg(?:\s|>)/i.test(clean)) return previewError(previewText().svgRejected);
   return clean;
 }

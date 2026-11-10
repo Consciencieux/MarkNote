@@ -601,6 +601,7 @@ struct Index {
     if (name === 'document') {
       DocumentView({
         theme: this.theme,
+        language: this.language,
         wide: this.wide,
         canExpand: this.navigationMode === NavigationMode.Split || this.documentExpanded,
         expanded: this.documentExpanded,

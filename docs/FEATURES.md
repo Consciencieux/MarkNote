@@ -27,7 +27,7 @@
 | 撤销与重做 | 编辑历史保存在内存中，连续输入在 600 毫秒内合并，最多保留 200 步；切换文稿时清空 | [EditHistory.ets](../entry/src/main/ets/document/EditHistory.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。有底部导航避让区时，页签沿用组件对安全区的扩展，不再另加底边距。避让高度为 0 时（悬浮小窗是其中一种情况），页签栏与 `HdsTabs` 底边留出应用自己设定的 `sys.float.margin_left`，这不是华为规定的底部间距。宽度达到 `WIDTH_LG` 断点时可分栏显示，预览在左、编辑在右 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
 
-预览页面随应用离线打包。ArkUI 将格式、正文、主题和修订号传给网页；LaTeX 预览通过消息端口回传解析结果，网页不能调用文件或导航接口。内容安全策略禁止网络连接。
+预览页面随应用离线打包。ArkUI 将格式、正文、主题、修订号和当前界面语言的预览提示传给网页；LaTeX 预览通过消息端口回传解析结果，网页不能调用文件或导航接口。内容安全策略禁止网络连接。
 
 | 格式 | 预览方式 | 限制 |
 | --- | --- | --- |

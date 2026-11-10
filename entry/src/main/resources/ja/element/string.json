@@ -110,7 +110,7 @@
     { "name": "privacy_body", "value": "文書はこの端末で編集します。アカウント、広告、利用状況の送信、ネットワーク接続はなく、文書をアップロードしません。ファイルはシステムのファイル選択で許可し、下書きはアプリ専用の場所に保存します。" },
     { "name": "sort_save_failed", "value": "並べ替えを保存できませんでした" },
     { "name": "settings_read_failed", "value": "設定を読み取れませんでした。システムの初期値を使います" },
-    { "name": "external_open_failed", "value": "外部からのオープン要求を処理できませんでした：%s" },
+    { "name": "external_open_failed", "value": "ほかのアプリからファイルを開けませんでした：%s" },
     { "name": "document_not_visible", "value": "文書ページを表示できませんでした。ファイルを開き直してください" },
     { "name": "draft_restored", "value": "前回の未保存の編集を復元しました" },
     { "name": "draft_discarded", "value": "前回の編集を復元できなかったため、破棄しました" },
@@ -168,6 +168,17 @@
     { "name": "write_interrupted", "value": "ファイルの書き込みが中断されました" },
     { "name": "verify_failed", "value": "保存後の確認に失敗しました。下書きは残しています" },
     { "name": "draft_interrupted", "value": "下書きの書き込みが中断されました" },
-    { "name": "share_write_failed", "value": "共有ファイルを書き込めませんでした" }
+    { "name": "share_write_failed", "value": "共有ファイルを書き込めませんでした" },
+    { "name": "language_follow_hint", "value": "システムに合わせる設定は、次回アプリを開いたときに有効になります。" },
+    { "name": "preview_empty", "value": "内容はここにプレビューされます" },
+    { "name": "preview_failed", "value": "プレビューできませんでした。文書を確認してください。" },
+    { "name": "preview_unsafe", "value": "この表示では内容を安全に描画できません" },
+    { "name": "preview_markdown_failed", "value": "Markdown を整形できませんでした。文書を確認してください。" },
+    { "name": "preview_svg_unsafe", "value": "この表示では SVG を安全に描画できません" },
+    { "name": "preview_svg_invalid", "value": "SVG の形式が正しくありません" },
+    { "name": "preview_svg_rejected", "value": "SVG が安全確認を通過しませんでした" },
+    { "name": "preview_math_failed", "value": "数式を表示できませんでした。数式の書き方を確認してください。" },
+    { "name": "preview_image_name", "value": "画像" },
+    { "name": "preview_image_slot", "value": "[画像：%s]" }
   ]
 }

@@ -55,6 +55,7 @@ class AfterFrame extends FrameCallback {
 export struct DocumentView {
   // 由首页传入。
   @Prop theme: string = 'system';
+  @Prop language: string = 'default';
   @Prop @Watch('onWideChange') wide: boolean = false;
   @Prop canExpand: boolean = false;
   @Prop expanded: boolean = false;
@@ -905,7 +906,7 @@ export struct DocumentView {
     Row() {
       Column() {
         DocumentPreviewView({
-          scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
+          scroller: this.splitPreviewScroller, theme: this.theme, language: this.language, source: this.source,
           kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
           onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
         })
@@ -939,7 +940,7 @@ export struct DocumentView {
         // Preview is first so a newly opened document lands on its rendered content.
         TabContent() {
           DocumentPreviewView({
-            scroller: this.previewScroller, theme: this.theme, source: this.source,
+            scroller: this.previewScroller, theme: this.theme, language: this.language, source: this.source,
             kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
             onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
           })

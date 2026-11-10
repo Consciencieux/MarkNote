@@ -90,6 +90,19 @@ export struct SettingsDetail {
             this.RadioRow(languageLabel(choice), this.language === choice, (): void => this.onChooseLanguage(choice))
           }, (choice: string) => choice)
         }.attributeModifier(this.groupStyle)
+        if (this.language === 'default') {
+          ListItem() {
+            Text($r('app.string.language_follow_hint'))
+              .width('100%')
+              .fontSize($r('sys.float.Body_S'))
+              .fontColor($r('sys.color.font_secondary'))
+              .padding({
+                left: $r('sys.float.padding_level8'),
+                right: $r('sys.float.padding_level8'),
+                top: $r('sys.float.padding_level4')
+              })
+          }
+        }
       } else if (this.section === 'license-list') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           this.LinkRow(AppText.text($r('app.string.settings_project_license')), () => this.onOpen('project-license'))

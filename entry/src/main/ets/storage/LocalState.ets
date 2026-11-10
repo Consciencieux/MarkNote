@@ -9,6 +9,10 @@ import { normalizeAppLanguage } from '../i18n/AppLanguage';
 
 const RECENT_KEY: string = 'recent_files';
 const THEME_KEY: string = 'color_choice';
+/**
+ * 用户选择，含 `default`。系统偏好语言接口负责真正切换资源；
+ * 其读取结果未说明会保留 `default`，不能单独用来区分“跟随系统”和已解析出的语言。
+ */
 const LANGUAGE_KEY: string = 'app_language';
 const SORT_KEY: string = 'recent_sort';
 const DRAFT: string = '/unsaved-draft.json';

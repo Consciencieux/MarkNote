@@ -10,7 +10,7 @@
     { "name": "home_unfavorite", "value": "즐겨찾기 해제" },
     { "name": "home_remove_record", "value": "기록 제거" },
     { "name": "sort_modified", "value": "수정한 날짜" },
-    { "name": "sort_opened", "value": "최근 연 항목" },
+    { "name": "sort_opened", "value": "최근 열어본 순" },
     { "name": "sort_name", "value": "이름" },
     { "name": "sort_type", "value": "유형" },
     { "name": "sort_menu", "value": "정렬" },
@@ -168,6 +168,17 @@
     { "name": "write_interrupted", "value": "파일 쓰기가 중단되었습니다" },
     { "name": "verify_failed", "value": "저장 후 확인에 실패했습니다. 임시 저장본은 남겨 두었습니다" },
     { "name": "draft_interrupted", "value": "임시 저장 쓰기가 중단되었습니다" },
-    { "name": "share_write_failed", "value": "공유 파일을 쓰지 못했습니다" }
+    { "name": "share_write_failed", "value": "공유 파일을 쓰지 못했습니다" },
+    { "name": "language_follow_hint", "value": "시스템 설정 따르기로 되돌리면 다음에 앱을 열 때 적용됩니다." },
+    { "name": "preview_empty", "value": "내용이 여기에 미리 표시됩니다" },
+    { "name": "preview_failed", "value": "미리보기에 실패했습니다. 문서를 확인하세요." },
+    { "name": "preview_unsafe", "value": "이 보기에서는 내용을 안전하게 표시할 수 없습니다" },
+    { "name": "preview_markdown_failed", "value": "Markdown 배치에 실패했습니다. 문서를 확인하세요." },
+    { "name": "preview_svg_unsafe", "value": "이 보기에서는 SVG를 안전하게 표시할 수 없습니다" },
+    { "name": "preview_svg_invalid", "value": "SVG 형식이 올바르지 않습니다" },
+    { "name": "preview_svg_rejected", "value": "SVG가 안전 검사를 통과하지 못했습니다" },
+    { "name": "preview_math_failed", "value": "수식을 표시하지 못했습니다. 수식 문법을 확인하세요." },
+    { "name": "preview_image_name", "value": "이미지" },
+    { "name": "preview_image_slot", "value": "[이미지: %s]" }
   ]
 }

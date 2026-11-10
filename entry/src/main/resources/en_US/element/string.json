@@ -142,7 +142,7 @@
     { "name": "save_prompt", "value": "Save the changes?" },
     { "name": "discard", "value": "Don’t save" },
     { "name": "save_copy_readonly", "value": "The original file cannot be written. Save it as another file." },
-    { "name": "save_not_persistent", "value": " Long-term access was not kept, so the file was not added to recent documents." },
+    { "name": "save_not_persistent", "value": ". Long-term access was not kept, so the file was not added to recent documents." },
     { "name": "save_failed_copy", "value": "Could not save: %s\nYou can save it as another file." },
     { "name": "save_failed", "value": "Could not save: %s" },
     { "name": "draft_write_failed", "value": "Could not write the recovery draft. Save the file soon." },
@@ -168,6 +168,17 @@
     { "name": "write_interrupted", "value": "The write was interrupted" },
     { "name": "verify_failed", "value": "Verification failed after saving. The draft was kept." },
     { "name": "draft_interrupted", "value": "The draft write was interrupted" },
-    { "name": "share_write_failed", "value": "Could not write the shared file" }
+    { "name": "share_write_failed", "value": "Could not write the shared file" },
+    { "name": "language_follow_hint", "value": "Returning to the system language takes effect the next time the app opens." },
+    { "name": "preview_empty", "value": "Content will be previewed here" },
+    { "name": "preview_failed", "value": "Preview failed. Check the document." },
+    { "name": "preview_unsafe", "value": "This view cannot render the content safely" },
+    { "name": "preview_markdown_failed", "value": "Could not lay out the Markdown. Check the document." },
+    { "name": "preview_svg_unsafe", "value": "This view cannot render the SVG safely" },
+    { "name": "preview_svg_invalid", "value": "The SVG is not valid" },
+    { "name": "preview_svg_rejected", "value": "The SVG did not pass the safety check" },
+    { "name": "preview_math_failed", "value": "Could not render the formula. Check the math syntax." },
+    { "name": "preview_image_name", "value": "image" },
+    { "name": "preview_image_slot", "value": "[Image: %s]" }
   ]
 }

@@ -146,7 +146,7 @@
     { "name": "save_failed_copy", "value": "保存失败：%s\n可另存为其他文件。" },
     { "name": "save_failed", "value": "保存失败：%s" },
     { "name": "draft_write_failed", "value": "草稿恢复副本写入失败，请尽快保存文件" },
-    { "name": "unsupported_format", "value": "这个文件不是 Marknote 支持的文稿格式" },
+    { "name": "unsupported_format", "value": "这个文件不是 MarkNote 支持的文稿格式" },
     { "name": "no_write_permission", "value": "没有获得写入权限，请改用“另存为”" },
     { "name": "saved_dirty", "value": "已保存操作开始时的版本，仍有未保存修改" },
     { "name": "saved_readonly", "value": "当前文件只读，已另存为" },
@@ -168,6 +168,17 @@
     { "name": "write_interrupted", "value": "文件写入中断" },
     { "name": "verify_failed", "value": "保存后校验失败，已保留草稿" },
     { "name": "draft_interrupted", "value": "草稿写入中断" },
-    { "name": "share_write_failed", "value": "分享文件写入失败" }
+    { "name": "share_write_failed", "value": "分享文件写入失败" },
+    { "name": "language_follow_hint", "value": "改回跟随系统后，下次打开应用时生效。" },
+    { "name": "preview_empty", "value": "内容将在这里预览" },
+    { "name": "preview_failed", "value": "预览失败，请检查文稿内容。" },
+    { "name": "preview_unsafe", "value": "当前浏览器不支持安全渲染" },
+    { "name": "preview_markdown_failed", "value": "Markdown 排版失败，请检查文稿。" },
+    { "name": "preview_svg_unsafe", "value": "当前浏览器无法安全渲染 SVG" },
+    { "name": "preview_svg_invalid", "value": "SVG 文档格式错误" },
+    { "name": "preview_svg_rejected", "value": "SVG 内容未通过安全检查" },
+    { "name": "preview_math_failed", "value": "公式渲染失败，请检查数学语法。" },
+    { "name": "preview_image_name", "value": "图片" },
+    { "name": "preview_image_slot", "value": "[图片：%s]" }
   ]
 }

@@ -1,4 +1,5 @@
 import katex from 'katex';
+import { previewError, previewText } from '../preview-text.ts';
 
 export function renderTexMath(source: string): string {
   if (/\\(?:documentclass|usepackage|begin\s*\{document\})/.test(source)) {
@@ -13,6 +14,6 @@ export function renderTexMath(source: string): string {
       strict: 'warn', maxSize: 100, maxExpand: 1000, output: 'htmlAndMathml'
     })}</div>`;
   } catch {
-    return '<p class="error">公式渲染失败，请检查数学语法。</p>';
+    return previewError(previewText().mathFailed);
   }
 }

@@ -168,6 +168,17 @@
     { "name": "write_interrupted", "value": "檔案寫入中斷" },
     { "name": "verify_failed", "value": "儲存後驗證失敗，已保留草稿" },
     { "name": "draft_interrupted", "value": "草稿寫入中斷" },
-    { "name": "share_write_failed", "value": "分享檔案寫入失敗" }
+    { "name": "share_write_failed", "value": "分享檔案寫入失敗" },
+    { "name": "language_follow_hint", "value": "改回跟隨系統後，下次開啟應用程式時生效。" },
+    { "name": "preview_empty", "value": "內容將在這裡預覽" },
+    { "name": "preview_failed", "value": "預覽失敗，請檢查文稿內容。" },
+    { "name": "preview_unsafe", "value": "目前的檢視無法安全顯示內容" },
+    { "name": "preview_markdown_failed", "value": "Markdown 排版失敗，請檢查文稿。" },
+    { "name": "preview_svg_unsafe", "value": "目前的檢視無法安全顯示 SVG" },
+    { "name": "preview_svg_invalid", "value": "SVG 文件格式錯誤" },
+    { "name": "preview_svg_rejected", "value": "SVG 內容未通過安全檢查" },
+    { "name": "preview_math_failed", "value": "公式顯示失敗，請檢查數學語法。" },
+    { "name": "preview_image_name", "value": "圖片" },
+    { "name": "preview_image_slot", "value": "[圖片：%s]" }
   ]
 }
