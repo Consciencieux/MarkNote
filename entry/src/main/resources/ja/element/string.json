@@ -84,6 +84,7 @@
     { "name": "language_ja", "value": "日本語" },
     { "name": "language_ko", "value": "한국어" },
     { "name": "language_ru", "value": "Русский" },
+    { "name": "language_bo", "value": "བོད་ཡིག" },
     { "name": "language_save_failed", "value": "言語設定を保存できませんでした" },
     { "name": "settings_appearance", "value": "外観" },
     { "name": "settings_privacy", "value": "プライバシー" },

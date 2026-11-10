@@ -28,6 +28,7 @@ export function themeLabel(choice: string): Resource {
 export function languageLabel(choice: string): Resource {
   if (choice === 'zh-Hans') return $r('app.string.language_zh');
   if (choice === 'zh-Hant') return $r('app.string.language_zh_hant');
+  if (choice === 'bo') return $r('app.string.language_bo');
   if (choice === 'en-US') return $r('app.string.language_en');
   if (choice === 'ja') return $r('app.string.language_ja');
   if (choice === 'ko') return $r('app.string.language_ko');

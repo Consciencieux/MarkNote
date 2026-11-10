@@ -2,13 +2,15 @@ import { i18n } from '@kit.LocalizationKit';
 
 /**
  * Values stored for the language setting. `default` follows the system language.
- * Resource directories: `zh_Hant`, `en_US`, `ja`, `ko`, `ru`. `zh-Hans` uses `base`.
+ * Resource directories: `zh_Hant`, `bo`, `en_US`, `ja`, `ko`, `ru`. `zh-Hans` uses `base`.
+ * 语言限定词取 ISO 639 的小写字母；藏语是 `bo`。
+ * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/resource-categories-and-access
  */
-export const LANGUAGE_VALUES: string[] = ['default', 'zh-Hans', 'zh-Hant', 'en-US', 'ja', 'ko', 'ru'];
+export const LANGUAGE_VALUES: string[] = ['default', 'zh-Hans', 'zh-Hant', 'bo', 'en-US', 'ja', 'ko', 'ru'];
 
 /** Keep an unknown stored value on Follow system. */
 export function normalizeAppLanguage(choice: string): string {
-  if (choice === 'zh-Hans' || choice === 'zh-Hant' || choice === 'en-US' ||
+  if (choice === 'zh-Hans' || choice === 'zh-Hant' || choice === 'bo' || choice === 'en-US' ||
     choice === 'ja' || choice === 'ko' || choice === 'ru') {
     return choice;
   }
@@ -61,6 +63,7 @@ export function applyAppLanguage(choice: string): void {
 function languageTag(value: string): string {
   const kind = languageKind(value);
   if (kind === 'zh-hant') return 'zh-Hant';
+  if (kind === 'bo') return 'bo';
   if (kind === 'en') return 'en-US';
   if (kind === 'ja') return 'ja';
   if (kind === 'ko') return 'ko';
@@ -76,6 +79,7 @@ function languageKind(value: string): string {
   const tag = value.replace(/_/g, '-').toLowerCase();
   if (tag.includes('hant')) return 'zh-hant';
   if (tag.startsWith('zh')) return 'zh-hans';
+  if (tag.startsWith('bo')) return 'bo';
   if (tag.startsWith('en')) return 'en';
   if (tag.startsWith('ja')) return 'ja';
   if (tag.startsWith('ko')) return 'ko';
