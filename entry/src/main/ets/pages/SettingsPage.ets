@@ -1,7 +1,6 @@
 import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit';
 import { scrollingTitleBar } from './HdsMaterialStyles';
 import { SettingsView, settingTitle } from './SettingsView';
-import { AppText } from '../i18n/AppText';
 import { SettingsDetail } from './SettingsDetail';
 
 /** Each route owns its controller, including while a sibling destination is transitioning. */
@@ -9,7 +8,8 @@ import { SettingsDetail } from './SettingsDetail';
 export struct SettingsPage {
   @Prop section: string = 'settings';
   @Link theme: string;
-  @Link language: string;
+  /** 读一次语言，标题栏在导航页不重建时也会重新设置。 */
+  @StorageLink('marknote_language') language: string = 'default';
   @Prop version: string = '';
   @Prop text: string = '';
   private scroller: Scroller = new Scroller();
@@ -20,16 +20,21 @@ export struct SettingsPage {
   onChooseTheme: (choice: string) => void = (_choice: string): void => {};
   onChooseLanguage: (choice: string) => void = (_choice: string): void => {};
 
+  private pageTitle(): Resource {
+    if (this.language.length === 0) return $r('app.string.settings');
+    return this.section === 'settings' ? $r('app.string.settings') : settingTitle(this.section);
+  }
+
   build() {
     HdsNavDestination() {
       if (this.section === 'settings') {
         SettingsView({
-          scroller: this.scroller, theme: $theme, language: $language,
+          scroller: this.scroller, theme: $theme,
           onOpen: this.onOpen, onFeedback: this.onFeedback
         })
       } else {
         SettingsDetail({
-          scroller: this.scroller, section: this.section, theme: $theme, language: $language,
+          scroller: this.scroller, section: this.section, theme: $theme,
           version: this.version, text: this.text,
           onOpen: this.onOpen, onOpenProject: this.onOpenProject,
           onChooseTheme: this.onChooseTheme, onChooseLanguage: this.onChooseLanguage
@@ -37,7 +42,7 @@ export struct SettingsPage {
       }
     }
     .titleBar(scrollingTitleBar({
-      title: { mainTitle: this.section === 'settings' ? AppText.text($r('app.string.settings')) : settingTitle(this.section) }
+      title: { mainTitle: this.pageTitle() }
     }))
     .titleMode(HdsNavDestinationTitleMode.MINI)
     // HdsNavDestination onBackPressed：返回 true 后由调用方处理页面栈。

@@ -1,7 +1,6 @@
 import { PageScrollPolicy } from './PageScrollPolicy';
 import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { LANGUAGE_VALUES, THEME_VALUES, languageLabel, themeLabel } from './SettingsView';
-import { AppText } from '../i18n/AppText';
 
 /**
  * 设置的内容页，按 section 渲染外观、隐私说明、许可证、关于或使用帮助。
@@ -21,7 +20,8 @@ export struct SettingsDetail {
   @Prop section: string = 'about';
   /** 当前主题和语言取值，和设置首页、Index 共用同一份状态。 */
   @Link theme: string;
-  @Link language: string;
+  /** 导航页不会跟着首页的 @Link 重建，语言从 AppStorage 取。 */
+  @StorageLink('marknote_language') language: string = 'default';
   @Prop version: string = '';
   @Prop text: string = '';
   onOpen: (section: string) => void = (_section: string): void => {};
@@ -30,7 +30,7 @@ export struct SettingsDetail {
   onChooseLanguage: (choice: string) => void = (_choice: string): void => {};
 
   @Builder
-  private RadioRow(title: string, selected: boolean, onSelect: () => void) {
+  private RadioRow(title: Resource, selected: boolean, onSelect: () => void) {
     ListItem({ style: ListItemStyle.CARD }) {
       SettingsListRow({ title: title, selected: selected })
     }
@@ -42,14 +42,14 @@ export struct SettingsDetail {
   }
 
   @Builder
-  private InfoRow(title: string, status: string) {
+  private InfoRow(title: ResourceStr, status: ResourceStr) {
     ListItem({ style: ListItemStyle.CARD }) {
       SettingsListRow({ title: title, value: status })
     }
   }
 
   @Builder
-  private LinkRow(title: string, action: () => void) {
+  private LinkRow(title: ResourceStr, action: () => void) {
     ListItem({ style: ListItemStyle.CARD }) {
       SettingsListRow({ title: title, showArrow: true })
     }
@@ -88,33 +88,20 @@ export struct SettingsDetail {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           ForEach(LANGUAGE_VALUES, (choice: string) => {
             this.RadioRow(languageLabel(choice), this.language === choice, (): void => this.onChooseLanguage(choice))
-          }, (choice: string) => choice)
+          }, (choice: string) => `${this.language}:${choice}`)
         }.attributeModifier(this.groupStyle)
-        if (this.language === 'default') {
-          ListItem() {
-            Text($r('app.string.language_follow_hint'))
-              .width('100%')
-              .fontSize($r('sys.float.Body_S'))
-              .fontColor($r('sys.color.font_secondary'))
-              .padding({
-                left: $r('sys.float.padding_level8'),
-                right: $r('sys.float.padding_level8'),
-                top: $r('sys.float.padding_level4')
-              })
-          }
-        }
       } else if (this.section === 'license-list') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-          this.LinkRow(AppText.text($r('app.string.settings_project_license')), () => this.onOpen('project-license'))
-          this.LinkRow(AppText.text($r('app.string.settings_third_party')), () => this.onOpen('licenses'))
+          this.LinkRow($r('app.string.settings_project_license'), () => this.onOpen('project-license'))
+          this.LinkRow($r('app.string.settings_third_party'), () => this.onOpen('licenses'))
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'about') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-          this.InfoRow(AppText.text($r('app.string.about_name')), AppText.text($r('app.string.EntryAbility_label')))
-          this.InfoRow(AppText.text($r('app.string.about_version')),
-            this.version.length > 0 ? this.version : AppText.text($r('app.string.about_version_unavailable')))
-          this.LinkRow(AppText.text($r('app.string.about_github')), () => this.onOpenProject())
-          this.LinkRow(AppText.text($r('app.string.settings_licenses')), () => this.onOpen('license-list'))
+          this.InfoRow($r('app.string.about_name'), $r('app.string.EntryAbility_label'))
+          this.InfoRow($r('app.string.about_version'),
+            this.version.length > 0 ? this.version : $r('app.string.about_version_unavailable'))
+          this.LinkRow($r('app.string.about_github'), () => this.onOpenProject())
+          this.LinkRow($r('app.string.settings_licenses'), () => this.onOpen('license-list'))
         }.attributeModifier(this.groupStyle)
       } else {
         ListItem() {

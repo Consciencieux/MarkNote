@@ -7,6 +7,8 @@ import { formatChipMaterial } from './ImmersiveMaterials';
 @ComponentV2
 export struct FormatBarView {
   @Param formatId: string = '';
+  /** 放进列表键里，语言切换后重新取快捷操作的文字。 */
+  @Param language: string = '';
   @Param onInsert: (action: InsertAction) => void = (_action: InsertAction): void => {};
   private material = formatChipMaterial();
 
@@ -26,7 +28,7 @@ export struct FormatBarView {
             backgroundSystemMaterial: this.material,
             onClicked: (): void => this.onInsert(action)
           })
-        }, (action: InsertAction) => action.id)
+        }, (action: InsertAction) => `${this.language}:${action.id}`)
       }
       .padding({ left: 16, right: 16 })
     }

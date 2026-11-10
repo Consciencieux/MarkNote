@@ -23,7 +23,7 @@ import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 import { AppText } from '../i18n/AppText';
-import { applyAppLanguage } from '../i18n/AppLanguage';
+import { applyAppLanguage, normalizeAppLanguage, publishAppLanguage } from '../i18n/AppLanguage';
 
 /**
  * 首页外壳：导航栈、主题、设置与关于，以及新建/打开/恢复的编排。
@@ -45,10 +45,12 @@ struct Index {
   @State private documentOpen: boolean = false;
   /** 首页分段按钮：0 是全部，1 是收藏。 */
   @State private librarySegment: number = 0;
-  private librarySegmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
-    { text: AppText.text($r('app.string.home_all')) },
-    { text: AppText.text($r('app.string.home_favorites')) }
+  private readonly librarySegmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+    { text: $r('app.string.home_all') },
+    { text: $r('app.string.home_favorites') }
   ]);
+  /** 用户改过语言后，启动时尚未返回的读取不能把选择盖回去。 */
+  private languageEpoch: number = 0;
   private readonly librarySegmentMaterial = segmentButtonMaterial();
   /** 每开一篇加一，文稿页据此重新载入会话。 */
   @State private revision: number = 0;
@@ -85,6 +87,8 @@ struct Index {
     menuBridge.openDocumentMenu = (): void => this.openDocumentMenu();
     menuBridge.dismiss = (next: () => void): void => this.afterMenu(next);
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    if (this.context) this.language = LocalState.readLanguageSync(this.context);
+    publishAppLanguage(this.language);
     this.bindWideBreakpoint();
     void this.initialize();
   }
@@ -122,7 +126,12 @@ struct Index {
       this.sortOrder = await LocalState.readSort(this.context);
       void this.refreshRecentTimes(this.recents);
       this.changeTheme(await LocalState.readTheme(this.context), false);
-      this.language = await LocalState.readLanguage(this.context);
+      const languageEpoch = this.languageEpoch;
+      const storedLanguage = await LocalState.readLanguage(this.context);
+      if (!this.disposed && languageEpoch === this.languageEpoch) {
+        this.language = storedLanguage;
+        publishAppLanguage(storedLanguage);
+      }
     } catch {
       this.toast($r('app.string.settings_read_failed'));
     }
@@ -212,27 +221,33 @@ struct Index {
     this.getUIContext().getPromptAction().showToast({ message });
   }
 
-  private refreshLibraryLabels(): void {
-    this.librarySegmentItems = new SegmentButtonV2Items([
-      { text: AppText.text($r('app.string.home_all')) },
-      { text: AppText.text($r('app.string.home_favorites')) }
-    ]);
-  }
-
   private changeLanguage(choice: string): void {
+    const next = normalizeAppLanguage(choice);
+    if (next === this.language) return;
     const previous = this.language;
-    this.language = choice;
+    this.languageEpoch++;
+    if (this.context) {
+      try {
+        // 先落盘。系统若因语言变化重建页面，新页面会读到这次的选择，而不是上一种语言。
+        LocalState.writeLanguageSync(this.context, next);
+      } catch {
+        this.toast($r('app.string.language_save_failed'));
+        return;
+      }
+    }
     try {
-      applyAppLanguage(choice);
+      applyAppLanguage(next);
     } catch {
-      this.language = previous;
+      if (this.context) {
+        try {
+          LocalState.writeLanguageSync(this.context, previous);
+        } catch { /* 回滚失败时保留页面上原来的选择。 */ }
+      }
       this.toast($r('app.string.language_save_failed'));
       return;
     }
-    this.refreshLibraryLabels();
-    if (this.context) {
-      void LocalState.writeLanguage(this.context, choice).catch(() => this.toast($r('app.string.language_save_failed')));
-    }
+    publishAppLanguage(next);
+    this.language = next;
   }
 
   private changeTheme(choice: string, persist: boolean = true): void {
@@ -248,7 +263,7 @@ struct Index {
     }
   }
 
-  private menuIcon(label: string, symbol: Resource, id: string,
+  private menuIcon(label: ResourceStr, symbol: Resource, id: string,
     action: () => void): HdsNavigationMenuItemOptions {
     // 只配必要的字段；isEnabled 默认 true、type 默认 IconStyleMode.NORMAL，不再重复写。
     // componentId 是 openMenu 的锚点 id（见《不依赖UI组件的全局菜单》），必须保留。
@@ -303,7 +318,7 @@ struct Index {
     };
     content.menu = {
       value: [
-        this.menuIcon(AppText.text($r('app.string.menu_more')), $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
+        this.menuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
           (): void => this.openHomeMenu())
       ]
     };
@@ -563,6 +578,7 @@ struct Index {
   @Builder
   private LibraryPage() {
     HomeView({
+      language: this.language,
       favoritesOnly: this.librarySegment === 1,
       recents: sortRecentDocuments(this.recents.filter((item: RecentDocument): boolean =>
         this.librarySegment === 1 ? item.favorite === true : item.recent !== false), this.sortOrder) as RecentDocument[],
@@ -601,7 +617,6 @@ struct Index {
     if (name === 'document') {
       DocumentView({
         theme: this.theme,
-        language: this.language,
         wide: this.wide,
         canExpand: this.navigationMode === NavigationMode.Split || this.documentExpanded,
         expanded: this.documentExpanded,
@@ -636,7 +651,6 @@ struct Index {
       SettingsPage({
         section: name,
         theme: $theme,
-        language: $language,
         version: this.version,
         text: name === 'project-license' ? this.projectLicenseText : this.legalText,
         onOpen: (section: string): void => this.openSetting(section),

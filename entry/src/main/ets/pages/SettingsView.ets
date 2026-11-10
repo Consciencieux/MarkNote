@@ -1,39 +1,38 @@
 import { PageScrollPolicy } from './PageScrollPolicy';
 import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
-import { AppText } from '../i18n/AppText';
 import { LANGUAGE_VALUES } from '../i18n/AppLanguage';
 
 export const THEME_VALUES: string[] = ['system', 'light', 'dark'];
 export { LANGUAGE_VALUES };
 
-/** 二级页标题，和设置首页的行名一致。 */
-export function settingTitle(section: string): string {
-  if (section === 'language') return AppText.text($r('app.string.settings_language'));
-  if (section === 'appearance') return AppText.text($r('app.string.settings_appearance'));
-  if (section === 'privacy') return AppText.text($r('app.string.settings_privacy'));
-  if (section === 'license-list') return AppText.text($r('app.string.settings_licenses'));
-  if (section === 'project-license') return AppText.text($r('app.string.settings_project_license'));
-  if (section === 'licenses') return AppText.text($r('app.string.settings_third_party'));
-  if (section === 'help') return AppText.text($r('app.string.settings_help'));
-  return AppText.text($r('app.string.settings_about'));
+/** 二级页标题，和设置首页的行名一致。返回资源，标题栏会随语言刷新。 */
+export function settingTitle(section: string): Resource {
+  if (section === 'language') return $r('app.string.settings_language');
+  if (section === 'appearance') return $r('app.string.settings_appearance');
+  if (section === 'privacy') return $r('app.string.settings_privacy');
+  if (section === 'license-list') return $r('app.string.settings_licenses');
+  if (section === 'project-license') return $r('app.string.settings_project_license');
+  if (section === 'licenses') return $r('app.string.settings_third_party');
+  if (section === 'help') return $r('app.string.settings_help');
+  return $r('app.string.settings_about');
 }
 
-/** 把保存的主题取值翻成设置行右侧显示的文字。 */
-export function themeLabel(choice: string): string {
-  if (choice === 'light') return AppText.text($r('app.string.theme_light'));
-  if (choice === 'dark') return AppText.text($r('app.string.theme_dark'));
-  return AppText.text($r('app.string.theme_system'));
+/** 把保存的主题取值翻成设置行右侧的资源。 */
+export function themeLabel(choice: string): Resource {
+  if (choice === 'light') return $r('app.string.theme_light');
+  if (choice === 'dark') return $r('app.string.theme_dark');
+  return $r('app.string.theme_system');
 }
 
-/** 把保存的语言取值翻成设置行右侧显示的文字。 */
-export function languageLabel(choice: string): string {
-  if (choice === 'zh-Hans') return AppText.text($r('app.string.language_zh'));
-  if (choice === 'zh-Hant') return AppText.text($r('app.string.language_zh_hant'));
-  if (choice === 'en-US') return AppText.text($r('app.string.language_en'));
-  if (choice === 'ja') return AppText.text($r('app.string.language_ja'));
-  if (choice === 'ko') return AppText.text($r('app.string.language_ko'));
-  if (choice === 'ru') return AppText.text($r('app.string.language_ru'));
-  return AppText.text($r('app.string.language_system'));
+/** 把保存的语言取值翻成设置行右侧的资源。语言名称在各语言里都用自称。 */
+export function languageLabel(choice: string): Resource {
+  if (choice === 'zh-Hans') return $r('app.string.language_zh');
+  if (choice === 'zh-Hant') return $r('app.string.language_zh_hant');
+  if (choice === 'en-US') return $r('app.string.language_en');
+  if (choice === 'ja') return $r('app.string.language_ja');
+  if (choice === 'ko') return $r('app.string.language_ko');
+  if (choice === 'ru') return $r('app.string.language_ru');
+  return $r('app.string.language_system');
 }
 
 /**
@@ -47,14 +46,15 @@ export struct SettingsView {
   scroller: Scroller = new Scroller();
   private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
   private groupStyle: SettingsGroupStyle = new SettingsGroupStyle();
-  /** @Link keeps the displayed theme and language in sync with the owner when returning from a detail page. */
+  /** @Link keeps the displayed theme in sync with the owner when returning from a detail page. */
   @Link theme: string;
-  @Link language: string;
+  /** 导航页不会跟着首页的 @Link 重建，语言从 AppStorage 取。 */
+  @StorageLink('marknote_language') language: string = 'default';
   onOpen: (section: string) => void = (_section: string): void => {};
   onFeedback: () => void = (): void => {};
 
   @Builder
-  private LinkRow(title: string, status: string, section: string) {
+  private LinkRow(title: ResourceStr, status: ResourceStr, section: string) {
     ListItem({ style: ListItemStyle.CARD }) {
       SettingsListRow({ title: title, value: status, showArrow: true })
     }
@@ -64,18 +64,18 @@ export struct SettingsView {
   build() {
     List({ spaceWidth: $r('sys.float.padding_level6'), scroller: this.scroller }) {
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow(AppText.text($r('app.string.settings_appearance')), themeLabel(this.theme), 'appearance')
-        this.LinkRow(AppText.text($r('app.string.settings_language')), languageLabel(this.language), 'language')
+        this.LinkRow($r('app.string.settings_appearance'), themeLabel(this.theme), 'appearance')
+        this.LinkRow($r('app.string.settings_language'), languageLabel(this.language), 'language')
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow(AppText.text($r('app.string.settings_help')), '', 'help')
+        this.LinkRow($r('app.string.settings_help'), '', 'help')
         ListItem({ style: ListItemStyle.CARD }) {
-          SettingsListRow({ title: AppText.text($r('app.string.settings_feedback')), showArrow: true })
+          SettingsListRow({ title: $r('app.string.settings_feedback'), showArrow: true })
         }.onClick(() => this.onFeedback())
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow(AppText.text($r('app.string.settings_privacy')), '', 'privacy')
-        this.LinkRow(AppText.text($r('app.string.settings_about')), '', 'about')
+        this.LinkRow($r('app.string.settings_privacy'), '', 'privacy')
+        this.LinkRow($r('app.string.settings_about'), '', 'about')
       }.attributeModifier(this.groupStyle)
     }
     .attributeModifier(this.scrollPolicy)

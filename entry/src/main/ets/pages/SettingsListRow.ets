@@ -7,10 +7,18 @@
  */
 @Component
 export struct SettingsListRow {
-  @Prop title: string = '';
-  @Prop value: string = '';
+  /** 传资源而不是取好的字符串，语言切换时由系统刷新，不必等所在页面重建。 */
+  @Prop title: ResourceStr = '';
+  @Prop value: ResourceStr = '';
   @Prop showArrow: boolean = false;
   @Prop selected: boolean = false;
+
+  private showsValue(): boolean {
+    if (typeof this.value === 'string') {
+      return this.value.length > 0;
+    }
+    return true;
+  }
 
   build() {
     Row() {
@@ -20,7 +28,7 @@ export struct SettingsListRow {
         .fontWeight(FontWeight.Medium)
         .layoutWeight(1)
 
-      if (this.value.length > 0) {
+      if (this.showsValue()) {
         Text(this.value)
           .fontSize($r('sys.float.Subtitle_S'))
           .fontColor($r('sys.color.font_secondary'))

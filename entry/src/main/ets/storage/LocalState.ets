@@ -31,6 +31,22 @@ export class LocalState {
     await store.flush();
   }
 
+  static readLanguageSync(context: common.UIAbilityContext): string {
+    try {
+      const store = preferences.getPreferencesSync(context, { name: 'marknote-settings' });
+      const value = store.getSync(LANGUAGE_KEY, 'default');
+      return normalizeAppLanguage(typeof value === 'string' ? value : 'default');
+    } catch {
+      return 'default';
+    }
+  }
+
+  static writeLanguageSync(context: common.UIAbilityContext, choice: string): void {
+    const store = preferences.getPreferencesSync(context, { name: 'marknote-settings' });
+    store.putSync(LANGUAGE_KEY, normalizeAppLanguage(choice));
+    store.flushSync();
+  }
+
   static async readLanguage(context: common.UIAbilityContext): Promise<string> {
     const store = await preferences.getPreferences(context, 'marknote-settings');
     const value = await store.get(LANGUAGE_KEY, 'default') as string;

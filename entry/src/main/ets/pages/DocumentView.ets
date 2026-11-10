@@ -55,7 +55,8 @@ class AfterFrame extends FrameCallback {
 export struct DocumentView {
   // 由首页传入。
   @Prop theme: string = 'system';
-  @Prop language: string = 'default';
+  /** 文稿页在导航栈里，不跟随首页 @Link。语言从 AppStorage 取，查找栏和预览才会重取。 */
+  @StorageLink('marknote_language') language: string = 'default';
   @Prop @Watch('onWideChange') wide: boolean = false;
   @Prop canExpand: boolean = false;
   @Prop expanded: boolean = false;
@@ -260,7 +261,18 @@ export struct DocumentView {
     this.onToggleFavorite(this.info.uri, this.info.name);
   }
 
-  private menuIcon(label: string, symbol: Resource, id: string, action: () => void,
+  /** 读取 language，使语言切换后标题栏、页签和查找栏重新取词。 */
+  private uiText(resource: Resource): string {
+    if (this.language.length === 0) return '';
+    return AppText.text(resource);
+  }
+
+  private uiFormat(resource: Resource, first: string, second: string = ''): string {
+    if (this.language.length === 0) return '';
+    return AppText.format(resource, first, second);
+  }
+
+  private menuIcon(label: ResourceStr, symbol: Resource, id: string, action: () => void,
     enabled: boolean = true): HdsNavigationMenuItemOptions {
     const content: HdsNavigationIconOptions = {
       label: label,
@@ -275,23 +287,23 @@ export struct DocumentView {
 
   private documentTitle(): HdsNavigationTitleBarOptions {
     const heading: HdsNavigationTitle = { mainTitle: this.title };
-    const more = this.menuIcon(AppText.text($r('app.string.menu_more')), $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
+    const more = this.menuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
       (): void => this.openDocumentMenu());
     const actions: HdsNavigationMenuItemOptions[] = this.inEditTab() ? [
-      this.menuIcon(AppText.text($r('app.string.menu_undo')), $r('sys.symbol.undo'), 'marknote-undo',
+      this.menuIcon($r('app.string.menu_undo'), $r('sys.symbol.undo'), 'marknote-undo',
         (): void => this.undo(), this.undoAvailable),
-      this.menuIcon(AppText.text($r('app.string.menu_redo')), $r('sys.symbol.redo'), 'marknote-redo',
+      this.menuIcon($r('app.string.menu_redo'), $r('sys.symbol.redo'), 'marknote-redo',
         (): void => this.redo(), this.redoAvailable),
       more,
-      this.menuIcon(AppText.text($r('app.string.menu_save')), $r('sys.symbol.checkmark'), 'marknote-save',
+      this.menuIcon($r('app.string.menu_save'), $r('sys.symbol.checkmark'), 'marknote-save',
         (): void => { void this.saveFile(false); })
     ] : [
-      this.menuIcon(AppText.text($r('app.string.menu_share')), $r('sys.symbol.share'), 'marknote-share',
+      this.menuIcon($r('app.string.menu_share'), $r('sys.symbol.share'), 'marknote-share',
         (): void => { void this.shareDocument(); }),
-      this.menuIcon(AppText.text(this.favorite ? $r('app.string.menu_unfavorite') : $r('app.string.menu_favorite')),
+      this.menuIcon(this.favorite ? $r('app.string.menu_unfavorite') : $r('app.string.menu_favorite'),
         this.favorite ? $r('sys.symbol.star_fill') : $r('sys.symbol.star'), 'marknote-favorite',
         (): void => this.toggleFavorite()),
-      this.menuIcon(AppText.text($r('app.string.menu_delete')), $r('sys.symbol.trash'), 'marknote-delete',
+      this.menuIcon($r('app.string.menu_delete'), $r('sys.symbol.trash'), 'marknote-delete',
         (): void => this.confirmDelete(), this.info.uri.length > 0 && !this.deleting),
       more
     ];
@@ -301,9 +313,9 @@ export struct DocumentView {
     };
     const content: TitleBarContentOptions = { title: heading, menu: menu };
     content.backIcon = {
-      label: AppText.text(this.canExpand ?
+      label: this.canExpand ?
         (this.expanded ? $r('app.string.menu_restore_columns') : $r('app.string.menu_expand')) :
-        $r('app.string.menu_back')),
+        $r('app.string.menu_back'),
       icon: this.canExpand ?
         (this.expanded ? $r('sys.symbol.arrow_down_right_and_arrow_up_left') :
           $r('sys.symbol.arrow_up_left_and_arrow_down_right')) : $r('sys.symbol.chevron_backward'),
@@ -336,11 +348,11 @@ export struct DocumentView {
     const uri = this.info.uri;
     const confirmedSource = this.source;
     this.getUIContext().showAlertDialog({
-      title: AppText.text($r('app.string.delete_title')),
-      message: AppText.text(this.isDirty() ? $r('app.string.delete_dirty') : $r('app.string.delete_clean')),
+      title: this.uiText($r('app.string.delete_title')),
+      message: this.uiText(this.isDirty() ? $r('app.string.delete_dirty') : $r('app.string.delete_clean')),
       buttons: [
-        { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
-        { value: AppText.text($r('app.string.menu_delete')), action: (): void => { void this.deleteDocument(uri, confirmedSource); } }
+        { value: this.uiText($r('app.string.dialog_cancel')), action: (): void => {} },
+        { value: this.uiText($r('app.string.menu_delete')), action: (): void => { void this.deleteDocument(uri, confirmedSource); } }
       ]
     });
   }
@@ -376,7 +388,7 @@ export struct DocumentView {
         }
       }
     } catch (error) {
-      this.toast(AppText.format($r('app.string.delete_failed'), String(error)));
+      this.toast(this.uiFormat($r('app.string.delete_failed'), String(error)));
     } finally {
       this.deleting = false;
     }
@@ -419,7 +431,7 @@ export struct DocumentView {
    * 侧滑和返回键的 reason 是 PRESS_BACK（ts-methods-alert-dialog-box，DismissReason）。
    */
   private askSaveOrDiscard(): Promise<boolean> {
-    const saveLabel = AppText.text(this.info.uri.length > 0 && !this.info.writable ?
+    const saveLabel = this.uiText(this.info.uri.length > 0 && !this.info.writable ?
       $r('app.string.menu_save_as') : $r('app.string.menu_save'));
     return new Promise<boolean>((resolve: (leave: boolean) => void) => {
       let settled = false;
@@ -429,13 +441,13 @@ export struct DocumentView {
         resolve(leave);
       };
       this.getUIContext().showAlertDialog({
-        message: AppText.text(this.info.uri.length > 0 && !this.info.writable ?
+        message: this.uiText(this.info.uri.length > 0 && !this.info.writable ?
           $r('app.string.save_prompt_readonly') : $r('app.string.save_prompt')),
         autoCancel: true,
         buttonDirection: DialogButtonDirection.HORIZONTAL,
         buttons: [
           {
-            value: AppText.text($r('app.string.discard')),
+            value: this.uiText($r('app.string.discard')),
             style: DialogButtonStyle.DEFAULT,
             action: (): void => finish(true)
           },
@@ -485,7 +497,7 @@ export struct DocumentView {
   private async saveFile(asNewFile: boolean): Promise<boolean> {
     if (!this.context || this.saving || this.deleting) return false;
     if (!asNewFile && this.info.uri.length > 0 && !this.info.writable) {
-      this.offerSaveCopy(AppText.text($r('app.string.save_copy_readonly')));
+      this.offerSaveCopy(this.uiText($r('app.string.save_copy_readonly')));
       return false;
     }
     this.saving = true;
@@ -493,7 +505,7 @@ export struct DocumentView {
       const result = await DocumentService.save(this.context, asNewFile);
       this.syncFromService();
       if (!result.saved) return false;
-      this.toast(result.message + (this.info.persistent ? '' : AppText.text($r('app.string.save_not_persistent'))));
+      this.toast(result.message + (this.info.persistent ? '' : this.uiText($r('app.string.save_not_persistent'))));
       if (!this.isDirty()) this.clearRecovery();
       else this.scheduleRecovery();
       // 最近文稿列表在首页，保存成功只通知过去。
@@ -502,9 +514,9 @@ export struct DocumentView {
     } catch (error) {
       this.scheduleRecovery();
       if (!asNewFile && this.info.uri.length > 0) {
-        this.offerSaveCopy(AppText.format($r('app.string.save_failed_copy'), String(error)));
+        this.offerSaveCopy(this.uiFormat($r('app.string.save_failed_copy'), String(error)));
       } else {
-        this.toast(AppText.format($r('app.string.save_failed'), String(error)));
+        this.toast(this.uiFormat($r('app.string.save_failed'), String(error)));
       }
       return false;
     } finally {
@@ -517,8 +529,8 @@ export struct DocumentView {
     this.getUIContext().showAlertDialog({
       message: message,
       buttons: [
-        { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
-        { value: AppText.text($r('app.string.menu_save_as')), primary: true, action: (): void => { void this.saveFile(true); } }
+        { value: this.uiText($r('app.string.dialog_cancel')), action: (): void => {} },
+        { value: this.uiText($r('app.string.menu_save_as')), primary: true, action: (): void => { void this.saveFile(true); } }
       ]
     });
   }
@@ -756,11 +768,11 @@ export struct DocumentView {
           if (this.query.length > 0) {
             Row() {
               Text(this.matchOrdinal > 0 ? `${this.matchOrdinal}/${this.matchCount}` :
-                AppText.format($r('app.string.match_total'), String(this.matchCount)))
+                this.uiFormat($r('app.string.match_total'), String(this.matchCount)))
                 .fontColor($r('sys.color.font_secondary'))
                 .accessibilityText(this.matchOrdinal > 0 ?
-                  AppText.format($r('app.string.match_position'), String(this.matchOrdinal), String(this.matchCount)) :
-                  AppText.format($r('app.string.match_total'), String(this.matchCount)))
+                  this.uiFormat($r('app.string.match_position'), String(this.matchOrdinal), String(this.matchCount)) :
+                  this.uiFormat($r('app.string.match_total'), String(this.matchCount)))
               Button() {
                 SymbolGlyph($r('sys.symbol.chevron_up'))
                   .fontColor([$r('sys.color.icon_primary')])
@@ -881,6 +893,7 @@ export struct DocumentView {
   private TopFormatBar() {
     FormatBarView({
       formatId: this.formatId,
+      language: this.language,
       onInsert: (action: InsertAction): void => this.insertToken(action)
     })
   }
@@ -896,7 +909,7 @@ export struct DocumentView {
   }
 
   /** 华为 uiMaterial 沉浸材质示例：文字颜色使用可适配深浅色的系统资源。 */
-  private bottomTab(symbol: Resource, label: string): BottomTabBarStyle {
+  private bottomTab(symbol: Resource, label: ResourceStr): BottomTabBarStyle {
     return BottomTabBarStyle.of(this.tabSymbol(symbol), label)
       .labelStyle({ selectedColor: $r('sys.color.brand'), unselectedColor: $r('sys.color.font_primary') });
   }
@@ -946,11 +959,11 @@ export struct DocumentView {
           })
         }
           .attributeModifier(this.tabContentPolicy)
-          .tabBar(this.bottomTab($r('sys.symbol.eye'), AppText.text($r('app.string.tab_preview'))))
+          .tabBar(this.bottomTab($r('sys.symbol.eye'), $r('app.string.tab_preview')))
         TabContent() { this.EditPage(this.editScroller, this.cursor, 'marknote-main-editor') }
           .onWillShow(() => this.jumpToPendingHeading())
           .attributeModifier(this.tabContentPolicy)
-          .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), AppText.text($r('app.string.tab_edit'))))
+          .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), $r('app.string.tab_edit')))
         // Only formats that declare an outline get the tab; plain text and SVG have none.
         if (this.currentFormat().outline) {
           TabContent() {
@@ -960,12 +973,12 @@ export struct DocumentView {
             })
           }
             .attributeModifier(this.tabContentPolicy)
-            .tabBar(this.bottomTab($r('sys.symbol.list_bullet'), AppText.text($r('app.string.tab_outline'))))
+            .tabBar(this.bottomTab($r('sys.symbol.list_bullet'), $r('app.string.tab_outline')))
         }
         if (this.wide) {
           TabContent() { this.SplitPage() }
             .attributeModifier(this.tabContentPolicy)
-            .tabBar(this.bottomTab($r('sys.symbol.rectangle_split_2x1'), AppText.text($r('app.string.tab_split'))))
+            .tabBar(this.bottomTab($r('sys.symbol.rectangle_split_2x1'), $r('app.string.tab_split')))
         }
       }
       // HdsTabs (ui-design-hdstabs)：存在 BottomTabBarStyle 时，未设置动画时长即使用官方默认值。

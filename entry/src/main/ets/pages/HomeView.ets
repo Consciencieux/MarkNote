@@ -9,6 +9,8 @@ import { menuMaterialOptions } from './MenuMaterialOptions';
  */
 @Component
 export struct HomeView {
+  /** 语言变化时重建列表行，格式名称不会留在上一种语言。 */
+  @Prop language: string = 'default';
   @Prop favoritesOnly: boolean = false;
   @Prop recents: RecentDocument[] = [];
   private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
@@ -97,7 +99,7 @@ export struct HomeView {
 
       ForEach(this.recents, (item: RecentDocument) => {
         this.RecentRow(item)
-      }, (item: RecentDocument) => item.uri)
+      }, (item: RecentDocument) => `${this.language}:${item.uri}`)
     }
     // Keep the list at the available width and use system margin resources for its edges.
     .layoutWeight(1)

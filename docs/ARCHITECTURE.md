@@ -14,14 +14,14 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 | `DocumentFiles` | 调用系统文件选择器，处理 URI 授权、文件读取、写入和外部修改检查。 |
 | `DocumentShare` | 将当前编辑内容写入临时分享文件，并调用系统分享面板。 |
 | `TextEncoding` | 在文件字节和编辑器文本之间转换，记录并恢复编码、BOM 与换行方式。 |
-| `LocalState` | 保存最近文稿、草稿和外观偏好。 |
+| `LocalState` | 保存最近文稿、草稿、外观和语言偏好。 |
 | `EditHistory`、`TextSearch` | 分别处理编辑历史和字面文本查找。 |
 
 文件格式优先按已知后缀识别，其次按系统声明的类型识别。保存前的外部修改检查使用文件字节的 SHA-256 指纹。
 
 ## 界面与导航
 
-首页使用 `HdsNavigation`。文稿和设置页面使用 `HdsNavDestination`，并由同一个 `NavPathStack` 管理。`Index` 创建设置页路由，`SettingsPage` 构建各级页面；每个页面持有自己的滚动控制器。
+首页使用 `HdsNavigation`。文稿和设置页面使用 `HdsNavDestination`，并由同一个 `NavPathStack` 管理。`Index` 创建设置页路由，`SettingsPage` 构建各级页面；每个页面持有自己的滚动控制器。`EntryAbility` 在加载页面前按已保存的语言偏好设置应用语言。跟随系统时解析为当前系统语言对应的资源，因此切换立即生效；下次冷启动会按当时的系统语言重新解析。
 
 `HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，各自保留滚动控制器。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
 
