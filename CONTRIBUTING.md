@@ -72,11 +72,20 @@ devecocli build --modules entry
 
 ### 发布
 
-版本号、更新日志和标签的关系见[项目开发约定](AGENTS.md)。
+版本号、更新日志和标签的关系见[项目开发约定](AGENTS.md)。发布标签必须指向 `main` 历史中的提交，并与 `AppScope/app.json5` 的应用版本及 `CHANGELOG.md` 中的版本标题一致。推送 `vX.Y.Z` 标签后，Release 工作流会校验这些条件，在 GitHub 托管的 Runner 上检查、测试并重建预览资源，确认生成文件与标签一致后创建草稿。工作流不构建 HAP，也不自动发布。
 
-仓库变量 `DEVECO_CLI_VERSION` 必须是 DevEco CLI 的确切版本，不能使用 `stable` 或 `latest`。发布构建使用标签为 `hmos` 的自托管 runner。Linux runner 需要设置 `DEVECO_CLI_CLT_PATH`；macOS runner 使用本机已安装的 DevEco Studio。
+在标签对应的源码提交上本机构建未签名 debug HAP：
 
-签名材料不进入仓库，也不放入 GitHub Release。预览和许可证的生成文件必须已经提交，并且与一次干净的 `renderer` 构建结果一致。正在发布的版本日志不能再写「安装包将另行发布」。
+```sh
+git switch --detach vX.Y.Z
+cp build-profile.example.json5 build-profile.json5
+rm -rf entry/build build .hvigor dist
+devecocli build --product default --modules entry --build-mode debug
+```
+
+在 `entry/build/default/outputs/` 中确认只生成一个 `*-unsigned.hap`，将它命名为 `MarkNote-vX.Y.Z-unsigned.hap`。可用 `shasum -a 256 MarkNote-vX.Y.Z-unsigned.hap > SHA256SUMS` 生成校验文件。把 HAP 和 `SHA256SUMS` 上传到工作流创建的草稿 Release，检查版本、更新日志与附件后，再手动发布。该 HAP 可在兼容的模拟器中验证；真机安装需要自行配置调试签名。签名材料不进入仓库或 Release。
+
+正在发布的版本日志不能再写「安装包将另行发布」。
 
 ### 提交 Pull Request
 
