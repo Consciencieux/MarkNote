@@ -1,5 +1,6 @@
 import { util } from '@kit.ArkTS';
 import { DocumentInfo } from '../model/Document';
+import { AppText } from '../i18n/AppText';
 
 export class DecodedText {
   text: string = '';
@@ -173,7 +174,7 @@ export class TextEncoding {
       text = decodeAs('gb18030', payload);
       encoding = 'gb18030';
     }
-    if (text === null) throw new Error('无法识别文件编码。目前支持 UTF-8、UTF-16 和 GB18030');
+    if (text === null) throw new Error(AppText.text($r('app.string.encoding_unknown')));
     const decoded = normalizeNewlines(text);
     decoded.encoding = encoding;
     decoded.hasBom = hasBom;
@@ -194,7 +195,7 @@ export class TextEncoding {
     }
     const decoded = TextEncoding.decode(applied.bytes);
     if (decoded.text !== text) {
-      throw new Error('当前编码无法无损保存这些内容，已保留草稿');
+      throw new Error(AppText.text($r('app.string.encoding_lossy')));
     }
     return applied;
   }

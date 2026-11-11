@@ -7,12 +7,13 @@ import { renderPlain } from './renderers/plain';
 import { installReferenceHook, sanitizeSvg } from './renderers/svg';
 import { renderTexDocument, type TexDocument } from './renderers/tex';
 import type { PreviewUpdate } from './globals';
+import { imageLabel, previewText, usePreviewText } from './preview-text';
 import katex from 'katex';
 
 type Kind = PreviewUpdate['kind'];
 let resultPort: MessagePort | undefined;
 let lastResult: string | undefined;
-let lastRendered: { kind: Kind; source: string; documentId?: number; tex?: TexDocument } | undefined;
+let lastRendered: { kind: Kind; source: string; documentId?: number; textStamp: string; tex?: TexDocument } | undefined;
 window.addEventListener('message', (event: MessageEvent) => {
   if (event.data !== '__marknote_parse_port__' || !event.ports[0]) return;
   resultPort?.close();
@@ -45,7 +46,7 @@ function imageWindow(top: number, height: number): string[] {
     const image = slot.querySelector('img');
     if (!nearby && image) {
       slot.style.minHeight = `${slot.getBoundingClientRect().height}px`;
-      slot.textContent = `[图片：${slot.dataset.mnAlt || '图片'}]`;
+      slot.textContent = imageLabel(slot.dataset.mnAlt || '');
     } else if (nearby && !image && position.key) {
       pending.add(position.key);
     }
@@ -59,7 +60,7 @@ function setImage(key: string, dataUrl: string): void {
   for (const slot of host.querySelectorAll<HTMLElement>('.image-slot')) {
     if (slot.dataset.mnSrc !== key || slot.dataset.mnNearby !== '1' || slot.querySelector('img')) continue;
     const image = document.createElement('img');
-    image.alt = slot.dataset.mnAlt || '图片';
+    image.alt = slot.dataset.mnAlt || previewText().imageName;
     image.src = dataUrl;
     slot.replaceChildren(image);
     slot.classList.add('image-slot-loaded');
@@ -77,11 +78,14 @@ function render(update: PreviewUpdate): void {
   if (!['system', 'light', 'dark'].includes(update.theme)) return;
   if (!['markdown', 'plain', 'svg', 'tex-math'].includes(update.kind)) return;
   if (typeof update.source !== 'string') return;
+  const textStamp = usePreviewText(update.text);
+  document.documentElement.lang = previewText().lang;
+  document.documentElement.dir = /^(ar|ug)(-|$)/i.test(previewText().lang) ? 'rtl' : 'ltr';
   document.documentElement.removeAttribute('data-theme');
   if (update.theme !== 'system') document.documentElement.dataset.theme = update.theme;
-  // Theme changes only affect CSS. Avoid parsing and rebuilding a potentially large document.
+  // Theme changes only affect CSS. A language change still rebuilds the visible copy.
   if (lastRendered?.kind === update.kind && lastRendered.source === update.source &&
-    lastRendered.documentId === update.documentId) {
+    lastRendered.documentId === update.documentId && lastRendered.textStamp === textStamp) {
     if (lastRendered.tex) {
       lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision,
         headings: lastRendered.tex.headings, diagnostics: lastRendered.tex.diagnostics });
@@ -90,16 +94,16 @@ function render(update: PreviewUpdate): void {
     return;
   }
   if (!DOMPurify.isSupported) {
-    host!.textContent = '当前浏览器不支持安全渲染';
+    host!.textContent = previewText().unsafe;
     return;
   }
   if (!update.source.trim()) {
     host!.replaceChildren();
     const empty = document.createElement('p');
     empty.className = 'placeholder';
-    empty.textContent = '内容将在这里预览';
+    empty.textContent = previewText().empty;
     host!.append(empty);
-    lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId };
+    lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, textStamp };
     if (update.kind === 'tex-math') {
       lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision, headings: [], diagnostics: [] });
       resultPort?.postMessage(lastResult);
@@ -114,7 +118,7 @@ function render(update: PreviewUpdate): void {
     html = tex ? tex.html : renderBody(update.kind, update.source);
   } catch {
     lastRendered = undefined;
-    host!.textContent = '预览失败，请检查文稿内容。';
+    host!.textContent = previewText().failed;
     return;
   }
   host!.innerHTML = DOMPurify.sanitize(html, {
@@ -124,7 +128,7 @@ function render(update: PreviewUpdate): void {
     SANITIZE_NAMED_PROPS: false
   });
   wantedImages.clear();
-  lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, tex };
+  lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, textStamp, tex };
   if (tex) {
     for (const element of host!.querySelectorAll<HTMLElement>('.math-inline, .math-display')) {
       katex.render(element.textContent ?? '', element, {
@@ -144,4 +148,3 @@ const api = Object.freeze({
   setImage
 });
 Object.defineProperty(window, 'MarknotePreview', { value: api, writable: false, configurable: false });
-render({ kind: 'markdown', source: '', theme: 'system' });

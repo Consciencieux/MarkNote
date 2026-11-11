@@ -1,3 +1,4 @@
+import { LengthMetrics } from '@kit.ArkUI';
 import { Heading } from '../model/Document';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
 
@@ -84,7 +85,7 @@ export struct DocumentOutlineView {
       .opacity(row.isFolder ? 1 : 0)
       .enabled(row.isFolder)
       .accessibilityRole(AccessibilityRoleType.BUTTON)
-      .accessibilityText(row.expanded ? '收起' : '展开')
+      .accessibilityText(row.expanded ? $r('app.string.outline_collapse') : $r('app.string.outline_expand'))
       .onClick(() => this.toggleOutline(row))
       // Reuse the system subtitle resources used by the app's settings rows.
       Text(row.heading.text)
@@ -97,8 +98,8 @@ export struct DocumentOutlineView {
     }
     .width('100%')
     .padding({
-      left: $r('sys.float.padding_level4'),
-      right: $r('sys.float.padding_level4')
+      start: LengthMetrics.resource($r('sys.float.padding_level4')),
+      end: LengthMetrics.resource($r('sys.float.padding_level4'))
     })
   }
 
@@ -108,8 +109,11 @@ export struct DocumentOutlineView {
       List({ initialIndex: 0 }) {
         if (this.headings.length === 0) {
           ListItem() {
-            Text('暂无大纲')
-              .padding({ left: $r('sys.float.padding_level4'), right: $r('sys.float.padding_level4') })
+            Text($r('app.string.outline_empty'))
+              .padding({
+                start: LengthMetrics.resource($r('sys.float.padding_level4')),
+                end: LengthMetrics.resource($r('sys.float.padding_level4'))
+              })
           }
         }
         ForEach(this.outlineRows(), (row: OutlineRow) => {

@@ -34,7 +34,7 @@ export const menuBridge: MenuBridge = new MenuBridge();
  */
 @Component
 struct SortMenuView {
-  private option(label: string, order: string): MenuItemOptions {
+  private option(label: Resource, order: string): MenuItemOptions {
     const options: MenuItemOptions = { content: label };
     if (menuBridge.sortOrder === order) {
       options.symbolEndIcon = new SymbolGlyphModifier($r('sys.symbol.checkmark'));
@@ -44,16 +44,16 @@ struct SortMenuView {
 
   build() {
     Menu() {
-      MenuItem(this.option('修改时间', 'modified'))
+      MenuItem(this.option($r('app.string.sort_modified'), 'modified'))
         .selected(menuBridge.sortOrder === 'modified')
         .onClick(() => menuBridge.setSortOrder('modified'))
-      MenuItem(this.option('最近打开', 'opened'))
+      MenuItem(this.option($r('app.string.sort_opened'), 'opened'))
         .selected(menuBridge.sortOrder === 'opened')
         .onClick(() => menuBridge.setSortOrder('opened'))
-      MenuItem(this.option('名称', 'name'))
+      MenuItem(this.option($r('app.string.sort_name'), 'name'))
         .selected(menuBridge.sortOrder === 'name')
         .onClick(() => menuBridge.setSortOrder('name'))
-      MenuItem(this.option('类型', 'type'))
+      MenuItem(this.option($r('app.string.sort_type'), 'type'))
         .selected(menuBridge.sortOrder === 'type')
         .onClick(() => menuBridge.setSortOrder('type'))
     }
@@ -70,14 +70,14 @@ struct HomeMenuView {
   build() {
     Menu() {
       MenuItemGroup() {
-        MenuItem({ content: '排序方式', builder: (): void => { this.SortMenu(); } })
+        MenuItem({ content: $r('app.string.sort_menu'), builder: (): void => { this.SortMenu(); } })
       }
       MenuItemGroup() {
-        MenuItem({ content: '设置' })
+        MenuItem({ content: $r('app.string.settings') })
           .onClick(() => menuBridge.openSettings())
       }
-    // 内嵌子菜单还需容纳系统勾选图标；扩大菜单宽度，避免四字选项在窄屏折行。
-    }.width(200).subMenuExpandingMode(SubMenuExpandingMode.EMBEDDED_EXPAND)
+    // 宽度容纳英文排序项和系统勾选图标。
+    }.width(240).subMenuExpandingMode(SubMenuExpandingMode.EMBEDDED_EXPAND)
   }
 }
 
@@ -93,38 +93,38 @@ export function HomeMenuContent() {
 export function DocumentMenuContent() {
   Menu() {
     MenuItemGroup() {
-      MenuItem({ content: '打开文件' })
+      MenuItem({ content: $r('app.string.menu_open') })
         .onClick(() => menuBridge.openFile())
-      MenuItem({ content: '另存为' })
+      MenuItem({ content: $r('app.string.menu_save_as') })
         .onClick(() => menuBridge.saveAs())
       if (!menuBridge.showDocumentActions) {
-        MenuItem({ content: '保存' })
+        MenuItem({ content: $r('app.string.menu_save') })
           .onClick(() => menuBridge.save())
       }
       if (menuBridge.showDocumentActions) {
-        MenuItem({ content: '分享' })
+        MenuItem({ content: $r('app.string.menu_share') })
           .onClick(() => menuBridge.share())
-        MenuItem({ content: menuBridge.favorite ? '取消收藏' : '收藏' })
+        MenuItem({ content: menuBridge.favorite ? $r('app.string.menu_unfavorite') : $r('app.string.menu_favorite') })
           .onClick(() => menuBridge.toggleFavorite())
       }
     }
     MenuItemGroup() {
-      MenuItem({ content: '查找' })
+      MenuItem({ content: $r('app.string.menu_find') })
         .onClick(() => menuBridge.find())
       if (menuBridge.showCloseDocument) {
-        MenuItem({ content: '关闭文稿' })
+        MenuItem({ content: $r('app.string.menu_close') })
           .onClick(() => menuBridge.closeDocument())
       }
     }
     if (menuBridge.showDocumentActions) {
       MenuItemGroup() {
-        MenuItem({ content: '删除' })
+        MenuItem({ content: $r('app.string.menu_delete') })
           .enabled(menuBridge.canDeleteDocument)
           .onClick(() => menuBridge.deleteDocument())
       }
     }
     MenuItemGroup() {
-      MenuItem({ content: '设置' })
+      MenuItem({ content: $r('app.string.settings') })
         .onClick(() => menuBridge.openSettings())
     }
   }

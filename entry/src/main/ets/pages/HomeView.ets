@@ -1,5 +1,5 @@
 import { PageScrollPolicy } from './PageScrollPolicy';
-import { ComposeListItem, IconType, SymbolGlyphModifier } from '@kit.ArkUI';
+import { ComposeListItem, IconType, LengthMetrics, SymbolGlyphModifier } from '@kit.ArkUI';
 import { RecentDocument } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
 import { menuMaterialOptions } from './MenuMaterialOptions';
@@ -9,7 +9,12 @@ import { menuMaterialOptions } from './MenuMaterialOptions';
  */
 @Component
 export struct HomeView {
-  @Prop title: string = '全部';
+  /**
+   * 格式名称是取好的字符串。首页被包在 @Builder 里，按值传入的 language 不会更新，
+   * 所以这里直接订阅 AppStorage，并用它作为列表键。
+   * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
+   */
+  @StorageLink('marknote_language') language: string = 'default';
   @Prop favoritesOnly: boolean = false;
   @Prop recents: RecentDocument[] = [];
   private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
@@ -22,11 +27,13 @@ export struct HomeView {
   /** 新建菜单的条目来自文稿格式注册表，新增格式不用改这里。 */
   private newDocumentMenu(): MenuElement[] {
     const items: MenuElement[] = [];
+    // build 会调用这里。列表为空时 ForEach 读不到 language，新建菜单仍要跟着语言重建。
+    if (this.language.length === 0) return items;
     const formats = FormatRegistry.all();
     for (let index = 0; index < formats.length; index++) {
       const format = formats[index];
       items.push({
-        value: format.sheetTitle,
+        value: FormatRegistry.displayTitle(format),
         action: (): void => this.onNew(format.id)
       });
     }
@@ -53,7 +60,9 @@ export struct HomeView {
   @Builder
   private RecentMenu(item: RecentDocument) {
     Menu() {
-      MenuItem({ content: this.favoritesOnly ? '取消收藏' : '移除记录' })
+      MenuItem({
+        content: this.favoritesOnly ? $r('app.string.home_unfavorite') : $r('app.string.home_remove_record')
+      })
         .onClick(() => this.onRemoveRecent(item))
     }
   }
@@ -61,7 +70,8 @@ export struct HomeView {
   @Builder
   private RecentRow(item: RecentDocument) {
     ListItem() {
-      this.DocumentRow(item.name, FormatRegistry.byFilename(item.name).sheetTitle, $r('sys.symbol.doc_text'))
+      this.DocumentRow(item.name, FormatRegistry.displayTitle(FormatRegistry.byFilename(item.name)),
+        $r('sys.symbol.doc_text'))
     }
     .onClick(() => this.onRecent(item))
     .bindContextMenu(this.RecentMenu(item), ResponseType.LongPress, menuMaterialOptions())
@@ -73,18 +83,18 @@ export struct HomeView {
     // List keeps its native row layout; the shared policy owns safe areas and scrolling behavior.
     List({ scroller: this.scroller, spaceWidth: $r('sys.float.padding_level6') }) {
       ListItem() {
-        Text(this.title)
+        Text(this.favoritesOnly ? $r('app.string.home_favorites') : $r('app.string.home_all'))
           .fontSize(26)
           .fontWeight(FontWeight.Bold)
       }
 
       ListItem() {
         Row() {
-          Button('新建文稿')
+          Button($r('app.string.home_new'))
             .bindMenu(this.newDocumentMenu(), menuMaterialOptions())
             .layoutWeight(1)
-            .margin({ right: $r('sys.float.padding_level6') })
-          Button('打开文件')
+            .margin({ end: LengthMetrics.resource($r('sys.float.padding_level6')) })
+          Button($r('app.string.home_open'))
             // Button API (ts-basic-components-button)：打开文件采用普通操作的 NORMAL 样式。
             .buttonStyle(ButtonStyleMode.NORMAL)
             .layoutWeight(1)
@@ -95,11 +105,14 @@ export struct HomeView {
 
       ForEach(this.recents, (item: RecentDocument) => {
         this.RecentRow(item)
-      }, (item: RecentDocument) => item.uri)
+      }, (item: RecentDocument) => `${this.language}:${item.uri}`)
     }
     // Keep the list at the available width and use system margin resources for its edges.
     .layoutWeight(1)
-    .margin({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
+    .margin({
+      start: LengthMetrics.resource($r('sys.float.margin_left')),
+      end: LengthMetrics.resource($r('sys.float.margin_right'))
+    })
     .attributeModifier(this.scrollPolicy)
   }
 }

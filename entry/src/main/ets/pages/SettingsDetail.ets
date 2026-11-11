@@ -1,6 +1,29 @@
+import { LengthMetrics } from '@kit.ArkUI';
 import { PageScrollPolicy } from './PageScrollPolicy';
 import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
-import { THEME_LABELS, THEME_VALUES } from './SettingsView';
+import { LANGUAGE_VALUES, THEME_VALUES, languageLabel, themeLabel } from './SettingsView';
+
+/**
+ * 单选行不用 @Builder 传递 selected。官方规定两个及以上参数的 @Builder 不会随状态刷新。
+ * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
+ */
+@Component
+struct SettingsChoiceRow {
+  @Prop title: Resource = $r('app.string.settings');
+  @Prop selected: boolean = false;
+  onSelect: () => void = (): void => {};
+
+  build() {
+    ListItem({ style: ListItemStyle.CARD }) {
+      SettingsListRow({ title: this.title, selected: this.selected })
+    }
+    .onClick(() => this.onSelect())
+    .accessibilityGroup(true)
+    .accessibilityText(this.title)
+    .accessibilityRole(AccessibilityRoleType.RADIO)
+    .accessibilityChecked(this.selected)
+  }
+}
 
 /**
  * 设置的内容页，按 section 渲染外观、隐私说明、许可证、关于或使用帮助。
@@ -9,7 +32,7 @@ import { THEME_LABELS, THEME_VALUES } from './SettingsView';
  * 见 Index 里 Destination 的说明。
  *
  * 列表单选参考华为组件体验示例 ListSingleSelection：整行选择、仅在已选行显示系统勾选。
- * 选中状态来自 theme，切换颜色模式重新渲染时仍使用同一状态。
+ * 选中状态来自主题和语言，返回这一页时仍对应当前选项。
  */
 @Component
 export struct SettingsDetail {
@@ -18,35 +41,26 @@ export struct SettingsDetail {
   private groupStyle: SettingsGroupStyle = new SettingsGroupStyle();
   /** 路由名，同时就是这一页的 section。 */
   @Prop section: string = 'about';
-  /** 当前主题取值，和设置首页、Index 共用同一份状态。 */
+  /** 当前主题和语言取值，和设置首页、Index 共用同一份状态。 */
   @Link theme: string;
+  /** 导航页不会跟着首页的 @Link 重建，语言从 AppStorage 取。 */
+  @StorageLink('marknote_language') language: string = 'default';
   @Prop version: string = '';
   @Prop text: string = '';
   onOpen: (section: string) => void = (_section: string): void => {};
   onOpenProject: () => void = (): void => {};
   onChooseTheme: (choice: string) => void = (_choice: string): void => {};
+  onChooseLanguage: (choice: string) => void = (_choice: string): void => {};
 
   @Builder
-  private RadioRow(title: string, choice: string) {
-    ListItem({ style: ListItemStyle.CARD }) {
-      SettingsListRow({ title: title, selected: this.theme === choice })
-    }
-    .onClick(() => this.onChooseTheme(choice))
-    .accessibilityGroup(true)
-    .accessibilityText(title)
-    .accessibilityRole(AccessibilityRoleType.RADIO)
-    .accessibilityChecked(this.theme === choice)
-  }
-
-  @Builder
-  private InfoRow(title: string, status: string) {
+  private InfoRow(title: ResourceStr, status: ResourceStr) {
     ListItem({ style: ListItemStyle.CARD }) {
       SettingsListRow({ title: title, value: status })
     }
   }
 
   @Builder
-  private LinkRow(title: string, action: () => void) {
+  private LinkRow(title: ResourceStr, action: () => void) {
     ListItem({ style: ListItemStyle.CARD }) {
       SettingsListRow({ title: title, showArrow: true })
     }
@@ -57,14 +71,14 @@ export struct SettingsDetail {
    * 长正文不适合设置行的列表项结构，交给 ArkUI Text 默认排版。
    */
   @Builder
-  private Paragraph(body: string, copyable: boolean = false) {
+  private Paragraph(body: string | Resource, copyable: boolean = false) {
     Text(body)
       .textAlign(TextAlign.Start)
       .copyOption(copyable ? CopyOptions.LocalDevice : CopyOptions.None)
   }
 
   @Builder
-  private HelpSection(title: string, body: string) {
+  private HelpSection(title: Resource, body: Resource) {
     Text(title)
       .fontSize($r('sys.float.Subtitle_M'))
       .fontWeight(FontWeight.Medium)
@@ -78,20 +92,35 @@ export struct SettingsDetail {
       if (this.section === 'appearance') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           ForEach(THEME_VALUES, (choice: string) => {
-            this.RadioRow(THEME_LABELS[THEME_VALUES.indexOf(choice)], choice)
-          }, (choice: string) => choice)
+            SettingsChoiceRow({
+              title: themeLabel(choice),
+              selected: this.theme === choice,
+              onSelect: (): void => this.onChooseTheme(choice)
+            })
+          }, (choice: string) => `${this.theme}:${choice}`)
+        }.attributeModifier(this.groupStyle)
+      } else if (this.section === 'language') {
+        ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+          ForEach(LANGUAGE_VALUES, (choice: string) => {
+            SettingsChoiceRow({
+              title: languageLabel(choice),
+              selected: this.language === choice,
+              onSelect: (): void => this.onChooseLanguage(choice)
+            })
+          }, (choice: string) => `${this.language}:${choice}`)
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'license-list') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-          this.LinkRow('本项目开源许可证', () => this.onOpen('project-license'))
-          this.LinkRow('第三方开源许可证', () => this.onOpen('licenses'))
+          this.LinkRow($r('app.string.settings_project_license'), () => this.onOpen('project-license'))
+          this.LinkRow($r('app.string.settings_third_party'), () => this.onOpen('licenses'))
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'about') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-          this.InfoRow('应用名称', 'MarkNote')
-          this.InfoRow('版本', this.version.length > 0 ? this.version : '版本信息不可用')
-          this.LinkRow('GitHub 项目主页', () => this.onOpenProject())
-          this.LinkRow('开源许可证', () => this.onOpen('license-list'))
+          this.InfoRow($r('app.string.about_name'), $r('app.string.EntryAbility_label'))
+          this.InfoRow($r('app.string.about_version'),
+            this.version.length > 0 ? this.version : $r('app.string.about_version_unavailable'))
+          this.LinkRow($r('app.string.about_github'), () => this.onOpenProject())
+          this.LinkRow($r('app.string.settings_licenses'), () => this.onOpen('license-list'))
         }.attributeModifier(this.groupStyle)
       } else {
         ListItem() {
@@ -107,29 +136,13 @@ export struct SettingsDetail {
                 if (this.section === 'licenses' || this.section === 'project-license') {
                   this.Paragraph(this.text, true)
                 } else if (this.section === 'help') {
-                  this.HelpSection('打开与保存', '在首页新建文稿或选择文件，也可以从其他应用打开支持的文件。' +
-                    '打开和保存的文稿不能超过 8 MiB。' +
-                    '如果原文件无法写入，保存时可以另存为；另存成功后会继续编辑新文件。' +
-                    '保存时保留原来的编码，以及 LF、CRLF 和 CR 换行。' +
-                    '文稿页可以分享当前内容，包括未保存的修改。分享的是临时副本，不会保存或覆盖原文件。' +
-                    '删除会将原文件移入系统回收站，并提示未保存的修改；授权不足或文件已被其他应用修改时无法删除。')
-                  this.HelpSection('编辑与预览', '在文稿底部切换预览、编辑和大纲。Markdown 和 LaTeX 文稿支持大纲；' +
-                    '在宽屏设备上可以使用分栏，同时查看预览和编辑内容。' +
-                    '文稿列表与文稿双栏显示时，可用标题栏按钮放大文稿或恢复列表，也可以在文稿菜单中关闭文稿。' +
-                    '文稿页的更多菜单提供查找、结果间前后跳转和逐处替换。')
-                  this.HelpSection('支持的格式', '支持 Markdown、纯文本、SVG 和 LaTeX 文件。' +
-                    'Markdown 可以显示文稿同目录或子目录中、系统允许读取的本地图片；网络图片和未授权的图片只显示占位文字。' +
-                    'LaTeX 可以预览常见文稿和数学公式，不编译 PDF；部分命令、引用的图片和 TikZ 图形暂无法显示。')
-                  this.HelpSection('草稿与最近文稿', '编辑时会在设备上保存草稿，供异常退出后恢复。' +
-                    '若这时从其他应用打开文件，会先回到文稿页并询问是否保存上次的编辑，再打开新文件。' +
-                    '最近文稿只显示已获得持久访问授权的文件；更多菜单可以调整排序，长按记录可以移除。' +
-                    '文稿页可收藏或取消收藏，首页上方可以切换到收藏列表。' +
-                    '尚未保存或无法获得持久访问授权的文件需要先保存或另存为后才能收藏。')
-                  this.HelpSection('问题与建议', '在设置中点击“问题与建议”，通过邮件应用发送反馈；' +
-                    '也可以直接发送邮件至 zhouyi1227@outlook.com。')
+                  this.HelpSection($r('app.string.help_open_title'), $r('app.string.help_open_body'))
+                  this.HelpSection($r('app.string.help_edit_title'), $r('app.string.help_edit_body'))
+                  this.HelpSection($r('app.string.help_format_title'), $r('app.string.help_format_body'))
+                  this.HelpSection($r('app.string.help_draft_title'), $r('app.string.help_draft_body'))
+                  this.HelpSection($r('app.string.help_feedback_title'), $r('app.string.help_feedback_body'))
                 } else {
-                  this.Paragraph('文稿在设备本地编辑。应用没有账号、广告、遥测或联网接口，也不上传文稿。' +
-                    '文件由系统文件选择器授权，草稿保存在应用私有目录。')
+                  this.Paragraph($r('app.string.privacy_body'))
                 }
               }
               .alignItems(HorizontalAlign.Start)
@@ -137,7 +150,10 @@ export struct SettingsDetail {
             }
           }
           .width('100%')
-          .padding({ left: 24, right: 24 })
+          .padding({
+            start: LengthMetrics.vp(24),
+            end: LengthMetrics.vp(24)
+          })
         }
       }
     }
