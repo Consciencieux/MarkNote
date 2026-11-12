@@ -412,5 +412,13 @@
     "noticeSource": "https://github.com/nodeca/argparse/blob/e373563876f1c049826c21bd1c9388f6a5737a3e/README.md",
     "noticeFile": "argparse-2.0.1-readme.md",
     "noticeSha256": "44161d4e4baf71c745a327a5d05ee4a762c3004db5453aca221e3d0a3fa52ba6"
+  },
+  {
+    "name": "khroma",
+    "version": "2.1.0",
+    "license": "MIT",
+    "source": "https://github.com/fabiospampinato/khroma/blob/v2.1.0/license",
+    "file": "khroma-2.1.0-license",
+    "sha256": "66b333b0f66759a0b710459e03f7029abe17f4358114a128d2c972e642961b49"
   }
 ]

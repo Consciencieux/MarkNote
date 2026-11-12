@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import { katex as katexPlugin } from '@mdit/plugin-katex';
 import { imagePlaceholder, previewError, previewText } from '../preview-text.ts';
+import { beginMermaidDiagrams, mermaidPlaceholder } from './mermaid-block.ts';
 import { sanitizeSvg } from './svg.ts';
 
 const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
@@ -30,10 +31,12 @@ const defaultFence = md.renderer.rules.fence!;
 md.renderer.rules.fence = (tokens, idx, options, env, renderer) => {
   const info = tokens[idx].info.trim().split(/\s+/)[0]?.toLowerCase();
   if (info === 'svg') return `<section class="svg-canvas">${sanitizeSvg(tokens[idx].content)}</section>`;
+  if (info === 'mermaid') return mermaidPlaceholder(tokens[idx].content);
   return defaultFence(tokens, idx, options, env, renderer);
 };
 
 export function renderMarkdown(source: string): string {
+  beginMermaidDiagrams();
   try {
     return md.render(source);
   } catch {

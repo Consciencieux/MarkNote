@@ -25,3 +25,11 @@ test('uses the encoded address markdown-it will render', () => {
   assert.match(html, /data-mn-src="%E5%9B%BE%E7%89%87\.png"/);
   assert.match(html, /data-mn-src="my%20pic\.png"/);
 });
+
+test('keeps a mermaid fence as a numbered placeholder', () => {
+  const html = renderMarkdown('```mermaid\nflowchart LR\n  A-->B\n```\n\n```Mermaid\npie\n  "a" : 1\n```\n\n```js\nconst a = 1\n```');
+  assert.match(html, /<section class="mermaid-block" data-mn-mermaid="0"><\/section>/);
+  assert.match(html, /<section class="mermaid-block" data-mn-mermaid="1"><\/section>/);
+  assert.doesNotMatch(html, /flowchart LR/);
+  assert.match(html, /<pre[\s>][\s\S]*const a = 1/);
+});

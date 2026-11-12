@@ -25,6 +25,8 @@ a { color:inherit; text-decoration:underline; }
 .image-slot-loaded { display:block; }
 .svg-canvas { width:100%; overflow:auto; min-height:140px; }
 .svg-canvas > svg { display:block;max-width:100%;height:auto;margin:auto; }
+.mermaid-block { width:100%; overflow:auto; margin:1em 0; }
+.mermaid-block > svg { display:block; max-width:100%; height:auto; }
 .math-canvas { width:100%; overflow-x:auto; }
 .katex-display { overflow:auto hidden; padding:5px 0; }
 .error { color:#c43d3d; white-space:pre-wrap; }
