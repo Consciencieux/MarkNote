@@ -2,6 +2,7 @@ import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import './styles.css';
 import { renderMarkdown } from './renderers/markdown';
+import { nextMermaidGeneration, paintMermaid, type PreviewTheme } from './renderers/mermaid';
 import { visibleImageKeys } from './image-window';
 import { renderPlain } from './renderers/plain';
 import { installReferenceHook, sanitizeSvg } from './renderers/svg';
@@ -13,7 +14,9 @@ import katex from 'katex';
 type Kind = PreviewUpdate['kind'];
 let resultPort: MessagePort | undefined;
 let lastResult: string | undefined;
-let lastRendered: { kind: Kind; source: string; documentId?: number; textStamp: string; tex?: TexDocument } | undefined;
+let lastRendered: {
+  kind: Kind; source: string; documentId?: number; textStamp: string; theme: PreviewTheme; tex?: TexDocument;
+} | undefined;
 window.addEventListener('message', (event: MessageEvent) => {
   if (event.data !== '__marknote_parse_port__' || !event.ports[0]) return;
   resultPort?.close();
@@ -23,6 +26,15 @@ window.addEventListener('message', (event: MessageEvent) => {
 
 const host = document.getElementById('preview');
 if (!host) throw new Error('missing preview root');
+
+function paintDiagrams(theme: PreviewTheme): void {
+  const ticket = nextMermaidGeneration();
+  void paintMermaid(host!, theme, ticket);
+}
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (lastRendered?.theme === 'system' && lastRendered.kind === 'markdown') paintDiagrams('system');
+});
 
 function isAppImage(url: string): boolean {
   return /^data:image\/(?:png|jpeg|gif|webp|bmp|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/.test(url);
@@ -83,9 +95,11 @@ function render(update: PreviewUpdate): void {
   document.documentElement.dir = /^(ar|ug)(-|$)/i.test(previewText().lang) ? 'rtl' : 'ltr';
   document.documentElement.removeAttribute('data-theme');
   if (update.theme !== 'system') document.documentElement.dataset.theme = update.theme;
-  // Theme changes only affect CSS. A language change still rebuilds the visible copy.
+  // Theme changes only affect CSS, except Mermaid colors, which are baked into the SVG.
   if (lastRendered?.kind === update.kind && lastRendered.source === update.source &&
     lastRendered.documentId === update.documentId && lastRendered.textStamp === textStamp) {
+    if (lastRendered.theme !== update.theme && update.kind === 'markdown') paintDiagrams(update.theme);
+    lastRendered = { ...lastRendered, theme: update.theme };
     if (lastRendered.tex) {
       lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision,
         headings: lastRendered.tex.headings, diagnostics: lastRendered.tex.diagnostics });
@@ -98,12 +112,14 @@ function render(update: PreviewUpdate): void {
     return;
   }
   if (!update.source.trim()) {
+    nextMermaidGeneration();
     host!.replaceChildren();
     const empty = document.createElement('p');
     empty.className = 'placeholder';
     empty.textContent = previewText().empty;
     host!.append(empty);
-    lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, textStamp };
+    lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, textStamp,
+      theme: update.theme };
     if (update.kind === 'tex-math') {
       lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision, headings: [], diagnostics: [] });
       resultPort?.postMessage(lastResult);
@@ -117,6 +133,7 @@ function render(update: PreviewUpdate): void {
     tex = update.kind === 'tex-math' ? renderTexDocument(update.source) : undefined;
     html = tex ? tex.html : renderBody(update.kind, update.source);
   } catch {
+    nextMermaidGeneration();
     lastRendered = undefined;
     host!.textContent = previewText().failed;
     return;
@@ -128,7 +145,9 @@ function render(update: PreviewUpdate): void {
     SANITIZE_NAMED_PROPS: false
   });
   wantedImages.clear();
-  lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, textStamp, tex };
+  lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, textStamp,
+    theme: update.theme, tex };
+  if (update.kind === 'markdown') paintDiagrams(update.theme);
   if (tex) {
     for (const element of host!.querySelectorAll<HTMLElement>('.math-inline, .math-display')) {
       katex.render(element.textContent ?? '', element, {

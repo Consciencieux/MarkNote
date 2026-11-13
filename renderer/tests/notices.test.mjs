@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
-function fixture(t, { version = '1.0.0', hashMismatch = false, path = 'license.txt', licenseId = 'MIT', includeNotice = true } = {}) {
+function fixture(t, { version = '1.0.0', hashMismatch = false, path = 'license.txt', licenseId = 'MIT',
+  includeNotice = true, omitLicense = false, shipLicense = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'marknote-notices-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const renderer = join(root, 'renderer');
@@ -17,8 +18,11 @@ function fixture(t, { version = '1.0.0', hashMismatch = false, path = 'license.t
   copyFileSync(new URL('../scripts/generate-notices.mjs', import.meta.url), join(scripts, 'generate-notices.mjs'));
   writeFileSync(join(root, 'LICENSE'), 'Project license');
   writeFileSync(join(renderer, 'package.json'), JSON.stringify({ dependencies: { example: version } }));
-  writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'example', version, license: licenseId }));
+  const packageJson = { name: 'example', version, license: licenseId };
+  if (omitLicense) delete packageJson.license;
+  writeFileSync(join(pkg, 'package.json'), JSON.stringify(packageJson));
   const license = 'Original upstream permission text';
+  if (shipLicense) writeFileSync(join(pkg, 'license'), license);
   const notice = 'Original upstream attribution';
   const sha = text => createHash('sha256').update(text).digest('hex');
   writeFileSync(join(vendor, 'license.txt'), license);
@@ -63,6 +67,30 @@ test('requires a verified attribution notice for CC BY', t => {
   const missing = run(fixture(t, { licenseId: 'CC-BY-3.0', includeNotice: false }));
   assert.notEqual(missing.status, 0);
   assert.match(missing.stderr, /attribution/i);
+});
+
+test('writes LF notices when an upstream grant uses CRLF or trailing spaces', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.renderer, 'node_modules/example/license'), 'Permission\r\nto copy\r\n> \r\n');
+  writeFileSync(join(f.renderer, 'node_modules/example/NOTICE'), 'Keep\r\nthis\r\n');
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr);
+  const output = readFileSync(join(f.root, 'entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt'), 'utf8');
+  assert.equal(output.includes('\r'), false);
+  assert.equal(/[ \t]$/m.test(output), false);
+  assert.match(output, /Permission\nto copy\n>\n/);
+  assert.match(output, /Keep\nthis\n/);
+});
+
+test('requires a reviewed declaration when package.json omits its license', t => {
+  const missing = run(fixture(t, { omitLicense: true, shipLicense: true, version: '2.0.0' }));
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /Review required/);
+  const reviewed = run(fixture(t, { omitLicense: true, shipLicense: true }));
+  assert.equal(reviewed.status, 0, reviewed.stderr);
+  const tampered = run(fixture(t, { omitLicense: true, shipLicense: true, hashMismatch: true }));
+  assert.notEqual(tampered.status, 0);
+  assert.match(tampered.stderr, /hash mismatch/);
 });
 
 test('requires a verified change summary for Python 2.0', t => {

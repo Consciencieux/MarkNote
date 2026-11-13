@@ -19,6 +19,7 @@
     "dompurify": "3.4.17",
     "katex": "0.19.1",
     "markdown-it": "15.0.3",
+    "mermaid": "11.12.2",
     "myst-to-html": "1.7.5",
     "tex-to-myst": "1.0.48",
     "vfile": "5.3.7"

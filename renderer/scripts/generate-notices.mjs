@@ -7,8 +7,9 @@ import { createHash } from 'node:crypto';
 const root = resolve(import.meta.dirname, '..');
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const packages = new Map();
-// Some upstream packages publish no LICENSE in their npm archive. These entries point to
-// original license texts and version-specific declarations, verified offline by package version and hash.
+// Some upstream packages publish no LICENSE in their npm archive, or omit the license field.
+// These entries point to original license texts and version-specific declarations, verified
+// offline by package version and hash. A missing field is accepted only for a reviewed entry.
 const fallbackRoot = join(root, '..', 'third_party', 'upstream-licenses');
 const fallbacks = JSON.parse(readFileSync(join(fallbackRoot, 'manifest.json'), 'utf8'));
 
@@ -16,6 +17,11 @@ const fallbacks = JSON.parse(readFileSync(join(fallbackRoot, 'manifest.json'), '
 // is emitted below with the other production notices.
 const accepted = /^(?:MIT|ISC|BSD-2-Clause|BSD-3-Clause|Apache-2\.0|0BSD|Unlicense|CC0-1\.0|CC-BY-3\.0|Python-2\.0|PSF-2\.0)$/;
 
+// Hash checks use the original bytes. The shipped notice is LF and has no trailing
+// spaces, so git diff --check does not flag CRLF or the "> " lines in upstream grants.
+function shippedText(text) {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[ \t]+$/gm, '');
+}
 function locate(from, name) {
   let at = from;
   for (;;) {
@@ -27,19 +33,25 @@ function locate(from, name) {
   }
   throw new Error(`Missing installed package: ${name} (required by ${from})`);
 }
-function licenseFile(dir, pkg, expression) {
+function licenseFile(dir, pkg, expression, reviewed) {
   const filenames = readdirSync(dir);
   // Package managers also ship complete grants as e.g. LICENSE-MIT.txt. Restrict the suffix to
   // the declared SPDX family so a README can never become a substitute notice.
   const found = filenames.find(f => /^(?:licen[sc]e|copying)(?:[-_.](?:mit|isc|bsd(?:-[23]-clause)?|apache-2\.0|psf-2\.0))?(?:\.(?:md|txt))?$/i.test(f));
-  if (found) return readFileSync(join(dir, found), 'utf8');
+  if (found) {
+    const bytes = readFileSync(join(dir, found));
+    if (reviewed && createHash('sha256').update(bytes).digest('hex') !== reviewed.sha256) {
+      throw new Error(`Upstream license hash mismatch: ${pkg.name}@${pkg.version}`);
+    }
+    return shippedText(bytes.toString('utf8'));
+  }
   const entry = fallbacks.find(p => p.name === pkg.name && p.version === pkg.version && p.license === expression);
   if (!entry || !/^[A-Za-z0-9_.-]+$/.test(entry.file)) throw new Error(`Missing license text: ${pkg.name}@${pkg.version}`);
   const bytes = readFileSync(join(fallbackRoot, entry.file));
   if (createHash('sha256').update(bytes).digest('hex') !== entry.sha256) {
     throw new Error(`Upstream license hash mismatch: ${pkg.name}@${pkg.version}`);
   }
-  return bytes.toString('utf8');
+  return shippedText(bytes.toString('utf8'));
 }
 function visit(from, name) {
   const dir = locate(from, name);
@@ -49,13 +61,17 @@ function visit(from, name) {
   if (expression === '(MPL-2.0 OR Apache-2.0)' || expression === 'MPL-2.0 OR Apache-2.0') {
     expression = 'Apache-2.0';
   }
+  // A package that ships the grant but omits package.json#license still needs an explicit review.
+  const reviewed = expression ? undefined : fallbacks.find(p => p.name === pkg.name && p.version === pkg.version &&
+    accepted.test(p.license || '') && typeof p.sha256 === 'string');
+  if (!expression && reviewed) expression = reviewed.license;
   if (!accepted.test(expression || '')) {
     throw new Error(`Review required: ${pkg.name}@${pkg.version} uses ${JSON.stringify(pkg.license)}`);
   }
-  const text = licenseFile(dir, pkg, expression);
+  const text = licenseFile(dir, pkg, expression, reviewed);
   if (!text.trim()) throw new Error(`Empty license: ${pkg.name}`);
   const noticeName = readdirSync(dir).find(f => /^notice(?:\.txt|\.md)?$/i.test(f));
-  let notice = noticeName ? readFileSync(join(dir, noticeName), 'utf8') : '';
+  let notice = noticeName ? shippedText(readFileSync(join(dir, noticeName), 'utf8')) : '';
   const fallback = fallbacks.find(p => p.name === pkg.name && p.version === pkg.version && p.license === expression);
   if (fallback?.noticeFile) {
     if (!/^[A-Za-z0-9_.-]+$/.test(fallback.noticeFile)) throw new Error(`Invalid notice path: ${pkg.name}`);
@@ -63,7 +79,7 @@ function visit(from, name) {
     if (createHash('sha256').update(bytes).digest('hex') !== fallback.noticeSha256) {
       throw new Error(`Upstream notice hash mismatch: ${pkg.name}@${pkg.version}`);
     }
-    notice += (notice ? '\n\n' : '') + bytes.toString('utf8');
+    notice += (notice ? '\n\n' : '') + shippedText(bytes.toString('utf8'));
   }
   if ((expression === 'CC-BY-3.0' || fallback?.file === 'SPDX-MIT.txt') &&
     (!fallback?.noticeFile || !notice.trim())) {
