@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.zhouyi.marknote",
     "vendor": "zhouyi",
-    "versionCode": 1000003,
-    "versionName": "1.0.0",
+    "versionCode": 1000004,
+    "versionName": "1.1.0",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }

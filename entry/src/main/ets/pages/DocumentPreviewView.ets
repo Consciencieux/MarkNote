@@ -1,10 +1,33 @@
 import { webview } from '@kit.ArkWeb';
 import { Heading } from '../model/Document';
 import { loadLocalImages, PreviewImage, sourcesFromPage } from '../document/LocalImages';
+import { AppText } from '../i18n/AppText';
+import { previewLanguageTag } from '../i18n/AppLanguage';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
 
 interface ParsedHeading { level: number; text: string; offset: number }
 interface ParsedResult { kind: string; revision: number; headings: ParsedHeading[] }
+interface PreviewCopy {
+  lang: string;
+  empty: string;
+  failed: string;
+  unsafe: string;
+  markdownFailed: string;
+  svgUnsafe: string;
+  svgInvalid: string;
+  svgRejected: string;
+  mathFailed: string;
+  imageName: string;
+  imageSlot: string;
+}
+interface PreviewCommand {
+  kind: string;
+  source: string;
+  theme: string;
+  revision: number;
+  documentId: number;
+  text: PreviewCopy;
+}
 
 /** 文稿预览和分栏预览共用同一组 Web 与滚动配置。 */
 @Component
@@ -15,6 +38,12 @@ export struct DocumentPreviewView {
   @Prop @Watch('scheduleUpdate') parseRevision: number = 0;
   /** 当前文稿 URI。空字符串表示还没有文件，本地图片无法定位。 */
   @Prop @Watch('scheduleUpdate') documentUri: string = '';
+  /**
+   * 界面语言。预览创建在 @Builder 里，按值传入的 language 不会更新。
+   * 变化时重新发送预览文案，正文未变也要刷新占位和错误提示。
+   * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
+   */
+  @StorageLink('marknote_language') @Watch('scheduleUpdate') language: string = 'default';
   onOutline: (revision: number, headings: Heading[]) => void = (_revision: number, _headings: Heading[]): void => {};
   scroller: Scroller = new Scroller();
   private controller: webview.WebviewController = new webview.WebviewController();
@@ -131,13 +160,28 @@ export struct DocumentPreviewView {
   }
 
   private sendUpdate(): void {
-    const command = 'window.MarknotePreview.update(' + JSON.stringify({
+    const copy: PreviewCopy = {
+      lang: this.language === 'default' ? previewLanguageTag() : this.language,
+      empty: AppText.text($r('app.string.preview_empty')),
+      failed: AppText.text($r('app.string.preview_failed')),
+      unsafe: AppText.text($r('app.string.preview_unsafe')),
+      markdownFailed: AppText.text($r('app.string.preview_markdown_failed')),
+      svgUnsafe: AppText.text($r('app.string.preview_svg_unsafe')),
+      svgInvalid: AppText.text($r('app.string.preview_svg_invalid')),
+      svgRejected: AppText.text($r('app.string.preview_svg_rejected')),
+      mathFailed: AppText.text($r('app.string.preview_math_failed')),
+      imageName: AppText.text($r('app.string.preview_image_name')),
+      imageSlot: AppText.text($r('app.string.preview_image_slot'))
+    };
+    const payload: PreviewCommand = {
       kind: this.kind,
       source: this.source,
       theme: this.theme,
       revision: this.parseRevision,
-      documentId: this.documentGeneration
-    }) + ')';
+      documentId: this.documentGeneration,
+      text: copy
+    };
+    const command = 'window.MarknotePreview.update(' + JSON.stringify(payload) + ')';
     try {
       this.controller.runJavaScript(command);
     } catch {

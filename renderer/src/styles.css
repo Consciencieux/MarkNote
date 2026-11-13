@@ -15,9 +15,9 @@ pre,code{font-family:ui-monospace,monospace;} code { overflow-wrap:anywhere; }
 pre { max-width:100%; overflow:auto; background:var(--code); border-radius:10px; padding:14px; }
 pre.plain { white-space:pre-wrap; background:transparent; border-radius:0; padding:0; margin:0; }
 :not(pre)>code { background:var(--code); padding:.12em .3em; border-radius:4px; }
-blockquote { border-left:3px solid var(--line); color:var(--secondary); margin:1.2em 0; padding-left:1em; }
+blockquote { border-inline-start:3px solid var(--line); color:var(--secondary); margin:1.2em 0; padding-inline-start:1em; }
 table{display:block;overflow-x:auto;border-collapse:collapse;width:100%;}
-td,th { border:1px solid var(--line);padding:6px 10px;text-align:left; }
+td,th { border:1px solid var(--line);padding:6px 10px;text-align:start; }
 hr { border:none; border-top:1px solid var(--line); }
 a { color:inherit; text-decoration:underline; }
 .preview img { display:block; max-width:100%; height:auto; margin:1em 0; }
@@ -25,6 +25,8 @@ a { color:inherit; text-decoration:underline; }
 .image-slot-loaded { display:block; }
 .svg-canvas { width:100%; overflow:auto; min-height:140px; }
 .svg-canvas > svg { display:block;max-width:100%;height:auto;margin:auto; }
+.mermaid-block { width:100%; overflow:auto; margin:1em 0; }
+.mermaid-block > svg { display:block; max-width:100%; height:auto; }
 .math-canvas { width:100%; overflow-x:auto; }
 .katex-display { overflow:auto hidden; padding:5px 0; }
 .error { color:#c43d3d; white-space:pre-wrap; }

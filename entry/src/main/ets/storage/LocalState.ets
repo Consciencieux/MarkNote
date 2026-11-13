@@ -4,9 +4,16 @@ import { util } from '@kit.ArkTS';
 import { preferences } from '@kit.ArkData';
 import { RecentDocument, RecoveryData } from '../model/Document';
 import { RecentEntry, removeRecentDocument, toggleFavoriteDocument, updateRecentDocument } from '../document/RecentOrder';
+import { AppText } from '../i18n/AppText';
+import { normalizeAppLanguage } from '../i18n/AppLanguage';
 
 const RECENT_KEY: string = 'recent_files';
 const THEME_KEY: string = 'color_choice';
+/**
+ * 用户选择，含 `default`。系统偏好语言接口负责真正切换资源；
+ * 其读取结果未说明会保留 `default`，不能单独用来区分“跟随系统”和已解析出的语言。
+ */
+const LANGUAGE_KEY: string = 'app_language';
 const SORT_KEY: string = 'recent_sort';
 const DRAFT: string = '/unsaved-draft.json';
 const TEMP: string = '/unsaved-draft.tmp';
@@ -21,6 +28,34 @@ export class LocalState {
   static async writeTheme(context: common.UIAbilityContext, choice: string): Promise<void> {
     const store = await preferences.getPreferences(context, 'marknote-settings');
     await store.put(THEME_KEY, choice);
+    await store.flush();
+  }
+
+  static readLanguageSync(context: common.UIAbilityContext): string {
+    try {
+      const store = preferences.getPreferencesSync(context, { name: 'marknote-settings' });
+      const value = store.getSync(LANGUAGE_KEY, 'default');
+      return normalizeAppLanguage(typeof value === 'string' ? value : 'default');
+    } catch {
+      return 'default';
+    }
+  }
+
+  static writeLanguageSync(context: common.UIAbilityContext, choice: string): void {
+    const store = preferences.getPreferencesSync(context, { name: 'marknote-settings' });
+    store.putSync(LANGUAGE_KEY, normalizeAppLanguage(choice));
+    store.flushSync();
+  }
+
+  static async readLanguage(context: common.UIAbilityContext): Promise<string> {
+    const store = await preferences.getPreferences(context, 'marknote-settings');
+    const value = await store.get(LANGUAGE_KEY, 'default') as string;
+    return normalizeAppLanguage(value);
+  }
+
+  static async writeLanguage(context: common.UIAbilityContext, choice: string): Promise<void> {
+    const store = await preferences.getPreferences(context, 'marknote-settings');
+    await store.put(LANGUAGE_KEY, choice);
     await store.flush();
   }
 
@@ -109,7 +144,7 @@ export class LocalState {
       let offset = 0;
       while (offset < data.length) {
         const written = fileIo.writeSync(file.fd, data.slice(offset).buffer);
-        if (written <= 0) throw new Error('草稿写入中断');
+        if (written <= 0) throw new Error(AppText.text($r('app.string.draft_interrupted')));
         offset += written;
       }
       fileIo.fsyncSync(file.fd);

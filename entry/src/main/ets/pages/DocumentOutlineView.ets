@@ -1,5 +1,7 @@
+import { LengthMetrics } from '@kit.ArkUI';
 import { Heading } from '../model/Document';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
+import { listTitle, outlineChildTitle } from './TextRoles';
 
 /** Flat row model used by the documented ArkUI List-based tree pattern. */
 class OutlineRow {
@@ -61,6 +63,13 @@ export struct DocumentOutlineView {
     this.collapsedOutline = collapsed;
   }
 
+  private outlineText(depth: number): AttributeModifier<TextAttribute> {
+    if (depth === 0) {
+      return listTitle;
+    }
+    return outlineChildTitle;
+  }
+
   @Builder
   private OutlineRowContent(row: OutlineRow) {
     Row() {
@@ -84,21 +93,19 @@ export struct DocumentOutlineView {
       .opacity(row.isFolder ? 1 : 0)
       .enabled(row.isFolder)
       .accessibilityRole(AccessibilityRoleType.BUTTON)
-      .accessibilityText(row.expanded ? '收起' : '展开')
+      .accessibilityText(row.expanded ? $r('app.string.outline_collapse') : $r('app.string.outline_expand'))
       .onClick(() => this.toggleOutline(row))
-      // Reuse the system subtitle resources used by the app's settings rows.
+      // 一级和子级都是标题文字，分别使用列表标题和副标题小号样式。
       Text(row.heading.text)
-        .fontSize(row.depth === 0 ? $r('sys.float.Subtitle_M') : $r('sys.float.Subtitle_S'))
-        .fontWeight(row.depth === 0 ? FontWeight.Medium : FontWeight.Regular)
-        .fontColor($r('sys.color.font_primary'))
+        .attributeModifier(this.outlineText(row.depth))
         .layoutWeight(1)
         .constraintSize({ minHeight: 40 })
         .onClick(() => this.onSelect(row.heading))
     }
     .width('100%')
     .padding({
-      left: $r('sys.float.padding_level4'),
-      right: $r('sys.float.padding_level4')
+      start: LengthMetrics.resource($r('sys.float.padding_level4')),
+      end: LengthMetrics.resource($r('sys.float.padding_level4'))
     })
   }
 
@@ -108,8 +115,11 @@ export struct DocumentOutlineView {
       List({ initialIndex: 0 }) {
         if (this.headings.length === 0) {
           ListItem() {
-            Text('暂无大纲')
-              .padding({ left: $r('sys.float.padding_level4'), right: $r('sys.float.padding_level4') })
+            Text($r('app.string.outline_empty'))
+              .padding({
+                start: LengthMetrics.resource($r('sys.float.padding_level4')),
+                end: LengthMetrics.resource($r('sys.float.padding_level4'))
+              })
           }
         }
         ForEach(this.outlineRows(), (row: OutlineRow) => {

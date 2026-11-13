@@ -5,6 +5,20 @@ export interface PreviewUpdate {
   theme: 'system' | 'light' | 'dark';
   revision?: number;
   documentId?: number;
+  /** Localized preview copy. Absent fields keep the base Chinese text. */
+  text?: {
+    lang?: string;
+    empty?: string;
+    failed?: string;
+    unsafe?: string;
+    markdownFailed?: string;
+    svgUnsafe?: string;
+    svgInvalid?: string;
+    svgRejected?: string;
+    mathFailed?: string;
+    imageName?: string;
+    imageSlot?: string;
+  };
 }
 
 declare global {

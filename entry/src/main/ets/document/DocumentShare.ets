@@ -4,6 +4,7 @@ import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { systemShare } from '@kit.ShareKit';
 import { DocumentInfo } from '../model/Document';
 import { TextEncoding } from './TextEncoding';
+import { AppText } from '../i18n/AppText';
 
 /** Share a snapshot of the editor through the system panel, without modifying the original file. */
 export class DocumentShare {
@@ -11,7 +12,8 @@ export class DocumentShare {
 
   static async show(context: common.UIAbilityContext, name: string, source: string): Promise<void> {
     const safeName = name.replace(/[\/\\\0]/g, '_');
-    const filename = safeName.length === 0 || safeName === '.' || safeName === '..' ? '文稿.txt' : safeName;
+    const filename = safeName.length === 0 || safeName === '.' || safeName === '..' ?
+      AppText.text($r('app.string.file_share_fallback')) : safeName;
     const directory = `${context.cacheDir}/marknote-share/${Date.now()}-${DocumentShare.sequence++}`;
     fileIo.mkdirSync(directory, true);
     const path = `${directory}/${filename}`;
@@ -22,7 +24,7 @@ export class DocumentShare {
       let offset = 0;
       while (offset < bytes.length) {
         const written = fileIo.writeSync(file.fd, bytes.slice(offset).buffer);
-        if (written <= 0) throw new Error('分享文件写入失败');
+        if (written <= 0) throw new Error(AppText.text($r('app.string.share_write_failed')));
         offset += written;
       }
     } finally {

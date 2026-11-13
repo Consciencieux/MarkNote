@@ -1,7 +1,9 @@
+import { AppText } from '../i18n/AppText';
+
 /** File-backed document metadata. DocumentService owns the live session; the page mirrors it for ArkUI. */
 export class DocumentInfo {
   uri: string = '';
-  name: string = '未命名.md';
+  name: string = AppText.text($r('app.string.file_untitled_md'));
   hasBom: boolean = false;
   /** '\n', '\r', '\r\n', or 'mixed'. Editor text always uses '\n'. */
   newline: string = '\n';
@@ -48,7 +50,7 @@ export class RecentDocument {
 }
 
 export class RecoveryData {
-  name: string = '未命名.md';
+  name: string = AppText.text($r('app.string.file_untitled_md'));
   uri: string = '';
   text: string = '';
   savedText: string = '';

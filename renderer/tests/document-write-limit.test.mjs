@@ -40,7 +40,10 @@ function createFile(initial) {
   const source = readFileSync(filename, 'utf8').replace(/^import .*;\s*$/gm, '').replace(/^export /gm, '');
   const context = { fileIo, TextEncoding, cryptoFramework,
     fileShare: { OperationMode: { READ_MODE: 1, WRITE_MODE: 2 },
-      checkPersistentPermission: async () => [false] }, Uint8Array, ArrayBuffer, Error };
+      checkPersistentPermission: async () => [false] }, Uint8Array, ArrayBuffer, Error,
+    $r: (name) => name,
+    AppText: { text: (name) => name === 'app.string.save_too_large' || name === 'app.string.too_large' ?
+      'Documents cannot exceed 8 MiB' : String(name) } };
   return { files: vm.runInNewContext(`${nodeModule.stripTypeScriptTypes(source)}\nDocumentFiles`, context),
     content: () => Buffer.from(bytes).toString(), size: () => bytes.length };
 }

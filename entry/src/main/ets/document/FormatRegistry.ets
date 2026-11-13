@@ -1,19 +1,24 @@
+import { AppText } from '../i18n/AppText';
+
 /**
  * Static format table. Adding a format is a new entry plus a preview renderer, not a page edit.
  *
  * Each format also owns its toolbar actions: their labels, system symbols and inserted text.
+ * Display names come from string resources so they follow the system language.
  */
 
 /** One toolbar action: what to insert, how to label it, and which system symbol represents it. */
 export class InsertAction {
-  label: string;
+  id: string;
+  label: Resource;
   symbol: Resource;
   /** Text placed before the selection. */
   before: string;
   /** Text placed after the selection. */
   after: string;
 
-  constructor(label: string, symbol: Resource, before: string, after: string) {
+  constructor(id: string, label: Resource, symbol: Resource, before: string, after: string) {
+    this.id = id;
     this.label = label;
     this.symbol = symbol;
     this.before = before;
@@ -22,42 +27,44 @@ export class InsertAction {
 }
 
 /** Inserts the token as an inline prefix and keeps the cursor inside it, e.g. bold or italic. */
-function wrap(token: string, label: string, symbol: Resource): InsertAction {
-  return new InsertAction(label, symbol, token, token);
+function wrap(token: string, id: string, label: Resource, symbol: Resource): InsertAction {
+  return new InsertAction(id, label, symbol, token, token);
 }
 
 /** Inserts the token as a line prefix, e.g. a heading or list marker. */
-function prefix(token: string, label: string, symbol: Resource): InsertAction {
-  return new InsertAction(label, symbol, token, '');
+function prefix(token: string, id: string, label: Resource, symbol: Resource): InsertAction {
+  return new InsertAction(id, label, symbol, token, '');
 }
 
 export class DocumentFormat {
   id: string = '';
-  sheetTitle: string = '';
+  sheetTitle: Resource = $r('app.string.format_markdown_sheet');
   extensions: string[] = [];
   utds: string[] = [];
   mimes: string[] = [];
-  defaultFilename: string = '';
+  defaultFilename: Resource = $r('app.string.file_untitled_md');
   starter: string = '';
   outline: boolean = false;
   inserts: InsertAction[] = [];
-  openFilter: string = '';
-  saveChoice: string = '';
+  pickerLabel: Resource = $r('app.string.format_markdown_picker');
+  openSuffix: string = '';
+  saveSuffix: string = '';
 }
 
 /** Named fields for a format entry. Positional arguments were too easy to misorder. */
 interface FormatSpec {
   id: string;
-  sheetTitle: string;
+  sheetTitle: Resource;
   extensions: string[];
   utds: string[];
   mimes: string[];
-  defaultFilename: string;
+  defaultFilename: Resource;
   starter: string;
   outline: boolean;
   inserts: InsertAction[];
-  openFilter: string;
-  saveChoice: string;
+  pickerLabel: Resource;
+  openSuffix: string;
+  saveSuffix: string;
 }
 
 function defineFormat(spec: FormatSpec): DocumentFormat {
@@ -71,86 +78,95 @@ function defineFormat(spec: FormatSpec): DocumentFormat {
   item.starter = spec.starter;
   item.outline = spec.outline;
   item.inserts = spec.inserts;
-  item.openFilter = spec.openFilter;
-  item.saveChoice = spec.saveChoice;
+  item.pickerLabel = spec.pickerLabel;
+  item.openSuffix = spec.openSuffix;
+  item.saveSuffix = spec.saveSuffix;
   return item;
 }
 
+function pickerChoice(label: Resource, suffix: string): string {
+  return AppText.text(label) + '|' + suffix;
+}
+
 const MARKDOWN_INSERTS: InsertAction[] = [
-  prefix('# ', '标题', $r('sys.symbol.textformat')),
-  wrap('**', '加粗', $r('sys.symbol.bold')),
-  wrap('*', '斜体', $r('sys.symbol.italic')),
-  wrap('`', '代码', $r('sys.symbol.code')),
-  new InsertAction('链接', $r('sys.symbol.link'), '[', '](url)'),
-  prefix('- ', '列表', $r('sys.symbol.list_bullet')),
-  prefix('- [ ] ', '待办', $r('sys.symbol.checkmark_square')),
-  wrap('$', '公式', $r('sys.symbol.sum_rectangle_fill')),
-  new InsertAction('代码块', $r('sys.symbol.code_square'), '```\n', '\n```')
+  prefix('# ', 'md-heading', $r('app.string.insert_heading'), $r('sys.symbol.textformat')),
+  wrap('**', 'md-bold', $r('app.string.insert_bold'), $r('sys.symbol.bold')),
+  wrap('*', 'md-italic', $r('app.string.insert_italic'), $r('sys.symbol.italic')),
+  wrap('`', 'md-code', $r('app.string.insert_code'), $r('sys.symbol.code')),
+  new InsertAction('md-link', $r('app.string.insert_link'), $r('sys.symbol.link'), '[', '](url)'),
+  prefix('- ', 'md-list', $r('app.string.insert_list'), $r('sys.symbol.list_bullet')),
+  prefix('- [ ] ', 'md-task', $r('app.string.insert_task'), $r('sys.symbol.checkmark_square')),
+  wrap('$', 'md-math', $r('app.string.insert_math'), $r('sys.symbol.sum_rectangle_fill')),
+  new InsertAction('md-code-block', $r('app.string.insert_code_block'), $r('sys.symbol.code_square'), '```\n', '\n```')
 ];
 
 const LATEX_INSERTS: InsertAction[] = [
-  new InsertAction('章节', $r('sys.symbol.textformat'), '\\section{', '}'),
-  new InsertAction('小节', $r('sys.symbol.textformat'), '\\subsection{', '}'),
-  new InsertAction('加粗', $r('sys.symbol.bold'), '\\textbf{', '}'),
-  new InsertAction('斜体', $r('sys.symbol.italic'), '\\emph{', '}'),
-  new InsertAction('代码', $r('sys.symbol.code'), '\\texttt{', '}'),
-  wrap('$', '公式', $r('sys.symbol.sum_rectangle_fill')),
-  new InsertAction('公式块', $r('sys.symbol.sum_rectangle_fill'), '\\[\n', '\n\\]')
+  new InsertAction('tex-section', $r('app.string.insert_section'), $r('sys.symbol.textformat'), '\\section{', '}'),
+  new InsertAction('tex-subsection', $r('app.string.insert_subsection'), $r('sys.symbol.textformat'), '\\subsection{', '}'),
+  new InsertAction('tex-bold', $r('app.string.insert_bold'), $r('sys.symbol.bold'), '\\textbf{', '}'),
+  new InsertAction('tex-italic', $r('app.string.insert_italic'), $r('sys.symbol.italic'), '\\emph{', '}'),
+  new InsertAction('tex-code', $r('app.string.insert_code'), $r('sys.symbol.code'), '\\texttt{', '}'),
+  wrap('$', 'tex-math', $r('app.string.insert_math'), $r('sys.symbol.sum_rectangle_fill')),
+  new InsertAction('tex-math-block', $r('app.string.insert_math_block'), $r('sys.symbol.sum_rectangle_fill'), '\\[\n', '\n\\]')
 ];
 
 const FORMATS: DocumentFormat[] = [
   defineFormat({
     id: 'markdown',
-    sheetTitle: 'Markdown 文稿',
+    sheetTitle: $r('app.string.format_markdown_sheet'),
     extensions: ['.md', '.markdown'],
     utds: ['general.markdown'],
     mimes: ['text/markdown', 'text/x-markdown'],
-    defaultFilename: '未命名.md',
+    defaultFilename: $r('app.string.file_untitled_md'),
     starter: '',
     outline: true,
     inserts: MARKDOWN_INSERTS,
-    openFilter: 'Markdown|.md,.markdown',
-    saveChoice: 'Markdown|.md'
+    pickerLabel: $r('app.string.format_markdown_picker'),
+    openSuffix: '.md,.markdown',
+    saveSuffix: '.md'
   }),
   defineFormat({
     id: 'plain',
-    sheetTitle: '纯文本',
+    sheetTitle: $r('app.string.format_plain_sheet'),
     extensions: ['.txt'],
     utds: ['general.plain-text'],
     mimes: ['text/plain'],
-    defaultFilename: '未命名.txt',
+    defaultFilename: $r('app.string.file_untitled_txt'),
     starter: '',
     outline: false,
     inserts: [],
-    openFilter: '文本|.txt',
-    saveChoice: '文本|.txt'
+    pickerLabel: $r('app.string.format_plain_picker'),
+    openSuffix: '.txt',
+    saveSuffix: '.txt'
   }),
   defineFormat({
     id: 'svg',
-    sheetTitle: 'SVG 图形',
+    sheetTitle: $r('app.string.format_svg_sheet'),
     extensions: ['.svg'],
     utds: ['general.svg-image'],
     mimes: ['image/svg+xml'],
-    defaultFilename: '未命名.svg',
+    defaultFilename: $r('app.string.file_untitled_svg'),
     starter: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 160">\n' +
       '  <circle cx="160" cy="80" r="52" fill="#628ac7"/>\n</svg>',
     outline: false,
     inserts: [],
-    openFilter: 'SVG|.svg',
-    saveChoice: 'SVG|.svg'
+    pickerLabel: $r('app.string.format_svg_picker'),
+    openSuffix: '.svg',
+    saveSuffix: '.svg'
   }),
   defineFormat({
     id: 'tex-math',
-    sheetTitle: 'LaTeX 文稿',
+    sheetTitle: $r('app.string.format_latex_sheet'),
     extensions: ['.tex'],
     utds: ['org.tug.tex', 'general.tex'],
     mimes: ['application/x-tex', 'text/x-tex'],
-    defaultFilename: '未命名.tex',
+    defaultFilename: $r('app.string.file_untitled_tex'),
     starter: '\\frac{a}{b} + \\sqrt{x^2 + y^2}',
     outline: true,
     inserts: LATEX_INSERTS,
-    openFilter: 'LaTeX|.tex',
-    saveChoice: 'LaTeX|.tex'
+    pickerLabel: $r('app.string.format_latex_picker'),
+    openSuffix: '.tex',
+    saveSuffix: '.tex'
   })
 ];
 
@@ -229,17 +245,29 @@ export class FormatRegistry {
     return null;
   }
 
+  static displayTitle(format: DocumentFormat): string {
+    return AppText.text(format.sheetTitle);
+  }
+
+  static defaultName(format: DocumentFormat): string {
+    return AppText.text(format.defaultFilename);
+  }
+
   static openFilters(): string[] {
     const filters: string[] = [];
-    for (let index = 0; index < FORMATS.length; index++) filters.push(FORMATS[index].openFilter);
+    for (let index = 0; index < FORMATS.length; index++) {
+      const item = FORMATS[index];
+      filters.push(pickerChoice(item.pickerLabel, item.openSuffix));
+    }
     return filters;
   }
 
   static saveChoices(filename: string): string[] {
-    const preferred = FormatRegistry.byFilename(filename).saveChoice;
-    const choices: string[] = [preferred];
+    const preferred = FormatRegistry.byFilename(filename);
+    const choices: string[] = [pickerChoice(preferred.pickerLabel, preferred.saveSuffix)];
     for (let index = 0; index < FORMATS.length; index++) {
-      if (FORMATS[index].saveChoice !== preferred) choices.push(FORMATS[index].saveChoice);
+      const item = FORMATS[index];
+      if (item.id !== preferred.id) choices.push(pickerChoice(item.pickerLabel, item.saveSuffix));
     }
     return choices;
   }

@@ -1,6 +1,6 @@
 import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
 import {
-  ColorMetrics, ComponentContent, mediaquery, SegmentButtonV2Items, TabSegmentButtonV2
+  ColorMetrics, ComponentContent, LengthMetrics, mediaquery, SegmentButtonV2Items, TabSegmentButtonV2
 } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import {
@@ -22,6 +22,8 @@ import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenu
 import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
+import { AppText } from '../i18n/AppText';
+import { applyAppLanguage, isRightToLeftLanguage, normalizeAppLanguage, publishAppLanguage } from '../i18n/AppLanguage';
 
 /**
  * 首页外壳：导航栈、主题、设置与关于，以及新建/打开/恢复的编排。
@@ -35,6 +37,7 @@ struct Index {
   @State private recents: RecentDocument[] = [];
   @State private sortOrder: string = 'modified';
   @State private theme: string = 'system';
+  @State private language: string = 'default';
   @State private version: string = '';
   @State private wide: boolean = false;
   @State private navigationMode: NavigationMode = NavigationMode.Stack;
@@ -43,8 +46,11 @@ struct Index {
   /** 首页分段按钮：0 是全部，1 是收藏。 */
   @State private librarySegment: number = 0;
   private readonly librarySegmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
-    { text: '全部' }, { text: '收藏' }
+    { text: $r('app.string.home_all') },
+    { text: $r('app.string.home_favorites') }
   ]);
+  /** 用户改过语言后，启动时尚未返回的读取不能把选择盖回去。 */
+  private languageEpoch: number = 0;
   private readonly librarySegmentMaterial = segmentButtonMaterial();
   /** 每开一篇加一，文稿页据此重新载入会话。 */
   @State private revision: number = 0;
@@ -74,13 +80,15 @@ struct Index {
     menuBridge.setSortOrder = (order: string): void => {
       this.afterMenu(() => {
         this.sortOrder = order;
-        if (this.context) void LocalState.writeSort(this.context, order).catch(() => this.toast('排序方式保存失败'));
+        if (this.context) void LocalState.writeSort(this.context, order).catch(() => this.toast($r('app.string.sort_save_failed')));
       });
     };
     // 文稿页的标题栏菜单由这里打开：锚点 id 是全局的，菜单关闭也由这里统一收。
     menuBridge.openDocumentMenu = (): void => this.openDocumentMenu();
     menuBridge.dismiss = (next: () => void): void => this.afterMenu(next);
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    if (this.context) this.language = LocalState.readLanguageSync(this.context);
+    publishAppLanguage(this.language);
     this.bindWideBreakpoint();
     void this.initialize();
   }
@@ -118,8 +126,14 @@ struct Index {
       this.sortOrder = await LocalState.readSort(this.context);
       void this.refreshRecentTimes(this.recents);
       this.changeTheme(await LocalState.readTheme(this.context), false);
+      const languageEpoch = this.languageEpoch;
+      const storedLanguage = await LocalState.readLanguage(this.context);
+      if (!this.disposed && languageEpoch === this.languageEpoch) {
+        this.language = storedLanguage;
+        publishAppLanguage(storedLanguage);
+      }
     } catch {
-      this.toast('读取设置失败，已使用系统默认值');
+      this.toast($r('app.string.settings_read_failed'));
     }
     // 先开始恢复草稿，再接入外部打开。绑定若立刻交出暂存请求，也会排到恢复之后。
     this.openQueue = this.resumeDraft();
@@ -136,7 +150,7 @@ struct Index {
         try {
           await this.openAfterReady(request);
         } catch (error) {
-          if (!this.disposed) this.toast('处理外部打开请求失败：' + String(error));
+          if (!this.disposed) this.toast(AppText.format($r('app.string.external_open_failed'), String(error)));
         } finally {
           this.externalWaiting--;
         }
@@ -154,7 +168,7 @@ struct Index {
       const visible = await documentBridge.whenVisible();
       if (this.disposed) return;
       if (!visible) {
-        this.toast('文稿页面未能显示，请重试打开文件');
+        this.toast($r('app.string.document_not_visible'));
         return;
       }
       const accepted = await documentBridge.saveBeforeLeaving();
@@ -184,10 +198,10 @@ struct Index {
     try {
       await DocumentService.restore(draft);
       this.presentOpened();
-      if (this.externalWaiting === 0) this.toast('已恢复上次未保存的编辑');
+      if (this.externalWaiting === 0) this.toast($r('app.string.draft_restored'));
     } catch {
       if (this.context) LocalState.clearDraft(this.context);
-      this.toast('上次的编辑无法恢复，已丢弃');
+      this.toast($r('app.string.draft_discarded'));
     }
   }
 
@@ -203,8 +217,37 @@ struct Index {
     });
   }
 
-  private toast(message: string): void {
+  private toast(message: string | Resource): void {
     this.getUIContext().getPromptAction().showToast({ message });
+  }
+
+  private changeLanguage(choice: string): void {
+    const next = normalizeAppLanguage(choice);
+    if (next === this.language) return;
+    const previous = this.language;
+    this.languageEpoch++;
+    if (this.context) {
+      try {
+        // 先落盘。系统若因语言变化重建页面，新页面会读到这次的选择，而不是上一种语言。
+        LocalState.writeLanguageSync(this.context, next);
+      } catch {
+        this.toast($r('app.string.language_save_failed'));
+        return;
+      }
+    }
+    try {
+      applyAppLanguage(next);
+    } catch {
+      if (this.context) {
+        try {
+          LocalState.writeLanguageSync(this.context, previous);
+        } catch { /* 回滚失败时保留页面上原来的选择。 */ }
+      }
+      this.toast($r('app.string.language_save_failed'));
+      return;
+    }
+    publishAppLanguage(next);
+    this.language = next;
   }
 
   private changeTheme(choice: string, persist: boolean = true): void {
@@ -215,12 +258,12 @@ struct Index {
       if (choice === 'dark') mode = ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
       this.context.getApplicationContext().setColorMode(mode);
       if (persist) {
-        void LocalState.writeTheme(this.context, choice).catch(() => this.toast('主题设置未能保存'));
+        void LocalState.writeTheme(this.context, choice).catch(() => this.toast($r('app.string.theme_save_failed')));
       }
     }
   }
 
-  private menuIcon(label: string, symbol: Resource, id: string,
+  private menuIcon(label: ResourceStr, symbol: Resource, id: string,
     action: () => void): HdsNavigationMenuItemOptions {
     // 只配必要的字段；isEnabled 默认 true、type 默认 IconStyleMode.NORMAL，不再重复写。
     // componentId 是 openMenu 的锚点 id（见《不依赖UI组件的全局菜单》），必须保留。
@@ -263,7 +306,12 @@ struct Index {
       Blank().width(40)
     }
     .width('100%')
-    .padding({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
+    // 镜像语言的左右间距用 start/end，RTL 时自动对调。
+    // https://developer.huawei.com/consumer/cn/doc/harmonyos-faqs/faqs-arkui-314
+    .padding({
+      start: LengthMetrics.resource($r('sys.float.margin_left')),
+      end: LengthMetrics.resource($r('sys.float.margin_right'))
+    })
     .hitTestBehavior(HitTestMode.Transparent)
   }
 
@@ -275,7 +323,7 @@ struct Index {
     };
     content.menu = {
       value: [
-        this.menuIcon('更多', $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
+        this.menuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
           (): void => this.openHomeMenu())
       ]
     };
@@ -321,11 +369,12 @@ struct Index {
    */
   private openSetting(section: string): void {
     if (section === 'project-license' && this.projectLicenseText.length === 0) {
-      this.projectLicenseText = this.readRawLicense('licenses/LICENSE', '未能读取本项目许可证。');
+      this.projectLicenseText = this.readRawLicense('licenses/LICENSE',
+        AppText.text($r('app.string.license_project_failed')));
     }
     if (section === 'licenses' && this.legalText.length === 0) {
       this.legalText = this.readRawLicense('licenses/THIRD_PARTY_NOTICES.txt',
-        '未能读取第三方许可证，请确保已运行 renderer 的构建命令。');
+        AppText.text($r('app.string.license_third_failed')));
     }
     this.routes.pushPathByName(section, '');
   }
@@ -337,7 +386,7 @@ struct Index {
       action: 'ohos.want.action.viewData',
       entities: ['entity.system.browsable'],
       uri: 'https://github.com/Consciencieux/MarkNote'
-    }).catch(() => this.toast('无法打开项目主页'));
+    }).catch(() => this.toast($r('app.string.project_open_failed')));
   }
 
   /** 华为《拉起邮件类应用（mailto方式）》：由邮件应用处理发送。 */
@@ -346,7 +395,7 @@ struct Index {
     this.context.startAbility({
       action: 'ohos.want.action.sendToData',
       uri: 'mailto:zhouyi1227@outlook.com?subject=MarkNote%20Feedback'
-    }).catch(() => this.toast('无法打开邮件应用，请发送至 zhouyi1227@outlook.com'));
+    }).catch(() => this.toast($r('app.string.mail_open_failed')));
   }
 
   private readRawLicense(path: string, failure: string): string {
@@ -414,7 +463,7 @@ struct Index {
       await DocumentService.openUri(uri, '', true, false);
       this.presentOpened();
     } catch (error) {
-      this.toast('打开失败：' + String(error));
+      this.toast(AppText.format($r('app.string.open_failed'), String(error)));
     }
   }
 
@@ -430,17 +479,17 @@ struct Index {
       // 华为《固定样式弹出框》：需要用户决定后续操作时使用警告弹窗。
       const fromFavorites = this.librarySegment === 1 && item.favorite === true;
       this.getUIContext().showAlertDialog({
-        title: '无法打开文稿',
-        message: fromFavorites ? '是否取消收藏？文件不会被删除。' :
-          '是否从最近文稿中移除此记录？移除记录不会删除文件。',
+        title: AppText.text($r('app.string.open_failed_title')),
+        message: fromFavorites ? AppText.text($r('app.string.open_failed_unfavorite')) :
+          AppText.text($r('app.string.open_failed_remove')),
         buttons: [
           {
-            value: '保留',
+            value: AppText.text($r('app.string.dialog_keep')),
             primary: true,
             action: (): void => {}
           },
           {
-            value: '移除',
+            value: AppText.text($r('app.string.dialog_remove')),
             action: (): void => {
               if (fromFavorites) this.toggleFavorite(item.uri, item.name);
               else void this.forgetRecent(item.uri);
@@ -459,7 +508,7 @@ struct Index {
       if (!this.documentOpen) this.routes.clear();
       this.presentOpened();
     } catch (error) {
-      this.toast('打开失败：' + String(error));
+      this.toast(AppText.format($r('app.string.open_failed'), String(error)));
     }
   }
 
@@ -477,7 +526,7 @@ struct Index {
       await this.recentTask;
     } catch {
       this.recentTask = Promise.resolve();
-      this.toast('最近文稿列表未能更新');
+      this.toast($r('app.string.recent_update_failed'));
     }
   }
 
@@ -488,7 +537,7 @@ struct Index {
       const modifiedAt = await DocumentFiles.recentModifiedAt(uri);
       this.recents = await LocalState.addRecent(context, uri, name, modifiedAt, opened, this.recents);
     }).catch((): void => {
-      this.toast('最近文稿列表未能更新');
+      this.toast($r('app.string.recent_update_failed'));
     });
   }
 
@@ -502,7 +551,7 @@ struct Index {
       if (!retained && (!this.documentOpen || DocumentService.current().info.uri !== uri)) {
         await DocumentFiles.release(uri);
       }
-    }).catch((): void => this.toast('收藏状态保存失败'));
+    }).catch((): void => this.toast($r('app.string.favorite_save_failed')));
   }
 
   private async refreshRecentTimes(items: RecentDocument[]): Promise<void> {
@@ -534,7 +583,6 @@ struct Index {
   @Builder
   private LibraryPage() {
     HomeView({
-      title: this.librarySegment === 1 ? '收藏' : '全部',
       favoritesOnly: this.librarySegment === 1,
       recents: sortRecentDocuments(this.recents.filter((item: RecentDocument): boolean =>
         this.librarySegment === 1 ? item.favorite === true : item.recent !== false), this.sortOrder) as RecentDocument[],
@@ -548,11 +596,11 @@ struct Index {
           return;
         }
         this.getUIContext().showAlertDialog({
-          title: '移除记录',
-          message: '从最近文稿中移除“' + item.name + '”？文件不会被删除。',
+          title: AppText.text($r('app.string.home_remove_record')),
+          message: AppText.format($r('app.string.remove_recent_message'), item.name),
           buttons: [
-            { value: '取消', action: (): void => {} },
-            { value: '移除', action: (): void => { void this.forgetRecent(item.uri); } }
+            { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
+            { value: AppText.text($r('app.string.dialog_remove')), action: (): void => { void this.forgetRecent(item.uri); } }
           ]
         });
       }
@@ -613,9 +661,20 @@ struct Index {
         onOpenProject: (): void => this.openProjectHome(),
         onFeedback: (): void => this.openFeedback(),
         onBack: (): void => { this.routes.pop(); },
-        onChooseTheme: (choice: string): void => this.changeTheme(choice)
+        onChooseTheme: (choice: string): void => this.changeTheme(choice),
+        onChooseLanguage: (choice: string): void => this.changeLanguage(choice)
       })
     }
+  }
+
+  /**
+   * 《如何实现镜像语言功能》：跟随系统时用 Direction.Auto，方向由系统语言决定。
+   * 指定阿拉伯语或维吾尔语时改为从右向左，指定其他语言时改为从左向右。
+   * https://developer.huawei.com/consumer/cn/doc/harmonyos-faqs/faqs-arkui-556
+   */
+  private pageDirection(): Direction {
+    if (this.language === 'default') return Direction.Auto;
+    return isRightToLeftLanguage(this.language) ? Direction.Rtl : Direction.Ltr;
   }
 
   build() {
@@ -646,6 +705,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .direction(this.pageDirection())
     // 页面底色只在这里给一次，整页（含标题栏所在区域）都是同一个系统底色。
     .backgroundColor($r('sys.color.ohos_id_color_background'))
   }

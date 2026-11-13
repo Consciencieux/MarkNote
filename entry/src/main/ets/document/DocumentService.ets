@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { copyInfo, DocumentInfo, Heading, RecoveryData, documentOutline } from '../model/Document';
 import { DocumentFiles, FileContents } from '../storage/DocumentFiles';
 import { DocumentFormat, FormatRegistry } from './FormatRegistry';
+import { AppText } from '../i18n/AppText';
 
 /** The one open document. DocumentView mirrors these fields into ArkUI state. */
 export class DocumentSession {
@@ -58,7 +59,7 @@ export class DocumentService {
   static startNew(id: string): void {
     const format = FormatRegistry.byId(id);
     const info = new DocumentInfo();
-    info.name = format.defaultFilename;
+    info.name = FormatRegistry.defaultName(format);
     info.formatId = format.id;
     const session = new DocumentSession();
     session.info = info;
@@ -75,12 +76,12 @@ export class DocumentService {
   static async openUri(uri: string, declaredType: string, writeRequested: boolean,
     strictType: boolean): Promise<void> {
     const hinted = FormatRegistry.resolve(fileNameFromUri(uri), declaredType, !strictType);
-    if (hinted === null) throw new Error('这个文件不是 Marknote 支持的文稿格式');
+    if (hinted === null) throw new Error(AppText.text($r('app.string.unsupported_format')));
     const access = await DocumentFiles.prepare(uri, writeRequested);
     const loaded = DocumentFiles.read(uri);
-    if (loaded.info.name.length === 0) loaded.info.name = hinted.defaultFilename;
+    if (loaded.info.name.length === 0) loaded.info.name = FormatRegistry.defaultName(hinted);
     const resolved = FormatRegistry.resolve(loaded.info.name, declaredType, !strictType);
-    if (resolved === null) throw new Error('这个文件不是 Marknote 支持的文稿格式');
+    if (resolved === null) throw new Error(AppText.text($r('app.string.unsupported_format')));
     loaded.info.formatId = resolved.id;
     loaded.info.writable = access.writable;
     loaded.info.persistent = access.persistent;
@@ -147,7 +148,7 @@ export class DocumentService {
       saveAs = true;
     }
     const access = await DocumentFiles.prepare(uri, true);
-    if (!access.writable) throw new Error('没有获得写入权限，请改用“另存为”');
+    if (!access.writable) throw new Error(AppText.text($r('app.string.no_write_permission')));
     const target = copyInfo(previous);
     target.uri = uri;
     target.writable = true;
@@ -174,9 +175,9 @@ export class DocumentService {
     session.editing = true;
     result.saved = true;
     result.stillDirty = session.source !== snapshot;
-    if (result.stillDirty) result.message = '已保存操作开始时的版本，仍有未保存修改';
-    else if (readOnly) result.message = '当前文件只读，已另存为';
-    else result.message = '已保存';
+    if (result.stillDirty) result.message = AppText.text($r('app.string.saved_dirty'));
+    else if (readOnly) result.message = AppText.text($r('app.string.saved_readonly'));
+    else result.message = AppText.text($r('app.string.saved'));
     return result;
   }
 }
