@@ -1,6 +1,7 @@
 import { LengthMetrics } from '@kit.ArkUI';
 import { Heading } from '../model/Document';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
+import { listTitle, outlineChildTitle } from './TextRoles';
 
 /** Flat row model used by the documented ArkUI List-based tree pattern. */
 class OutlineRow {
@@ -62,6 +63,13 @@ export struct DocumentOutlineView {
     this.collapsedOutline = collapsed;
   }
 
+  private outlineText(depth: number): AttributeModifier<TextAttribute> {
+    if (depth === 0) {
+      return listTitle;
+    }
+    return outlineChildTitle;
+  }
+
   @Builder
   private OutlineRowContent(row: OutlineRow) {
     Row() {
@@ -87,11 +95,9 @@ export struct DocumentOutlineView {
       .accessibilityRole(AccessibilityRoleType.BUTTON)
       .accessibilityText(row.expanded ? $r('app.string.outline_collapse') : $r('app.string.outline_expand'))
       .onClick(() => this.toggleOutline(row))
-      // Reuse the system subtitle resources used by the app's settings rows.
+      // 一级和子级都是标题文字，分别使用列表标题和副标题小号样式。
       Text(row.heading.text)
-        .fontSize(row.depth === 0 ? $r('sys.float.Subtitle_M') : $r('sys.float.Subtitle_S'))
-        .fontWeight(row.depth === 0 ? FontWeight.Medium : FontWeight.Regular)
-        .fontColor($r('sys.color.font_primary'))
+        .attributeModifier(this.outlineText(row.depth))
         .layoutWeight(1)
         .constraintSize({ minHeight: 40 })
         .onClick(() => this.onSelect(row.heading))

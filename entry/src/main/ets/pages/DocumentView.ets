@@ -21,6 +21,7 @@ import { documentBridge } from './DocumentBridge';
 import { AppText } from '../i18n/AppText';
 import { scrollingTitleBar } from './HdsMaterialStyles';
 import { searchFieldMaterial } from './ImmersiveMaterials';
+import { bodyInput, toolbarIcon } from './TextRoles';
 import { LocalState } from '../storage/LocalState';
 import { DocumentFiles } from '../storage/DocumentFiles';
 
@@ -779,8 +780,7 @@ export struct DocumentView {
                   this.uiFormat($r('app.string.match_total'), String(this.matchCount)))
               Button() {
                 SymbolGlyph($r('sys.symbol.chevron_up'))
-                  .fontColor([$r('sys.color.icon_primary')])
-                  .fontSize(24)
+                  .attributeModifier(toolbarIcon)
               }
               .buttonStyle(ButtonStyleMode.TEXTUAL)
               .width(40)
@@ -790,8 +790,7 @@ export struct DocumentView {
               .onClick(() => this.findNext(false))
               Button() {
                 SymbolGlyph($r('sys.symbol.chevron_down'))
-                  .fontColor([$r('sys.color.icon_primary')])
-                  .fontSize(24)
+                  .attributeModifier(toolbarIcon)
               }
               .buttonStyle(ButtonStyleMode.TEXTUAL)
               .width(40)
@@ -811,8 +810,7 @@ export struct DocumentView {
         .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
         Button() {
           SymbolGlyph($r('sys.symbol.xmark'))
-            .fontColor([$r('sys.color.icon_primary')])
-            .fontSize(24)
+            .attributeModifier(toolbarIcon)
         }
         .buttonStyle(ButtonStyleMode.TEXTUAL)
         // 华为通用应用 UX 体验标准：交互热区不得小于 40vp × 40vp。
@@ -874,6 +872,7 @@ export struct DocumentView {
           // so the editor surface remains the same page background instead of a separate card.
           .backgroundColor(Color.Transparent)
           .borderRadius($r('sys.float.corner_radius_none'))
+          .attributeModifier(bodyInput)
           // 切回编辑页签时 Tabs 会把焦点还给上次编辑的 TextArea，光标停在原处并直接拉起键盘，
           // 手感被打断。enableKeyboardOnFocus(false) 让点击以外的获焦不弹键盘，只有点击文字才弹。
           // 这是官方「管理软键盘」和 faqs-arkui-932 推荐的写法。
