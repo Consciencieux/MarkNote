@@ -2,6 +2,7 @@ import { LengthMetrics } from '@kit.ArkUI';
 import { PageScrollPolicy } from './PageScrollPolicy';
 import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { LANGUAGE_VALUES, THEME_VALUES, languageLabel, themeLabel } from './SettingsView';
+import { bodyText, sectionTitle } from './TextRoles';
 
 /**
  * 单选行不用 @Builder 传递 selected。官方规定两个及以上参数的 @Builder 不会随状态刷新。
@@ -67,23 +68,18 @@ export struct SettingsDetail {
     .onClick(action)
   }
 
-  /**
-   * 长正文不适合设置行的列表项结构，交给 ArkUI Text 默认排版。
-   */
+  /** 长正文不放进设置行。字号和颜色走共用的正文样式。 */
   @Builder
   private Paragraph(body: string | Resource, copyable: boolean = false) {
     Text(body)
-      .textAlign(TextAlign.Start)
+      .attributeModifier(bodyText)
       .copyOption(copyable ? CopyOptions.LocalDevice : CopyOptions.None)
   }
 
   @Builder
   private HelpSection(title: Resource, body: Resource) {
     Text(title)
-      .fontSize($r('sys.float.Subtitle_M'))
-      .fontWeight(FontWeight.Medium)
-      .fontColor($r('sys.color.font_primary'))
-      .margin({ top: $r('sys.float.padding_level8'), bottom: $r('sys.float.padding_level4') })
+      .attributeModifier(sectionTitle)
     this.Paragraph(body)
   }
 

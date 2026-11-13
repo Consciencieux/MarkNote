@@ -1,5 +1,6 @@
 import { LengthMetrics } from '@kit.ArkUI';
 import { isRightToLeftLanguage } from '../i18n/AppLanguage';
+import { listTitle, settingsValue } from './TextRoles';
 
 /**
  * 设置列表共用行。文字、图标和单选标记使用华为组件体验示例中的系统资源：
@@ -40,18 +41,13 @@ export struct SettingsListRow {
   build() {
     Row() {
       Text(this.title)
-        .fontSize($r('sys.float.Subtitle_M'))
-        .fontColor($r('sys.color.font_primary'))
-        .fontWeight(FontWeight.Medium)
+        .attributeModifier(listTitle)
         .layoutWeight(1)
-        .textAlign(TextAlign.Start)
         .direction(this.labelDirection())
 
       if (this.showsValue()) {
         Text(this.value)
-          .fontSize($r('sys.float.Subtitle_S'))
-          .fontColor($r('sys.color.font_secondary'))
-          .textAlign(TextAlign.Start)
+          .attributeModifier(settingsValue)
           .direction(this.labelDirection())
           .margin({ end: LengthMetrics.vp(this.showArrow ? 8 : 0) })
       }
