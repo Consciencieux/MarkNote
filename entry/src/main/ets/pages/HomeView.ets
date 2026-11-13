@@ -3,6 +3,7 @@ import { ComposeListItem, IconType, LengthMetrics, SymbolGlyphModifier } from '@
 import { RecentDocument } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
 import { menuMaterialOptions } from './MenuMaterialOptions';
+import { pageTitle } from './TextRoles';
 
 /**
  * 首页文稿列表。新建、打开和最近文稿的动作都交回页面，这里只负责展示和发起。
@@ -84,8 +85,7 @@ export struct HomeView {
     List({ scroller: this.scroller, spaceWidth: $r('sys.float.padding_level6') }) {
       ListItem() {
         Text(this.favoritesOnly ? $r('app.string.home_favorites') : $r('app.string.home_all'))
-          .fontSize(26)
-          .fontWeight(FontWeight.Bold)
+          .attributeModifier(pageTitle)
       }
 
       ListItem() {
