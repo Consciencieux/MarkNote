@@ -69,6 +69,19 @@ test('requires a verified attribution notice for CC BY', t => {
   assert.match(missing.stderr, /attribution/i);
 });
 
+test('writes LF notices when an upstream grant uses CRLF or trailing spaces', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.renderer, 'node_modules/example/license'), 'Permission\r\nto copy\r\n> \r\n');
+  writeFileSync(join(f.renderer, 'node_modules/example/NOTICE'), 'Keep\r\nthis\r\n');
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr);
+  const output = readFileSync(join(f.root, 'entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt'), 'utf8');
+  assert.equal(output.includes('\r'), false);
+  assert.equal(/[ \t]$/m.test(output), false);
+  assert.match(output, /Permission\nto copy\n>\n/);
+  assert.match(output, /Keep\nthis\n/);
+});
+
 test('requires a reviewed declaration when package.json omits its license', t => {
   const missing = run(fixture(t, { omitLicense: true, shipLicense: true, version: '2.0.0' }));
   assert.notEqual(missing.status, 0);

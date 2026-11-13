@@ -17,6 +17,11 @@ const fallbacks = JSON.parse(readFileSync(join(fallbackRoot, 'manifest.json'), '
 // is emitted below with the other production notices.
 const accepted = /^(?:MIT|ISC|BSD-2-Clause|BSD-3-Clause|Apache-2\.0|0BSD|Unlicense|CC0-1\.0|CC-BY-3\.0|Python-2\.0|PSF-2\.0)$/;
 
+// Hash checks use the original bytes. The shipped notice is LF and has no trailing
+// spaces, so git diff --check does not flag CRLF or the "> " lines in upstream grants.
+function shippedText(text) {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[ \t]+$/gm, '');
+}
 function locate(from, name) {
   let at = from;
   for (;;) {
@@ -38,7 +43,7 @@ function licenseFile(dir, pkg, expression, reviewed) {
     if (reviewed && createHash('sha256').update(bytes).digest('hex') !== reviewed.sha256) {
       throw new Error(`Upstream license hash mismatch: ${pkg.name}@${pkg.version}`);
     }
-    return bytes.toString('utf8');
+    return shippedText(bytes.toString('utf8'));
   }
   const entry = fallbacks.find(p => p.name === pkg.name && p.version === pkg.version && p.license === expression);
   if (!entry || !/^[A-Za-z0-9_.-]+$/.test(entry.file)) throw new Error(`Missing license text: ${pkg.name}@${pkg.version}`);
@@ -46,7 +51,7 @@ function licenseFile(dir, pkg, expression, reviewed) {
   if (createHash('sha256').update(bytes).digest('hex') !== entry.sha256) {
     throw new Error(`Upstream license hash mismatch: ${pkg.name}@${pkg.version}`);
   }
-  return bytes.toString('utf8');
+  return shippedText(bytes.toString('utf8'));
 }
 function visit(from, name) {
   const dir = locate(from, name);
@@ -66,7 +71,7 @@ function visit(from, name) {
   const text = licenseFile(dir, pkg, expression, reviewed);
   if (!text.trim()) throw new Error(`Empty license: ${pkg.name}`);
   const noticeName = readdirSync(dir).find(f => /^notice(?:\.txt|\.md)?$/i.test(f));
-  let notice = noticeName ? readFileSync(join(dir, noticeName), 'utf8') : '';
+  let notice = noticeName ? shippedText(readFileSync(join(dir, noticeName), 'utf8')) : '';
   const fallback = fallbacks.find(p => p.name === pkg.name && p.version === pkg.version && p.license === expression);
   if (fallback?.noticeFile) {
     if (!/^[A-Za-z0-9_.-]+$/.test(fallback.noticeFile)) throw new Error(`Invalid notice path: ${pkg.name}`);
@@ -74,7 +79,7 @@ function visit(from, name) {
     if (createHash('sha256').update(bytes).digest('hex') !== fallback.noticeSha256) {
       throw new Error(`Upstream notice hash mismatch: ${pkg.name}@${pkg.version}`);
     }
-    notice += (notice ? '\n\n' : '') + bytes.toString('utf8');
+    notice += (notice ? '\n\n' : '') + shippedText(bytes.toString('utf8'));
   }
   if ((expression === 'CC-BY-3.0' || fallback?.file === 'SPDX-MIT.txt') &&
     (!fallback?.noticeFile || !notice.trim())) {
