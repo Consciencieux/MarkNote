@@ -1,11 +1,13 @@
 import { common } from '@kit.AbilityKit';
-import { copyInfo, DocumentInfo, Heading, RecoveryData, documentOutline } from '../model/Document';
+import { copyInfo, DocumentInfo, DocumentSnapshot, Heading, RecoveryData, documentOutline } from '../model/Document';
 import { DocumentFiles, FileContents } from '../storage/DocumentFiles';
 import { DocumentFormat, FormatRegistry } from './FormatRegistry';
 import { AppText } from '../i18n/AppText';
 
 /** The one open document. DocumentView mirrors these fields into ArkUI state. */
 export class DocumentSession {
+  sessionId: string = '';
+  revision: number = 0;
   info: DocumentInfo = new DocumentInfo();
   source: string = '';
   savedText: string = '';
@@ -16,6 +18,16 @@ export class SaveResult {
   saved: boolean = false;
   stillDirty: boolean = false;
   message: string = '';
+  sessionId: string = '';
+  writtenRevision: number = 0;
+}
+
+let sessionSerial: number = 0;
+
+function assignSession(session: DocumentSession): void {
+  sessionSerial++;
+  session.sessionId = `${Date.now().toString(16)}-${sessionSerial}`;
+  session.revision = 1;
 }
 
 function fileNameFromUri(uri: string): string {
@@ -48,8 +60,23 @@ export class DocumentService {
     return documentOutline(source);
   }
 
+  static snapshot(): DocumentSnapshot {
+    const session = DocumentService.session;
+    const copy = new DocumentSnapshot();
+    copy.sessionId = session.sessionId;
+    copy.revision = session.revision;
+    copy.editing = session.editing;
+    copy.source = session.source;
+    copy.savedText = session.savedText;
+    copy.info = copyInfo(session.info);
+    return copy;
+  }
+
   static edit(text: string): void {
-    DocumentService.session.source = text;
+    const session = DocumentService.session;
+    if (session.source === text) return;
+    session.source = text;
+    session.revision++;
   }
 
   static close(): void {
@@ -66,6 +93,7 @@ export class DocumentService {
     session.source = format.starter;
     session.savedText = '';
     session.editing = true;
+    assignSession(session);
     DocumentService.session = session;
   }
 
@@ -94,6 +122,7 @@ export class DocumentService {
     session.source = opened.text;
     session.savedText = opened.text;
     session.editing = true;
+    assignSession(session);
     DocumentService.session = session;
   }
 
@@ -130,12 +159,15 @@ export class DocumentService {
     session.source = draft.text;
     session.savedText = draft.savedText;
     session.editing = true;
+    assignSession(session);
     DocumentService.session = session;
   }
 
   static async save(context: common.UIAbilityContext, asNewFile: boolean): Promise<SaveResult> {
     const result = new SaveResult();
     const session = DocumentService.session;
+    result.sessionId = session.sessionId;
+    result.writtenRevision = session.revision;
     if (!session.editing) return result;
     const snapshot = session.source;
     const previous = session.info;

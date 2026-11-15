@@ -35,6 +35,16 @@ export function copyInfo(source: DocumentInfo): DocumentInfo {
   return info;
 }
 
+/** 某一时刻的会话副本。草稿和保存结果都从这里取，不从页面上的旧镜像拼。 */
+export class DocumentSnapshot {
+  sessionId: string = '';
+  revision: number = 0;
+  editing: boolean = false;
+  source: string = '';
+  savedText: string = '';
+  info: DocumentInfo = new DocumentInfo();
+}
+
 export class RecentDocument {
   uri: string = '';
   name: string = '';
@@ -50,6 +60,10 @@ export class RecentDocument {
 }
 
 export class RecoveryData {
+  /** 1 表示带会话身份。旧文件没有该字段，读取时补 1，不因此丢弃正文。 */
+  formatVersion: number = 1;
+  sessionId: string = '';
+  revision: number = 0;
   name: string = AppText.text($r('app.string.file_untitled_md'));
   uri: string = '';
   text: string = '';
@@ -62,6 +76,26 @@ export class RecoveryData {
   formatId: string = '';
   writable: boolean = false;
   persistent: boolean = false;
+}
+
+export function recoveryFromSnapshot(snapshot: DocumentSnapshot): RecoveryData {
+  const draft = new RecoveryData();
+  draft.formatVersion = 1;
+  draft.sessionId = snapshot.sessionId;
+  draft.revision = snapshot.revision;
+  draft.name = snapshot.info.name;
+  draft.uri = snapshot.info.uri;
+  draft.text = snapshot.source;
+  draft.savedText = snapshot.savedText;
+  draft.hasBom = snapshot.info.hasBom;
+  draft.newline = snapshot.info.newline;
+  draft.lineEndings = snapshot.info.lineEndings;
+  draft.encoding = snapshot.info.encoding;
+  draft.fingerprint = snapshot.info.fingerprint;
+  draft.formatId = snapshot.info.formatId;
+  draft.writable = snapshot.info.writable;
+  draft.persistent = snapshot.info.persistent;
+  return draft;
 }
 
 export class Heading {

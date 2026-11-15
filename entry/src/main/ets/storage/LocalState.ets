@@ -3,6 +3,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { preferences } from '@kit.ArkData';
 import { RecentDocument, RecoveryData } from '../model/Document';
+import { normalizeDraft } from '../document/DraftLifecycle';
 import { RecentEntry, removeRecentDocument, toggleFavoriteDocument, updateRecentDocument } from '../document/RecentOrder';
 import { AppText } from '../i18n/AppText';
 import { normalizeAppLanguage } from '../i18n/AppLanguage';
@@ -114,9 +115,8 @@ export class LocalState {
   static readDraft(context: common.UIAbilityContext): RecoveryData | null {
     try {
       const text = fileIo.readTextSync(context.filesDir + DRAFT);
-      const parsed = JSON.parse(text) as RecoveryData;
-      if (typeof parsed.text !== 'string' || typeof parsed.savedText !== 'string' ||
-          typeof parsed.name !== 'string' || typeof parsed.uri !== 'string') return null;
+      const parsed = normalizeDraft(JSON.parse(text) as RecoveryData);
+      if (parsed === null) return null;
       if (typeof parsed.encoding !== 'string' || parsed.encoding.length === 0) parsed.encoding = 'utf-8';
       if (typeof parsed.lineEndings !== 'string') parsed.lineEndings = '';
       if (parsed.newline !== '\n' && parsed.newline !== '\r' && parsed.newline !== '\r\n' &&

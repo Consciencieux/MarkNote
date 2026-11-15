@@ -5,8 +5,9 @@ import {
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
   TitleBarContentOptions, HdsNavigationTitleBarOptions, HdsTabs, hdsMaterial
 } from '@kit.UIDesignKit';
-import { DocumentInfo, Heading, RecoveryData } from '../model/Document';
+import { DocumentInfo, Heading, recoveryFromSnapshot } from '../model/Document';
 import { DocumentService } from '../document/DocumentService';
+import { DraftLifecycle, mayClearDraft, mayWriteDraft } from '../document/DraftLifecycle';
 import { DocumentShare } from '../document/DocumentShare';
 import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
@@ -109,7 +110,7 @@ export struct DocumentView {
   private headingJump: number = 0;
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
-  private recoveryTimer: number = -1;
+  private recovery: DraftLifecycle = new DraftLifecycle();
   /**
    * 底部导航避让高度为 0 时，页签栏与 HdsTabs 底边留出一段应用自己的距离。
    * 这段用 sys.float.margin_left，不是华为规定的底边距；有导航避让区时不再加。
@@ -194,6 +195,7 @@ export struct DocumentView {
 
   /** 载入当前会话。首次进入和首页换篇（revision 变）都走这里。 */
   private loadSession(): void {
+    this.recovery.cancel();
     this.headingJump++;
     this.pendingHeadingOffset = -1;
     this.syncFromService();
@@ -210,14 +212,15 @@ export struct DocumentView {
     // 新文档从预览开始，编辑区不应带着上一篇的光标或编辑态。
     this.stopEditing();
     this.searchVisible = false;
-    // 干净文稿会顺手清掉残留草稿；崩溃恢复来的文稿仍是脏的，继续留在磁盘上。
+    // 定时器已在换篇一开始取消。这里只按当前会话决定草稿：干净文稿清掉残留，崩溃恢复来的文稿继续留在磁盘上。
     this.flushRecovery();
   }
 
   aboutToDisappear(): void {
     this.stopNavigationIndicator();
+    this.recovery.cancel();
     this.flushRecovery();
-    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
+    this.recovery.dispose();
     menuBridge.saveAs = (): void => {};
     menuBridge.share = (): void => {};
     menuBridge.toggleFavorite = (): void => {};
@@ -481,6 +484,7 @@ export struct DocumentView {
 
   private syncFromService(): void {
     const session = DocumentService.current();
+    this.recovery.bind(session.sessionId, session.revision);
     this.info = session.info;
     this.title = session.info.name;
     this.formatId = session.info.formatId;
@@ -510,6 +514,7 @@ export struct DocumentView {
       const result = await DocumentService.save(this.context, asNewFile);
       this.syncFromService();
       if (!result.saved) return false;
+      if (!mayClearDraft(result.sessionId, DocumentService.current().sessionId, result.sessionId)) return false;
       this.toast(result.message + (this.info.persistent ? '' : this.uiText($r('app.string.save_not_persistent'))));
       if (!this.isDirty()) this.clearRecovery();
       else this.scheduleRecovery();
@@ -541,40 +546,31 @@ export struct DocumentView {
   }
 
   private clearRecovery(): void {
-    if (this.recoveryTimer >= 0) {
-      clearTimeout(this.recoveryTimer);
-      this.recoveryTimer = -1;
-    }
+    this.recovery.cancel();
     if (this.context) LocalState.clearDraft(this.context);
   }
 
   private scheduleRecovery(): void {
-    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
-    this.recoveryTimer = setTimeout(() => this.flushRecovery(), 450);
+    const session = DocumentService.current();
+    this.recovery.bind(session.sessionId, session.revision);
+    this.recovery.schedule(450, (_sessionId: string, _revision: number): void => this.flushRecovery());
   }
 
   private flushRecovery(): void {
-    this.recoveryTimer = -1;
-    if (!this.context || !DocumentService.current().editing) return;
-    if (!this.isDirty()) {
-      this.clearRecovery();
+    if (!this.context) return;
+    const snapshot = DocumentService.snapshot();
+    if (!snapshot.editing || !this.recovery.accepts(snapshot.sessionId, snapshot.revision)) return;
+    if (snapshot.source === snapshot.savedText) {
+      LocalState.clearDraft(this.context);
       return;
     }
-    const draft = new RecoveryData();
-    draft.name = this.title;
-    draft.uri = this.info.uri;
-    draft.text = this.source;
-    draft.savedText = this.savedText;
-    draft.newline = this.info.newline;
-    draft.lineEndings = this.info.lineEndings;
-    draft.encoding = this.info.encoding;
-    draft.hasBom = this.info.hasBom;
-    draft.fingerprint = this.info.fingerprint;
-    draft.formatId = this.info.formatId;
-    draft.writable = this.info.writable;
-    draft.persistent = this.info.persistent;
+    const existing = LocalState.readDraft(this.context);
+    if (existing !== null && !mayWriteDraft(snapshot.sessionId, snapshot.revision, existing.sessionId,
+      existing.revision)) {
+      return;
+    }
     try {
-      LocalState.writeDraft(this.context, draft);
+      LocalState.writeDraft(this.context, recoveryFromSnapshot(snapshot));
     } catch {
       this.toast($r('app.string.draft_write_failed'));
     }
