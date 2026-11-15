@@ -76,7 +76,7 @@ export function previewError(message: string): string {
 export function imageLabel(alt: string): string {
   const text = previewText();
   const name = alt.length > 0 ? alt : text.imageName;
-  return text.imageSlot.includes('%s') ? text.imageSlot.replace('%s', name) : `${text.imageSlot}${name}`;
+  return text.imageSlot.includes('%s') ? text.imageSlot.replace('%s', () => name) : `${text.imageSlot}${name}`;
 }
 
 /** HTML-escaped form of `imageLabel`. */

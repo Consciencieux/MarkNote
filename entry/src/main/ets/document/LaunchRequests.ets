@@ -16,22 +16,34 @@ function textFromStream(stream: Object): string {
 }
 
 export class LaunchRequests {
-  private static pending: OpenRequest | null = null;
+  private static pending: OpenRequest[] = [];
+  private static delivering: boolean = false;
   private static handler: ((request: OpenRequest) => void) | null = null;
 
   static deliver(want: Want): void {
     const request = LaunchRequests.parse(want);
     if (request === null) return;
-    const handler = LaunchRequests.handler;
-    if (handler) handler(request);
-    else LaunchRequests.pending = request;
+    LaunchRequests.pending.push(request);
+    LaunchRequests.flush();
   }
 
   static bind(handler: (request: OpenRequest) => void): void {
     LaunchRequests.handler = handler;
-    const waiting = LaunchRequests.pending;
-    LaunchRequests.pending = null;
-    if (waiting !== null) handler(waiting);
+    LaunchRequests.flush();
+  }
+
+  /** One FIFO also covers requests delivered reentrantly by a handler. */
+  private static flush(): void {
+    if (LaunchRequests.delivering) return;
+    LaunchRequests.delivering = true;
+    try {
+      while (LaunchRequests.handler !== null && LaunchRequests.pending.length > 0) {
+        const request = LaunchRequests.pending.shift();
+        if (request !== undefined) LaunchRequests.handler(request);
+      }
+    } finally {
+      LaunchRequests.delivering = false;
+    }
   }
 
   static unbind(): void {

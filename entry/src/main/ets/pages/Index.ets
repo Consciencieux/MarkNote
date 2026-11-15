@@ -9,7 +9,7 @@ import {
   HdsNavigationTitleBarOptions, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { RecentDocument } from '../model/Document';
-import { DocumentService } from '../document/DocumentService';
+import { DocumentService, DocumentSession } from '../document/DocumentService';
 import { sortRecentDocuments } from '../document/RecentOrder';
 import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
 import { HomeView } from './HomeView';
@@ -51,6 +51,8 @@ struct Index {
   ]);
   /** 用户改过语言后，启动时尚未返回的读取不能把选择盖回去。 */
   private languageEpoch: number = 0;
+  private themeEpoch: number = 0;
+  private sortEpoch: number = 0;
   private readonly librarySegmentMaterial = segmentButtonMaterial();
   /** 每开一篇加一，文稿页据此重新载入会话。 */
   @State private revision: number = 0;
@@ -63,6 +65,7 @@ struct Index {
   private recentTask: Promise<void> = Promise.resolve();
   /** 草稿恢复先入队，外部打开接在后面，避免两边同时替换会话。 */
   private openQueue: Promise<void> = Promise.resolve();
+  private startupTask: Promise<void> = Promise.resolve();
   private externalWaiting: number = 0;
   private disposed: boolean = false;
 
@@ -79,6 +82,7 @@ struct Index {
     };
     menuBridge.setSortOrder = (order: string): void => {
       this.afterMenu(() => {
+        this.sortEpoch++;
         this.sortOrder = order;
         if (this.context) void LocalState.writeSort(this.context, order).catch(() => this.toast($r('app.string.sort_save_failed')));
       });
@@ -90,13 +94,14 @@ struct Index {
     if (this.context) this.language = LocalState.readLanguageSync(this.context);
     publishAppLanguage(this.language);
     this.bindWideBreakpoint();
-    void this.initialize();
+    this.startupTask = this.initialize();
   }
 
   aboutToDisappear(): void {
     this.disposed = true;
     LaunchRequests.unbind();
     documentBridge.cancelWait();
+    this.releaseMenus();
     if (this.wideQuery !== null) {
       this.wideQuery.off('change');
       this.wideQuery = null;
@@ -121,11 +126,15 @@ struct Index {
   private async initialize(): Promise<void> {
     if (!this.context) return;
     this.readVersion();
+    const sortEpoch = this.sortEpoch;
+    const themeEpoch = this.themeEpoch;
     try {
       this.recents = await LocalState.readRecent(this.context);
-      this.sortOrder = await LocalState.readSort(this.context);
+      const storedSort = await LocalState.readSort(this.context);
+      if (!this.disposed && sortEpoch === this.sortEpoch) this.sortOrder = storedSort;
       void this.refreshRecentTimes(this.recents);
-      this.changeTheme(await LocalState.readTheme(this.context), false);
+      const storedTheme = await LocalState.readTheme(this.context);
+      if (!this.disposed && themeEpoch === this.themeEpoch) this.changeTheme(storedTheme, false);
       const languageEpoch = this.languageEpoch;
       const storedLanguage = await LocalState.readLanguage(this.context);
       if (!this.disposed && languageEpoch === this.languageEpoch) {
@@ -135,6 +144,7 @@ struct Index {
     } catch {
       this.toast($r('app.string.settings_read_failed'));
     }
+    if (this.disposed) return;
     // 先开始恢复草稿，再接入外部打开。绑定若立刻交出暂存请求，也会排到恢复之后。
     this.openQueue = this.resumeDraft();
     LaunchRequests.bind((request: OpenRequest): void => this.enqueueExternal(request));
@@ -196,12 +206,12 @@ struct Index {
     const draft = LocalState.readDraft(this.context);
     if (draft === null) return;
     try {
-      await DocumentService.restore(draft);
+      if (!await DocumentService.restore(draft, (): boolean => !this.disposed) || this.disposed) return;
       this.presentOpened();
       if (this.externalWaiting === 0) this.toast($r('app.string.draft_restored'));
-    } catch {
-      if (this.context) LocalState.clearDraft(this.context);
-      this.toast($r('app.string.draft_discarded'));
+    } catch (error) {
+      // A failure to restore is not consent to destroy the only recovery copy.
+      this.toast(AppText.format($r('app.string.open_failed'), String(error)));
     }
   }
 
@@ -251,6 +261,7 @@ struct Index {
   }
 
   private changeTheme(choice: string, persist: boolean = true): void {
+    if (persist) this.themeEpoch++;
     this.theme = choice;
     if (this.context) {
       let mode = ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
@@ -331,21 +342,49 @@ struct Index {
   }
 
   private openHomeMenu(): void {
+    if (this.disposed || this.homeMenu !== null) return;
     const uiContext = this.getUIContext();
     menuBridge.sortOrder = this.sortOrder;
-    this.homeMenu = new ComponentContent<Object>(uiContext, wrapBuilder(HomeMenuContent));
-    uiContext.getPromptAction().openMenu(this.homeMenu, { id: 'marknote-home-more' }, menuMaterialOptions()).catch(() => {
-      // The menu stays closed when its anchor is not on screen.
-    });
+    const content = new ComponentContent<Object>(uiContext, wrapBuilder(HomeMenuContent));
+    this.homeMenu = content;
+    const options = menuMaterialOptions();
+    options.onDidDisappear = (): void => this.disposeMenu(content, true);
+    uiContext.getPromptAction().openMenu(content, { id: 'marknote-home-more' }, options)
+      .catch((): void => this.disposeMenu(content, true));
   }
 
   private openDocumentMenu(): void {
+    if (this.disposed || this.documentMenu !== null) return;
     const uiContext = this.getUIContext();
     menuBridge.showCloseDocument = this.navigationMode === NavigationMode.Split || this.documentExpanded;
-    this.documentMenu = new ComponentContent<Object>(uiContext, wrapBuilder(DocumentMenuContent));
-    uiContext.getPromptAction().openMenu(this.documentMenu, { id: 'marknote-doc-more' }, menuMaterialOptions()).catch(() => {
-      // The menu stays closed when its anchor is not on screen.
-    });
+    const content = new ComponentContent<Object>(uiContext, wrapBuilder(DocumentMenuContent));
+    this.documentMenu = content;
+    const options = menuMaterialOptions();
+    options.onDidDisappear = (): void => this.disposeMenu(content, false);
+    uiContext.getPromptAction().openMenu(content, { id: 'marknote-doc-more' }, options)
+      .catch((): void => this.disposeMenu(content, false));
+  }
+
+  private disposeMenu(content: ComponentContent<Object>, home: boolean): void {
+    // Both dismissal and an error can arrive. Release each native node only once.
+    if (home ? this.homeMenu !== content : this.documentMenu !== content) return;
+    if (home) this.homeMenu = null;
+    else this.documentMenu = null;
+    content.dispose();
+  }
+
+  private releaseMenus(): void {
+    const prompt = this.getUIContext().getPromptAction();
+    const home = this.homeMenu;
+    const document = this.documentMenu;
+    if (home !== null) {
+      void prompt.closeMenu(home).then((): void => this.disposeMenu(home, true))
+        .catch((): void => this.disposeMenu(home, true));
+    }
+    if (document !== null) {
+      void prompt.closeMenu(document).then((): void => this.disposeMenu(document, false))
+        .catch((): void => this.disposeMenu(document, false));
+    }
   }
 
   private afterMenu(next: () => void): void {
@@ -412,8 +451,21 @@ struct Index {
    * 切换文稿前由文稿页处理未保存的修改：有改动就先询问，不直接写回。首页只负责等结果。
    */
   private confirmSwitch(proceed: () => Promise<void>): void {
-    void documentBridge.saveBeforeLeaving().then((ok: boolean) => {
-      if (ok) void proceed();
+    // Initialization installs draft recovery before any user-initiated switch joins the queue.
+    void this.startupTask.then((): void => {
+      this.openQueue = this.openQueue.catch((): void => {}).then(async (): Promise<void> => {
+        if (this.disposed) return;
+        if (this.documentOpen) {
+          this.revealDocumentRoute();
+          if (!await documentBridge.whenVisible() || this.disposed) return;
+          if (!await documentBridge.saveBeforeLeaving()) return;
+        }
+        if (!this.disposed) await proceed();
+      }).catch((error: Error): void => {
+        if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), String(error)));
+      });
+    }).catch((error: Error): void => {
+      if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), String(error)));
     });
   }
 
@@ -457,10 +509,13 @@ struct Index {
 
   private async pickOpen(): Promise<void> {
     if (!this.context) return;
+    const owner = DocumentService.current();
+    const approvedSource = owner.source;
     try {
       const uri = await DocumentFiles.chooseOpen(this.context);
       if (uri.length === 0) return;
-      await DocumentService.openUri(uri, '', true, false);
+      if (!await DocumentService.openUri(uri, '', true, false,
+        (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource))) return;
       this.presentOpened();
     } catch (error) {
       this.toast(AppText.format($r('app.string.open_failed'), String(error)));
@@ -472,8 +527,11 @@ struct Index {
   }
 
   private async openStored(item: RecentDocument): Promise<void> {
+    const owner = DocumentService.current();
+    const approvedSource = owner.source;
     try {
-      await DocumentService.openUri(item.uri, '', true, false);
+      if (!await DocumentService.openUri(item.uri, '', true, false,
+        (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource))) return;
       this.presentOpened();
     } catch {
       // 华为《固定样式弹出框》：需要用户决定后续操作时使用警告弹窗。
@@ -502,14 +560,31 @@ struct Index {
 
   private async openExternal(request: OpenRequest): Promise<void> {
     const writeRequested = request.writeGranted || !request.readGranted;
+    const owner = DocumentService.current();
+    const approvedSource = owner.source;
     try {
-      await DocumentService.openUri(request.uri, request.declaredType, writeRequested, true);
+      if (!await DocumentService.openUri(request.uri, request.declaredType, writeRequested, true,
+        (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource))) return;
       // 没有现有文稿时，不能把设置页留在新文稿的返回路径下面。
       if (!this.documentOpen) this.routes.clear();
       this.presentOpened();
     } catch (error) {
       this.toast(AppText.format($r('app.string.open_failed'), String(error)));
     }
+  }
+
+  private async confirmPreparedOpen(owner: DocumentSession, approvedSource: string): Promise<boolean> {
+    if (this.disposed || DocumentService.current() !== owner) return false;
+    if (owner.source === approvedSource) return true;
+    if (!owner.editing) return false;
+    this.revealDocumentRoute();
+    if (!await documentBridge.whenVisible()) return false;
+    while (!this.disposed && DocumentService.current() === owner && owner.editing) {
+      const source = owner.source;
+      if (!await documentBridge.saveBeforeLeaving()) return false;
+      if (DocumentService.current() === owner && owner.source === source) return true;
+    }
+    return false;
   }
 
   private async forgetRecent(uri: string, deleted: boolean = false): Promise<void> {

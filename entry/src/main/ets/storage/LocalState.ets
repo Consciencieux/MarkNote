@@ -66,7 +66,16 @@ export class LocalState {
       const parsed = JSON.parse(encoded) as RecentDocument[];
       if (!Array.isArray(parsed)) return [];
       return parsed.filter((value: RecentDocument) =>
-        typeof value.uri === 'string' && value.uri.length > 0 && typeof value.name === 'string');
+        value !== null && typeof value === 'object' &&
+        typeof value.uri === 'string' && value.uri.length > 0 && typeof value.name === 'string')
+        .map((value: RecentDocument): RecentDocument => {
+          const item = new RecentDocument(value.uri, value.name);
+          item.openedAt = Number.isFinite(value.openedAt) && value.openedAt > 0 ? value.openedAt : 0;
+          item.modifiedAt = Number.isFinite(value.modifiedAt) && value.modifiedAt > 0 ? value.modifiedAt : 0;
+          item.favorite = value.favorite === true;
+          item.recent = value.recent !== false;
+          return item;
+        });
     } catch {
       return [];
     }
@@ -125,6 +134,7 @@ export class LocalState {
       }
       if (typeof parsed.fingerprint !== 'string') parsed.fingerprint = '';
       if (typeof parsed.formatId !== 'string') parsed.formatId = '';
+      parsed.hasBom = parsed.hasBom === true;
       parsed.writable = parsed.writable === true;
       parsed.persistent = parsed.persistent === true;
       if (parsed.text === parsed.savedText) return null;

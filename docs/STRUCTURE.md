@@ -23,6 +23,7 @@ marknote/
 │   ├── scripts/                      安装依赖修复、打包资源及生成许可证声明
 │   └── tests/                        预览、依赖安装及许可证收集测试
 ├── docs/                             功能、架构、隐私及发布文档
+├── tools/                            资源键、占位符及依赖元数据检查
 ├── examples/                         Markdown、SVG 和 TeX 示例文稿
 ├── third_party/                      第三方依赖说明与补充许可证原文
 │   └── upstream-licenses/            按依赖版本核验的上游许可证及声明
@@ -44,7 +45,7 @@ marknote/
 | 首页列表和新建菜单 | `pages/HomeView.ets`、`pages/Index.ets` |
 | 文稿编辑、查找和保存 | `pages/DocumentView.ets` |
 | 文稿预览和大纲界面 | `pages/DocumentPreviewView.ets`、`pages/DocumentOutlineView.ets` |
-| 编辑工具栏 | `pages/FormatBarView.ets`、`document/FormatRegistry.ets` |
+| 编辑工具栏 | `pages/FormatBarView.ets`、`document/FormatRegistry.ets`、`document/EditorActions.ts` |
 | 标题栏与滚动 | `pages/HdsMaterialStyles.ets`、`pages/PageScrollPolicy.ets`、`pages/DocumentScrollLayer.ets` |
 | 搜索框、分段按钮与编辑工具栏材质 | `pages/ImmersiveMaterials.ets` |
 | 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets` |

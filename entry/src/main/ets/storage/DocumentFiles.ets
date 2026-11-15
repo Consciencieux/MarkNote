@@ -201,7 +201,8 @@ export class DocumentFiles {
     const result = new FileContents();
     result.text = decoded.text;
     result.info.uri = uri;
-    result.info.name = name.length > 0 ? name : FormatRegistry.defaultName(FormatRegistry.byId('plain'));
+    // Preserve absence: the service can still use the URI hint or declared type.
+    result.info.name = name;
     result.info.newline = decoded.newline;
     result.info.lineEndings = decoded.lineEndings;
     result.info.hasBom = decoded.hasBom;
