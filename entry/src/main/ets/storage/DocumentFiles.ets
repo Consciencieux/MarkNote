@@ -6,6 +6,7 @@ import { DocumentInfo } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
 import { TextEncoding } from '../document/TextEncoding';
 import { AppText } from '../i18n/AppText';
+import { userNotice } from '../document/UserNotice';
 
 const MAX_BYTES: number = 8 * 1024 * 1024;
 const READ_WRITE: number = fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE;
@@ -107,10 +108,10 @@ export class DocumentFiles {
   }
   /** Move the opened version to the system recycle bin; never fall back to permanent deletion. */
   static async moveToTrash(info: DocumentInfo): Promise<void> {
-    if (info.uri.length === 0) throw new Error(AppText.text($r('app.string.not_saved_file')));
-    if (!info.writable) throw new Error(AppText.text($r('app.string.no_delete_permission')));
+    if (info.uri.length === 0) throw userNotice(AppText.text($r('app.string.not_saved_file')));
+    if (!info.writable) throw userNotice(AppText.text($r('app.string.no_delete_permission')));
     if (info.fingerprint.length === 0 || fingerprintOf(DocumentFiles.readBytes(info.uri)) !== info.fingerprint) {
-      throw new Error(AppText.text($r('app.string.delete_conflict')));
+      throw userNotice(AppText.text($r('app.string.delete_conflict')));
     }
     // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/filemanagerservice-arkts-filemanagerservice
     await fileManagerService.deleteToTrash(info.uri);
@@ -128,7 +129,7 @@ export class DocumentFiles {
     const persistedRead = persistedWrite || await persisted(uri, fileShare.OperationMode.READ_MODE);
     const writable = writeRequested && canOpen(uri, fileIo.OpenMode.READ_WRITE);
     const readable = writable || canOpen(uri, fileIo.OpenMode.READ_ONLY);
-    if (!readable) throw new Error(AppText.text($r('app.string.auth_expired')));
+    if (!readable) throw userNotice(AppText.text($r('app.string.auth_expired')));
     const mode = writable ? READ_WRITE : fileShare.OperationMode.READ_MODE;
     let persistent = writable ? persistedWrite : persistedRead;
     if (!persistent) persistent = await retain(uri, mode);
@@ -170,13 +171,13 @@ export class DocumentFiles {
     const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
     try {
       const size = Number(fileIo.statSync(file.fd).size);
-      if (size > MAX_BYTES) throw new Error(AppText.text($r('app.string.too_large')));
+      if (size > MAX_BYTES) throw userNotice(AppText.text($r('app.string.too_large')));
       const original = new Uint8Array(size);
       let readPosition = 0;
       while (readPosition < size) {
         const chunk = new ArrayBuffer(Math.min(64 * 1024, size - readPosition));
         const length = fileIo.readSync(file.fd, chunk);
-        if (length <= 0) throw new Error(AppText.text($r('app.string.read_incomplete')));
+        if (length <= 0) throw userNotice(AppText.text($r('app.string.read_incomplete')));
         original.set(new Uint8Array(chunk, 0, length), readPosition);
         readPosition += length;
       }
@@ -216,26 +217,26 @@ export class DocumentFiles {
    * taken at open or the last successful save, then verify the bytes written back.
    */
   static write(info: DocumentInfo, text: string, checkConflict: boolean): void {
-    if (info.uri.length === 0) throw new Error(AppText.text($r('app.string.no_writable_file')));
-    if (!info.writable) throw new Error(AppText.text($r('app.string.no_write_use_save_as')));
+    if (info.uri.length === 0) throw userNotice(AppText.text($r('app.string.no_writable_file')));
+    if (!info.writable) throw userNotice(AppText.text($r('app.string.no_write_use_save_as')));
     if (checkConflict) {
       if (info.fingerprint.length === 0) {
-        throw new Error(AppText.text($r('app.string.missing_fingerprint')));
+        throw userNotice(AppText.text($r('app.string.missing_fingerprint')));
       }
       const current = DocumentFiles.readBytes(info.uri);
       if (fingerprintOf(current) !== info.fingerprint) {
-        throw new Error(AppText.text($r('app.string.external_change')));
+        throw userNotice(AppText.text($r('app.string.external_change')));
       }
     }
     if (info.newline === 'mixed') {
       const parts = text.split('\n');
       if (parts.length !== info.lineEndings.length + 1) {
-        throw new Error(AppText.text($r('app.string.mixed_newlines')));
+        throw userNotice(AppText.text($r('app.string.mixed_newlines')));
       }
     }
     const encoded = TextEncoding.encode(text, info);
     if (encoded.bytes.length > MAX_BYTES) {
-      throw new Error(AppText.text($r('app.string.save_too_large')));
+      throw userNotice(AppText.text($r('app.string.save_too_large')));
     }
     info.newline = encoded.newline;
     info.lineEndings = encoded.lineEndings;
@@ -246,7 +247,7 @@ export class DocumentFiles {
       while (offset < bytes.length) {
         const remaining = bytes.slice(offset);
         const written = fileIo.writeSync(file.fd, remaining.buffer);
-        if (written <= 0) throw new Error(AppText.text($r('app.string.write_interrupted')));
+        if (written <= 0) throw userNotice(AppText.text($r('app.string.write_interrupted')));
         offset += written;
       }
       fileIo.truncateSync(file.fd, bytes.length);
@@ -256,10 +257,10 @@ export class DocumentFiles {
     }
     const verified = DocumentFiles.readBytes(info.uri);
     if (fingerprintOf(verified) !== fingerprintOf(bytes)) {
-      throw new Error(AppText.text($r('app.string.verify_failed')));
+      throw userNotice(AppText.text($r('app.string.verify_failed')));
     }
     const decoded = TextEncoding.decode(verified);
-    if (decoded.text !== text) throw new Error(AppText.text($r('app.string.verify_failed')));
+    if (decoded.text !== text) throw userNotice(AppText.text($r('app.string.verify_failed')));
     info.fingerprint = fingerprintOf(verified);
     info.hasBom = decoded.hasBom;
     info.encoding = decoded.encoding;

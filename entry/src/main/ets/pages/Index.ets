@@ -23,6 +23,7 @@ import { documentBridge } from './DocumentBridge';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 import { AppText } from '../i18n/AppText';
+import { shownDetail } from '../document/UserNotice';
 import { applyAppLanguage, isRightToLeftLanguage, normalizeAppLanguage, publishAppLanguage } from '../i18n/AppLanguage';
 
 /**
@@ -160,7 +161,7 @@ struct Index {
         try {
           await this.openAfterReady(request);
         } catch (error) {
-          if (!this.disposed) this.toast(AppText.format($r('app.string.external_open_failed'), String(error)));
+          if (!this.disposed) this.toast(AppText.format($r('app.string.external_open_failed'), shownDetail(error)));
         } finally {
           this.externalWaiting--;
         }
@@ -211,7 +212,7 @@ struct Index {
       if (this.externalWaiting === 0) this.toast($r('app.string.draft_restored'));
     } catch (error) {
       // A failure to restore is not consent to destroy the only recovery copy.
-      this.toast(AppText.format($r('app.string.open_failed'), String(error)));
+      this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
     }
   }
 
@@ -462,10 +463,10 @@ struct Index {
         }
         if (!this.disposed) await proceed();
       }).catch((error: Error): void => {
-        if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), String(error)));
+        if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
       });
     }).catch((error: Error): void => {
-      if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), String(error)));
+      if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
     });
   }
 
@@ -518,7 +519,7 @@ struct Index {
         (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource))) return;
       this.presentOpened();
     } catch (error) {
-      this.toast(AppText.format($r('app.string.open_failed'), String(error)));
+      this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
     }
   }
 
@@ -569,7 +570,7 @@ struct Index {
       if (!this.documentOpen) this.routes.clear();
       this.presentOpened();
     } catch (error) {
-      this.toast(AppText.format($r('app.string.open_failed'), String(error)));
+      this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
     }
   }
 
