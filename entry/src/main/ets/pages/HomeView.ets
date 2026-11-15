@@ -105,7 +105,7 @@ export struct HomeView {
 
       ForEach(this.recents, (item: RecentDocument) => {
         this.RecentRow(item)
-      }, (item: RecentDocument) => `${this.language}:${item.uri}`)
+      }, (item: RecentDocument) => JSON.stringify([this.language, item.uri, item.name, this.favoritesOnly]))
     }
     // Keep the list at the available width and use system margin resources for its edges.
     .layoutWeight(1)

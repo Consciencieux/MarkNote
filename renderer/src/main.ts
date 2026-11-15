@@ -5,7 +5,7 @@ import { renderMarkdown } from './renderers/markdown';
 import { nextMermaidGeneration, paintMermaid, type PreviewTheme } from './renderers/mermaid';
 import { visibleImageKeys } from './image-window';
 import { renderPlain } from './renderers/plain';
-import { installReferenceHook, sanitizeSvg } from './renderers/svg';
+import { installReferenceHook, isolateSvg, refreshIsolatedSvg, sanitizeSvg } from './renderers/svg';
 import { renderTexDocument, type TexDocument } from './renderers/tex';
 import type { PreviewUpdate } from './globals';
 import { imageLabel, previewText, usePreviewText } from './preview-text';
@@ -33,7 +33,10 @@ function paintDiagrams(theme: PreviewTheme): void {
 }
 
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-  if (lastRendered?.theme === 'system' && lastRendered.kind === 'markdown') paintDiagrams('system');
+  if (lastRendered?.theme === 'system') {
+    refreshIsolatedSvg(host!);
+    if (lastRendered.kind === 'markdown') paintDiagrams('system');
+  }
 });
 
 function isAppImage(url: string): boolean {
@@ -95,6 +98,7 @@ function render(update: PreviewUpdate): void {
   document.documentElement.dir = /^(ar|ug)(-|$)/i.test(previewText().lang) ? 'rtl' : 'ltr';
   document.documentElement.removeAttribute('data-theme');
   if (update.theme !== 'system') document.documentElement.dataset.theme = update.theme;
+  if (lastRendered && lastRendered.theme !== update.theme) refreshIsolatedSvg(host!);
   // Theme changes only affect CSS, except Mermaid colors, which are baked into the SVG.
   if (lastRendered?.kind === update.kind && lastRendered.source === update.source &&
     lastRendered.documentId === update.documentId && lastRendered.textStamp === textStamp) {
@@ -144,6 +148,7 @@ function render(update: PreviewUpdate): void {
     FORBID_ATTR: ['src', 'srcset', 'target', 'formaction'],
     SANITIZE_NAMED_PROPS: false
   });
+  isolateSvg(host!, '.svg-canvas svg');
   wantedImages.clear();
   lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, textStamp,
     theme: update.theme, tex };

@@ -87,15 +87,18 @@ function sameLanguage(left: string, right: string): boolean {
 
 function languageKind(value: string): string {
   const tag = value.replace(/_/g, '-').toLowerCase();
-  if (tag.includes('hant')) return 'zh-hant';
-  if (tag.startsWith('zh')) return 'zh-hans';
-  if (tag.startsWith('bo')) return 'bo';
-  if (tag.startsWith('en')) return 'en';
-  if (tag.startsWith('ja')) return 'ja';
-  if (tag.startsWith('ko')) return 'ko';
-  if (tag.startsWith('ru')) return 'ru';
-  if (tag.startsWith('ar')) return 'ar';
-  if (tag.startsWith('ug')) return 'ug';
+  const parts = tag.split('-');
+  const language = parts[0];
+  if (language === 'zh') {
+    // An explicit script wins over a regional default (e.g. zh-Hans-HK).
+    if (parts.includes('hans')) return 'zh-hans';
+    if (parts.includes('hant') || parts.includes('tw') || parts.includes('hk') || parts.includes('mo')) {
+      return 'zh-hant';
+    }
+    return 'zh-hans';
+  }
+  if (language === 'bo' || language === 'en' || language === 'ja' || language === 'ko' ||
+    language === 'ru' || language === 'ar' || language === 'ug') return language;
   return tag;
 }
 

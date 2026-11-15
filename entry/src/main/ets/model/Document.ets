@@ -84,18 +84,17 @@ export function documentOutline(source: string): Heading[] {
   let fence = '';
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index];
-    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(row);
-    if (marker) {
-      const found = marker[1];
-      if (fence.length === 0) {
-        fence = found;
-      } else if (found[0] === fence[0] && found.length >= fence.length) {
-        fence = '';
-      }
-    } else if (fence.length === 0) {
-      const match = /^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/.exec(row);
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(row);
+    if (fence.length > 0) {
+      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length &&
+        /^[ \t]*$/.test(marker[2])) fence = '';
+    } else if (marker && (marker[1][0] === '~' || marker[2].indexOf('`') < 0)) {
+      fence = marker[1];
+    } else {
+      const match = /^ {0,3}(#{1,6})(?=[ \t]|$)/.exec(row);
       if (match) {
-        const name = match[2].trim();
+        // Closing hashes need preceding whitespace. Keep the hash in titles such as C#.
+        const name = row.substring(match[0].length).replace(/[ \t]+#+[ \t]*$/, '').trim();
         if (name.length > 0) result.push(new Heading(match[1].length, name, offset));
       }
     }

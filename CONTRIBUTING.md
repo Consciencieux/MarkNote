@@ -10,7 +10,7 @@
 | --- | --- |
 | DevEco Studio | 26 |
 | HarmonyOS SDK | API 26 |
-| Node.js | 22.12 或更新版本 |
+| Node.js | 22.13 或更新版本 |
 
 项目也需要 npm。建议安装 DevEco CLI，用于构建、运行和调试应用，以及查询鸿蒙开发文档：
 

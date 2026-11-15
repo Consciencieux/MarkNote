@@ -11,7 +11,7 @@
     "dev": "vite --host 127.0.0.1",
     "check": "tsc --noEmit",
     "check:licenses": "node scripts/generate-notices.mjs",
-    "pretest": "node scripts/setup-tex-dependency.mjs --verify",
+    "pretest": "node scripts/check-test-runtime.mjs && node scripts/setup-tex-dependency.mjs --verify",
     "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {
@@ -30,6 +30,6 @@
     "vite-plugin-singlefile": "2.3.4"
   },
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.13"
   }
 }
