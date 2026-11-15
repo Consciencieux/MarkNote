@@ -14,6 +14,11 @@ function load(relative, exported, context = {}) {
 }
 const wantConstant = { Params: { PARAMS_STREAM: 'stream' },
   Flags: { FLAG_AUTH_READ_URI_PERMISSION: 1, FLAG_AUTH_WRITE_URI_PERMISSION: 2 } };
+test('known notices stay visible and other errors stay hidden', () => {
+  const api = load('document/UserNotice.ets', '({ userNotice, userNoticeMessage })');
+  assert.equal(api.userNoticeMessage(api.userNotice('too large')), 'too large');
+  assert.equal(api.userNoticeMessage(new Error('code 13900001 at /data/storage')), '');
+});
 test('all startup file requests survive until the page binds', () => {
   const queue=load('document/LaunchRequests.ets','LaunchRequests',{wantConstant}), received=[];
   queue.deliver({uri:'A.md'});queue.deliver({uri:'B.md'});queue.bind(r=>received.push(r.uri));
@@ -58,7 +63,8 @@ function service(overrides={}) {
   const files={prepare:async()=>({writable:true,persistent:true}),chooseSave:async()=> 'file://a.md',read:uri=>({info:Object.assign(new Info(),{uri}),text:'disk'}),
     write:(_info,text,conflict)=>writes.push({text,conflict}),...overrides.files};
   const api=load('document/DocumentService.ets','DocumentService',{DocumentInfo:Info,RecoveryData:Info,copyInfo:x=>Object.assign(new Info(),x),DocumentFiles:files,
-    LocalState:{writeDraft:(_ctx,draft)=>drafts.push({...draft}),...overrides.local},FormatRegistry:registry,documentOutline:()=>[],AppText:{text:x=>x},$r:x=>x});
+    LocalState:{writeDraft:(_ctx,draft)=>drafts.push({...draft}),...overrides.local},FormatRegistry:registry,documentOutline:()=>[],AppText:{text:x=>x},$r:x=>x,
+    userNotice:(message)=>{const error=new Error(message);error.name='UserNotice';return error;}});
   api.adopt({info:new Info(),text:'base'});api.edit('edited');return{api,writes,drafts};
 }
 test('save-as to the original URI does not bypass conflict checking', async () => {

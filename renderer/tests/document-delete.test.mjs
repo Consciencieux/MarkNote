@@ -36,6 +36,7 @@ function documentFiles(content, trash) {
     cryptoFramework, fileManagerService: { deleteToTrash: trash },
     Uint8Array, ArrayBuffer, Error,
     $r: (name) => name,
+    userNotice: (message) => { const error = new Error(message); error.name = 'UserNotice'; return error; },
     AppText: { text: (name) => String(name) }
   };
   return vm.runInNewContext(`${nodeModule.stripTypeScriptTypes(source)}\nDocumentFiles`, context);

@@ -20,6 +20,7 @@ import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { AppText } from '../i18n/AppText';
+import { shownDetail } from '../document/UserNotice';
 import { scrollingTitleBar } from './HdsMaterialStyles';
 import { searchFieldMaterial } from './ImmersiveMaterials';
 import { bodyInput, toolbarIcon } from './TextRoles';
@@ -397,7 +398,7 @@ export struct DocumentView {
         }
       }
     } catch (error) {
-      this.toast(this.uiFormat($r('app.string.delete_failed'), String(error)));
+      this.toast(this.uiFormat($r('app.string.delete_failed'), shownDetail(error)));
     } finally {
       this.deleting = false;
     }
@@ -522,7 +523,10 @@ export struct DocumentView {
       if (DocumentService.current() !== owner || !owner.editing) return false;
       this.syncFromService();
       if (!result.saved) return false;
-      this.toast(result.message + (this.info.persistent ? '' : this.uiText($r('app.string.save_not_persistent'))));
+      const recentLimit = this.uiText($r('app.string.save_not_persistent'));
+      const plainSaved = result.message === this.uiText($r('app.string.saved'));
+      this.toast(this.info.persistent ? result.message :
+        plainSaved ? recentLimit : `${result.message}\n${recentLimit}`);
       if (!this.isDirty()) this.clearRecovery();
       else this.scheduleRecovery();
       // 最近文稿列表在首页，保存成功只通知过去。
@@ -532,9 +536,9 @@ export struct DocumentView {
       if (DocumentService.current() !== owner || !owner.editing) return false;
       this.scheduleRecovery();
       if (!asNewFile && this.info.uri.length > 0) {
-        this.offerSaveCopy(this.uiFormat($r('app.string.save_failed_copy'), String(error)));
+        this.offerSaveCopy(this.uiFormat($r('app.string.save_failed_copy'), shownDetail(error)));
       } else {
-        this.toast(this.uiFormat($r('app.string.save_failed'), String(error)));
+        this.toast(this.uiFormat($r('app.string.save_failed'), shownDetail(error)));
       }
       return false;
     } finally {

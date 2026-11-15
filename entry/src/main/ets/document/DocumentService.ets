@@ -4,6 +4,7 @@ import { DocumentFiles, FileContents } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 import { DocumentFormat, FormatRegistry } from './FormatRegistry';
 import { AppText } from '../i18n/AppText';
+import { userNotice } from './UserNotice';
 
 /** The one open document. DocumentView mirrors these fields into ArkUI state. */
 export class DocumentSession {
@@ -80,11 +81,11 @@ export class DocumentService {
     const access = await DocumentFiles.prepare(uri, writeRequested);
     const loaded = DocumentFiles.read(uri);
     if (loaded.info.name.length === 0) {
-      if (hinted === null) throw new Error(AppText.text($r('app.string.unsupported_format')));
+      if (hinted === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
       loaded.info.name = FormatRegistry.defaultName(hinted);
     }
     const resolved = FormatRegistry.resolve(loaded.info.name, declaredType, !strictType);
-    if (resolved === null) throw new Error(AppText.text($r('app.string.unsupported_format')));
+    if (resolved === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
     loaded.info.formatId = resolved.id;
     loaded.info.writable = access.writable;
     loaded.info.persistent = access.persistent;
@@ -161,7 +162,7 @@ export class DocumentService {
     if (DocumentService.session !== session || !session.editing) return result;
     const access = await DocumentFiles.prepare(uri, true);
     if (DocumentService.session !== session || !session.editing) return result;
-    if (!access.writable) throw new Error(AppText.text($r('app.string.no_write_permission')));
+    if (!access.writable) throw userNotice(AppText.text($r('app.string.no_write_permission')));
     const target = copyInfo(previous);
     target.uri = uri;
     target.writable = true;

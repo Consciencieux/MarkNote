@@ -1,6 +1,7 @@
 import { util } from '@kit.ArkTS';
 import { DocumentInfo } from '../model/Document';
 import { AppText } from '../i18n/AppText';
+import { userNotice } from './UserNotice';
 
 export class DecodedText {
   text: string = '';
@@ -174,7 +175,7 @@ export class TextEncoding {
       encoding = 'gb18030';
       text = decodeAs(encoding, payload);
     }
-    if (text === null) throw new Error(AppText.text($r('app.string.encoding_unknown')));
+    if (text === null) throw userNotice(AppText.text($r('app.string.encoding_unknown')));
     const decoded = normalizeNewlines(text);
     decoded.encoding = encoding;
     decoded.hasBom = hasBom;
@@ -195,7 +196,7 @@ export class TextEncoding {
     }
     const decoded = TextEncoding.decode(applied.bytes);
     if (decoded.text !== text) {
-      throw new Error(AppText.text($r('app.string.encoding_lossy')));
+      throw userNotice(AppText.text($r('app.string.encoding_lossy')));
     }
     return applied;
   }

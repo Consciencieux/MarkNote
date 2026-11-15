@@ -42,6 +42,7 @@ function createFile(initial) {
     fileShare: { OperationMode: { READ_MODE: 1, WRITE_MODE: 2 },
       checkPersistentPermission: async () => [false] }, Uint8Array, ArrayBuffer, Error,
     $r: (name) => name,
+    userNotice: (message) => { const error = new Error(message); error.name = 'UserNotice'; return error; },
     AppText: { text: (name) => name === 'app.string.save_too_large' || name === 'app.string.too_large' ?
       'Documents cannot exceed 8 MiB' : String(name) } };
   return { files: vm.runInNewContext(`${nodeModule.stripTypeScriptTypes(source)}\nDocumentFiles`, context),

@@ -5,6 +5,7 @@ import { preferences } from '@kit.ArkData';
 import { RecentDocument, RecoveryData } from '../model/Document';
 import { RecentEntry, removeRecentDocument, toggleFavoriteDocument, updateRecentDocument } from '../document/RecentOrder';
 import { AppText } from '../i18n/AppText';
+import { userNotice } from '../document/UserNotice';
 import { normalizeAppLanguage } from '../i18n/AppLanguage';
 
 const RECENT_KEY: string = 'recent_files';
@@ -154,7 +155,7 @@ export class LocalState {
       let offset = 0;
       while (offset < data.length) {
         const written = fileIo.writeSync(file.fd, data.slice(offset).buffer);
-        if (written <= 0) throw new Error(AppText.text($r('app.string.draft_interrupted')));
+        if (written <= 0) throw userNotice(AppText.text($r('app.string.draft_interrupted')));
         offset += written;
       }
       fileIo.fsyncSync(file.fd);
