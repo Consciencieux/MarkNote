@@ -16,12 +16,13 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 | `TextEncoding` | 在文件字节和编辑器文本之间转换，记录并恢复编码、BOM 与换行方式。 |
 | `LocalState` | 保存最近文稿、草稿、外观和语言偏好。 |
 | `EditHistory`、`TextSearch` | 分别处理编辑历史和字面文本查找。 |
+| `EditorActions` | 纯文本快捷编辑操作，处理行前缀、选区包裹和代码围栏。 |
 
 文件格式优先按已知后缀识别，其次按系统声明的类型识别。保存前的外部修改检查使用文件字节的 SHA-256 指纹。
 
 ## 界面与导航
 
-首页使用 `HdsNavigation`。文稿和设置页面使用 `HdsNavDestination`，并由同一个 `NavPathStack` 管理。`Index` 创建设置页路由，`SettingsPage` 构建各级页面；每个页面持有自己的滚动控制器。`EntryAbility` 在加载页面前按已保存的语言偏好设置应用语言。跟随系统时解析为当前系统语言对应的资源，因此切换立即生效；下次冷启动会按当时的系统语言重新解析。
+首页使用 `HdsNavigation`。文稿和设置页面使用 `HdsNavDestination`，并由同一个 `NavPathStack` 管理。`Index` 创建设置页路由，`SettingsPage` 构建各级页面；每个页面持有自己的滚动控制器。许可证页进入后再读取原文，并按段放进列表。`EntryAbility` 在加载页面前按已保存的语言偏好设置应用语言。跟随系统时解析为当前系统语言对应的资源，因此切换立即生效；下次冷启动会按当时的系统语言重新解析。
 
 `HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，各自保留滚动控制器。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
 
@@ -31,7 +32,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 
 ## 离线预览
 
-`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号，以及当前界面语言的预览提示。应用按原生滚动容器的可视范围向网页查询附近的 Markdown 图片地址，再用文稿 URI 取得所在目录 URI，尝试逐张读取相对路径。读到的图片以 data URL 传回页面，离开阅读区域后释放；打不开的图片保持占位。网页不注册文件或导航接口，也不加载网络图片。Markdown 的 mermaid 代码围栏在页面清理之后画成 SVG，布局使用 Dagre，不加载外部图标。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过 `WebMessagePort` 仅回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲。预览资源和网络限制见[功能目录](FEATURES.md)。
+`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号，以及当前界面语言的预览提示。应用按原生滚动容器的可视范围向网页查询附近的 Markdown 图片地址，再用文稿 URI 取得所在目录 URI，尝试逐张读取相对路径。读到的图片以 data URL 传回页面，离开阅读区域后释放；打不开的图片保持占位。网页不注册文件或导航接口，也不加载网络图片。Markdown 的 mermaid 代码围栏在页面清理之后画成 SVG，布局使用 Dagre，不加载外部图标。用户 SVG 和 Mermaid 的清理结果以 SVG 图片上下文显示，隔离样式与片段 ID；KaTeX 自身的布局 SVG 不走这一转换。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过 `WebMessagePort` 仅回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲。预览资源和网络限制见[功能目录](FEATURES.md)。
 
 ## 文件关联
 

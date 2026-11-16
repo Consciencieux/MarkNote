@@ -6,11 +6,12 @@ import {
   TitleBarContentOptions, HdsNavigationTitleBarOptions, HdsTabs, hdsMaterial
 } from '@kit.UIDesignKit';
 import { DocumentInfo, Heading, RecoveryData } from '../model/Document';
-import { DocumentService } from '../document/DocumentService';
+import { DocumentService, DocumentSession } from '../document/DocumentService';
 import { DocumentShare } from '../document/DocumentShare';
 import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
 import { EditHistory, EditStep } from '../document/EditHistory';
+import { insertEditorAction } from '../document/EditorActions';
 import { FormatBarView } from './FormatBarView';
 import { DocumentOutlineView } from './DocumentOutlineView';
 import { DocumentPreviewView } from './DocumentPreviewView';
@@ -19,6 +20,7 @@ import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { AppText } from '../i18n/AppText';
+import { shownDetail } from '../document/UserNotice';
 import { scrollingTitleBar } from './HdsMaterialStyles';
 import { searchFieldMaterial } from './ImmersiveMaterials';
 import { bodyInput, toolbarIcon } from './TextRoles';
@@ -110,6 +112,8 @@ export struct DocumentView {
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
   private recoveryTimer: number = -1;
+  private recoveryDeadline: number = -1;
+  private sessionOwner: DocumentSession | null = null;
   /**
    * 底部导航避让高度为 0 时，页签栏与 HdsTabs 底边留出一段应用自己的距离。
    * 这段用 sys.float.margin_left，不是华为规定的底边距；有导航避让区时不再加。
@@ -194,6 +198,7 @@ export struct DocumentView {
 
   /** 载入当前会话。首次进入和首页换篇（revision 变）都走这里。 */
   private loadSession(): void {
+    this.cancelRecoveryTimers();
     this.headingJump++;
     this.pendingHeadingOffset = -1;
     this.syncFromService();
@@ -381,7 +386,7 @@ export struct DocumentView {
           session.info.writable = false;
           session.info.persistent = false;
           session.info.fingerprint = '';
-          session.savedText = this.source + '\n';
+          session.savedText = ''; // A new unsaved document has an empty saved baseline.
           this.savedText = session.savedText;
           this.scheduleRecovery();
           this.toast($r('app.string.delete_trashed_dirty'));
@@ -393,7 +398,7 @@ export struct DocumentView {
         }
       }
     } catch (error) {
-      this.toast(this.uiFormat($r('app.string.delete_failed'), String(error)));
+      this.toast(this.uiFormat($r('app.string.delete_failed'), shownDetail(error)));
     } finally {
       this.deleting = false;
     }
@@ -422,7 +427,7 @@ export struct DocumentView {
    * 草稿副本只用于崩溃兜底，不再作为「未保存」的常驻入口。
    */
   private async saveBeforeLeaving(): Promise<boolean> {
-    if (this.deleting) return false;
+    if (this.deleting || this.saving) return false;
     if (!DocumentService.current().editing || !this.isDirty()) return true;
     return await this.askSaveOrDiscard();
   }
@@ -480,12 +485,17 @@ export struct DocumentView {
   }
 
   private syncFromService(): void {
+    const wasSplit = this.wide && this.selectedTab === this.splitTab();
+    const wasOutline = this.currentFormat().outline && this.selectedTab === TAB_OUTLINE;
     const session = DocumentService.current();
+    this.sessionOwner = session;
     this.info = session.info;
     this.title = session.info.name;
     this.formatId = session.info.formatId;
     this.source = session.source;
     this.savedText = session.savedText;
+    if (wasSplit) this.selectedTab = this.splitTab();
+    else if (wasOutline && !this.currentFormat().outline) this.selectedTab = TAB_PREVIEW;
     this.updateHeadings();
   }
 
@@ -506,22 +516,29 @@ export struct DocumentView {
       return false;
     }
     this.saving = true;
+    const owner = DocumentService.current();
+    this.history.boundary();
     try {
       const result = await DocumentService.save(this.context, asNewFile);
+      if (DocumentService.current() !== owner || !owner.editing) return false;
       this.syncFromService();
       if (!result.saved) return false;
-      this.toast(result.message + (this.info.persistent ? '' : this.uiText($r('app.string.save_not_persistent'))));
+      const recentLimit = this.uiText($r('app.string.save_not_persistent'));
+      const plainSaved = result.message === this.uiText($r('app.string.saved'));
+      this.toast(this.info.persistent ? result.message :
+        plainSaved ? recentLimit : `${result.message}\n${recentLimit}`);
       if (!this.isDirty()) this.clearRecovery();
       else this.scheduleRecovery();
       // 最近文稿列表在首页，保存成功只通知过去。
       if (this.info.persistent) this.onSaved(this.info.uri, this.title);
       return !result.stillDirty;
     } catch (error) {
+      if (DocumentService.current() !== owner || !owner.editing) return false;
       this.scheduleRecovery();
       if (!asNewFile && this.info.uri.length > 0) {
-        this.offerSaveCopy(this.uiFormat($r('app.string.save_failed_copy'), String(error)));
+        this.offerSaveCopy(this.uiFormat($r('app.string.save_failed_copy'), shownDetail(error)));
       } else {
-        this.toast(this.uiFormat($r('app.string.save_failed'), String(error)));
+        this.toast(this.uiFormat($r('app.string.save_failed'), shownDetail(error)));
       }
       return false;
     } finally {
@@ -540,39 +557,48 @@ export struct DocumentView {
     });
   }
 
+  private cancelRecoveryTimers(): void {
+    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
+    if (this.recoveryDeadline >= 0) clearTimeout(this.recoveryDeadline);
+    this.recoveryTimer = -1;
+    this.recoveryDeadline = -1;
+  }
+
   private clearRecovery(): void {
-    if (this.recoveryTimer >= 0) {
-      clearTimeout(this.recoveryTimer);
-      this.recoveryTimer = -1;
-    }
-    if (this.context) LocalState.clearDraft(this.context);
+    this.cancelRecoveryTimers();
+    if (this.context && this.sessionOwner === DocumentService.current()) LocalState.clearDraft(this.context);
   }
 
   private scheduleRecovery(): void {
+    if (this.sessionOwner !== DocumentService.current()) return;
     if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
     this.recoveryTimer = setTimeout(() => this.flushRecovery(), 450);
+    if (this.recoveryDeadline < 0) {
+      this.recoveryDeadline = setTimeout(() => this.flushRecovery(), 2000);
+    }
   }
 
   private flushRecovery(): void {
-    this.recoveryTimer = -1;
-    if (!this.context || !DocumentService.current().editing) return;
-    if (!this.isDirty()) {
+    this.cancelRecoveryTimers();
+    const session = DocumentService.current();
+    if (!this.context || session !== this.sessionOwner || !session.editing) return;
+    if (session.source === session.savedText) {
       this.clearRecovery();
       return;
     }
     const draft = new RecoveryData();
-    draft.name = this.title;
-    draft.uri = this.info.uri;
-    draft.text = this.source;
-    draft.savedText = this.savedText;
-    draft.newline = this.info.newline;
-    draft.lineEndings = this.info.lineEndings;
-    draft.encoding = this.info.encoding;
-    draft.hasBom = this.info.hasBom;
-    draft.fingerprint = this.info.fingerprint;
-    draft.formatId = this.info.formatId;
-    draft.writable = this.info.writable;
-    draft.persistent = this.info.persistent;
+    draft.name = session.info.name;
+    draft.uri = session.info.uri;
+    draft.text = session.source;
+    draft.savedText = session.savedText;
+    draft.newline = session.info.newline;
+    draft.lineEndings = session.info.lineEndings;
+    draft.encoding = session.info.encoding;
+    draft.hasBom = session.info.hasBom;
+    draft.fingerprint = session.info.fingerprint;
+    draft.formatId = session.info.formatId;
+    draft.writable = session.info.writable;
+    draft.persistent = session.info.persistent;
     try {
       LocalState.writeDraft(this.context, draft);
     } catch {
@@ -641,7 +667,7 @@ export struct DocumentView {
     const caret = Math.min(step.caret, step.text.length);
     this.selectionStart = caret;
     this.selectionEnd = caret;
-    setTimeout(() => this.activeCursor().caretPosition(caret), 20);
+    this.scheduleCaret(caret);
   }
 
   private findNext(forward: boolean = true): void {
@@ -690,20 +716,33 @@ export struct DocumentView {
       return;
     }
     const caret = this.currentMatch + this.replacement.length;
+    this.history.boundary();
     this.updateSource(changed, caret);
+    this.history.boundary();
     this.currentMatch = -1;
-    setTimeout(() => this.activeCursor().caretPosition(caret), 20);
+    this.scheduleCaret(caret);
   }
 
   private insertToken(action: InsertAction): void {
-    const start = Math.min(this.selectionStart, this.selectionEnd);
-    const end = Math.max(this.selectionStart, this.selectionEnd);
-    const selected = this.source.slice(start, end);
-    const changed = this.source.slice(0, start) + action.before + selected + action.after +
-      this.source.slice(end);
-    const position = start + action.before.length + selected.length;
+    const edit = insertEditorAction(this.source, this.selectionStart, this.selectionEnd,
+      action.id, action.before, action.after);
+    const changed = edit.text;
+    const position = edit.caret;
+    this.history.boundary();
     this.updateSource(changed, position);
-    setTimeout(() => this.activeCursor().caretPosition(position), 20);
+    this.history.boundary();
+    this.scheduleCaret(position);
+  }
+
+  private scheduleCaret(position: number): void {
+    const owner = this.sessionOwner;
+    const source = this.source;
+    const tab = this.selectedTab;
+    setTimeout((): void => {
+      if (owner === null || owner !== this.sessionOwner || owner !== DocumentService.current() ||
+        !owner.editing || this.source !== source || this.selectedTab !== tab) return;
+      this.activeCursor().caretPosition(position);
+    }, 20);
   }
 
   private activeCursor(): TextAreaController {

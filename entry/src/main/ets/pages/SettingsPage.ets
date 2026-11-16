@@ -11,7 +11,6 @@ export struct SettingsPage {
   /** 读一次语言，标题栏在导航页不重建时也会重新设置。 */
   @StorageLink('marknote_language') language: string = 'default';
   @Prop version: string = '';
-  @Prop text: string = '';
   private scroller: Scroller = new Scroller();
   onOpen: (section: string) => void = (_section: string): void => {};
   onOpenProject: () => void = (): void => {};
@@ -35,7 +34,7 @@ export struct SettingsPage {
       } else {
         SettingsDetail({
           scroller: this.scroller, section: this.section, theme: $theme,
-          version: this.version, text: this.text,
+          version: this.version,
           onOpen: this.onOpen, onOpenProject: this.onOpenProject,
           onChooseTheme: this.onChooseTheme, onChooseLanguage: this.onChooseLanguage
         })

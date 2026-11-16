@@ -16,7 +16,8 @@ function encoding() {
   TextEncoder: { create: () => ({ encodeInto: value => new TextEncoder().encode(value) }) }
 };
   return vm.runInNewContext(`${nodeModule.stripTypeScriptTypes(source)}\nTextEncoding`,
-    { util, Uint8Array, Error });
+    { util, Uint8Array, Error,
+      userNotice: (message) => { const error = new Error(message); error.name = 'UserNotice'; return error; } });
 }
 
 test('decodes a large LF document without changing its content', needsStripper, () => {

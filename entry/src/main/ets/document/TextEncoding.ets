@@ -1,6 +1,7 @@
 import { util } from '@kit.ArkTS';
 import { DocumentInfo } from '../model/Document';
 import { AppText } from '../i18n/AppText';
+import { userNotice } from './UserNotice';
 
 export class DecodedText {
   text: string = '';
@@ -164,17 +165,17 @@ export class TextEncoding {
       const hinted = utf16Encoding(bytes);
       if (hinted.length > 0 && decodeAs(hinted, bytes) !== null) encoding = hinted;
     }
-    let text: string | null = null;
-    if (encoding !== 'utf-8') text = decodeAs(encoding, payload);
-    if (text === null) {
-      text = decodeAs('utf-8', payload);
+    let text: string | null = decodeAs(encoding, payload);
+    // A BOM declares the encoding. Malformed payloads must not silently become another encoding.
+    if (text === null && !hasBom && encoding !== 'utf-8') {
       encoding = 'utf-8';
+      text = decodeAs(encoding, payload);
     }
-    if (text === null) {
-      text = decodeAs('gb18030', payload);
+    if (text === null && !hasBom) {
       encoding = 'gb18030';
+      text = decodeAs(encoding, payload);
     }
-    if (text === null) throw new Error(AppText.text($r('app.string.encoding_unknown')));
+    if (text === null) throw userNotice(AppText.text($r('app.string.encoding_unknown')));
     const decoded = normalizeNewlines(text);
     decoded.encoding = encoding;
     decoded.hasBom = hasBom;
@@ -195,7 +196,7 @@ export class TextEncoding {
     }
     const decoded = TextEncoding.decode(applied.bytes);
     if (decoded.text !== text) {
-      throw new Error(AppText.text($r('app.string.encoding_lossy')));
+      throw userNotice(AppText.text($r('app.string.encoding_lossy')));
     }
     return applied;
   }

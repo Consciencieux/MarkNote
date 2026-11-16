@@ -16,6 +16,35 @@ export function installReferenceHook(): void {
   });
 }
 
+/** Templates stay detached; image context isolates SVG styles and fragment IDs. */
+const svgTemplates = new WeakMap<HTMLImageElement, SVGSVGElement>();
+
+export function refreshIsolatedSvg(container: ParentNode): void {
+  for (const image of container.querySelectorAll<HTMLImageElement>('img.isolated-svg')) {
+    const template = svgTemplates.get(image);
+    if (!template) continue;
+    const copy = template.cloneNode(true) as SVGSVGElement;
+    const appearance = getComputedStyle(image);
+    // Presentation attributes provide inherited defaults without overriding SVG's own styles.
+    if (!copy.hasAttribute('color')) copy.setAttribute('color', appearance.color);
+    if (!copy.hasAttribute('font-family')) copy.setAttribute('font-family', appearance.fontFamily);
+    copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(copy));
+  }
+}
+
+/** Do not call for KaTeX's inline layout SVGs. */
+export function isolateSvg(container: ParentNode, selector: string = 'svg'): void {
+  for (const svg of container.querySelectorAll<SVGSVGElement>(selector)) {
+    const image = document.createElement('img');
+    image.className = 'isolated-svg';
+    image.alt = svg.getAttribute('aria-label') || svg.querySelector('title')?.textContent || previewText().imageName;
+    svgTemplates.set(image, svg.cloneNode(true) as SVGSVGElement);
+    svg.replaceWith(image);
+  }
+  refreshIsolatedSvg(container);
+}
+
 // Keep fragment ids such as url(#gradient) intact. Scripts, animation, foreign
 // HTML and non-fragment links stay removed. CSP still blocks network loads.
 export function sanitizeSvg(source: string): string {

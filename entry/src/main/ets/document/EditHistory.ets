@@ -17,6 +17,8 @@ const MERGE_WINDOW_MS: number = 600;
 
 /** Older steps are dropped beyond this, so a long session cannot grow without bound. */
 const MAX_STEPS: number = 200;
+// Logical UTF-16 budget, not a measurement of Ark runtime heap memory.
+const MAX_HISTORY_BYTES: number = 32 * 1024 * 1024;
 
 /** One undoable state: the buffer plus where the caret was when it was captured. */
 export class EditStep {
@@ -56,20 +58,35 @@ export class EditHistory {
     // Editing after undoing discards the redo branch, as in any text editor.
     if (this.current < this.steps.length - 1) this.steps.splice(this.current + 1);
 
-    const merging = this.current >= 0 && now - this.lastRecorded < MERGE_WINDOW_MS;
+    const merging = this.current > 0 && this.lastRecorded > 0 && now >= this.lastRecorded &&
+      now - this.lastRecorded < MERGE_WINDOW_MS;
     if (merging) {
       this.steps[this.current] = new EditStep(text, caret);
       this.lastRecorded = now;
+      this.trim();
       return;
     }
 
     this.steps.push(new EditStep(text, caret));
     this.current = this.steps.length - 1;
     this.lastRecorded = now;
-    if (this.steps.length > MAX_STEPS) {
-      this.steps.shift();
-      this.current = this.steps.length - 1;
+    this.trim();
+  }
+
+  /** Keep commands and save snapshots out of a neighbouring typing group. */
+  boundary(): void {
+    this.lastRecorded = 0;
+  }
+
+  private trim(): void {
+    let bytes = 0;
+    for (const step of this.steps) bytes += step.text.length * 2;
+    // Retain the current state and one undo state even if those alone exceed the budget.
+    while (this.steps.length > 2 && (this.steps.length > MAX_STEPS || bytes > MAX_HISTORY_BYTES)) {
+      const removed = this.steps.shift();
+      if (removed !== undefined) bytes -= removed.text.length * 2;
     }
+    this.current = this.steps.length - 1;
   }
 
   canUndo(): boolean {

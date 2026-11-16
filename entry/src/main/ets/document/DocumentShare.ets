@@ -5,6 +5,7 @@ import { systemShare } from '@kit.ShareKit';
 import { DocumentInfo } from '../model/Document';
 import { TextEncoding } from './TextEncoding';
 import { AppText } from '../i18n/AppText';
+import { userNotice } from './UserNotice';
 
 /** Share a snapshot of the editor through the system panel, without modifying the original file. */
 export class DocumentShare {
@@ -24,7 +25,7 @@ export class DocumentShare {
       let offset = 0;
       while (offset < bytes.length) {
         const written = fileIo.writeSync(file.fd, bytes.slice(offset).buffer);
-        if (written <= 0) throw new Error(AppText.text($r('app.string.share_write_failed')));
+        if (written <= 0) throw userNotice(AppText.text($r('app.string.share_write_failed')));
         offset += written;
       }
     } finally {

@@ -174,8 +174,15 @@ async function readImage(uri: string, extension: string): Promise<string> {
       return cached.dataUrl;
     }
     const buffer = new ArrayBuffer(info.size);
-    const count = await fileIo.read(opened.fd, buffer, { length: info.size });
-    if (count !== info.size) return '';
+    let position = 0;
+    const target = new Uint8Array(buffer);
+    while (position < info.size) {
+      const chunk = new ArrayBuffer(Math.min(64 * 1024, info.size - position));
+      const count = await fileIo.read(opened.fd, chunk, { length: chunk.byteLength });
+      if (count <= 0 || count > chunk.byteLength) return '';
+      target.set(new Uint8Array(chunk, 0, count), position);
+      position += count;
+    }
     const bytes = new Uint8Array(buffer);
     const mime = mimeOf(bytes, extension);
     if (mime.length === 0) return '';

@@ -48,6 +48,8 @@ export struct DocumentPreviewView {
   scroller: Scroller = new Scroller();
   private controller: webview.WebviewController = new webview.WebviewController();
   private ready: boolean = false;
+  private updateGeneration: number = 0;
+  @State private previewFailed: boolean = false;
   private ports: webview.WebMessagePort[] = [];
   private timer: number = -1;
   private imageGeneration: number = 0;
@@ -182,10 +184,21 @@ export struct DocumentPreviewView {
       text: copy
     };
     const command = 'window.MarknotePreview.update(' + JSON.stringify(payload) + ')';
+    const generation = ++this.updateGeneration;
+    const revision = this.parseRevision;
+    const uri = this.documentUri;
+    const source = this.source;
+    const current = (): boolean => this.ready && generation === this.updateGeneration &&
+      this.parseRevision === revision &&
+      this.documentUri === uri && this.source === source;
     try {
-      this.controller.runJavaScript(command);
+      void this.controller.runJavaScript(command).then((): void => {
+        if (current()) this.previewFailed = false;
+      }).catch((): void => {
+        if (current()) this.previewFailed = true;
+      });
     } catch {
-      // Web 可能在切换页面时已经释放。
+      if (current()) this.previewFailed = true;
     }
   }
 
@@ -194,6 +207,7 @@ export struct DocumentPreviewView {
     // renderMode 是 Web 构造参数（web.d.ts 的 WebOptions，API 12 起），没有同名链式属性。
     // SYNC_RENDER 让 Web 作为画布节点和 ArkUI 一起绘制，FIT_CONTENT 才能按内容撑高。
     Web({ src: $rawfile('preview/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
+      .visibility(this.previewFailed ? Visibility.None : Visibility.Visible)
       .javaScriptAccess(true)
       .domStorageAccess(false)
       // ArkWeb 默认关闭深色模式；须在首次加载前设置，网页的 prefers-color-scheme 才能生效。
@@ -222,6 +236,9 @@ export struct DocumentPreviewView {
       this.scheduleImages();
     } }) {
       this.PreviewWeb()
+      if (this.previewFailed) {
+        Text($r('app.string.preview_failed'))
+      }
     }
   }
 }

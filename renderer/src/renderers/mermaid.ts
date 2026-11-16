@@ -1,7 +1,7 @@
 import mermaid from 'mermaid';
 import { previewError, previewText } from '../preview-text.ts';
 import { mermaidSources, requestsUnsupportedLayout } from './mermaid-block.ts';
-import { sanitizeSvg } from './svg.ts';
+import { isolateSvg, sanitizeSvg } from './svg.ts';
 
 const FONT = "system-ui, -apple-system, 'HarmonyOS Sans', sans-serif";
 
@@ -65,6 +65,7 @@ export async function paintMermaid(root: ParentNode, theme: PreviewTheme, ticket
       const rendered = await mermaid.render(id, source);
       if (ticket !== generation) return;
       block.innerHTML = sanitizeSvg(rendered.svg);
+      isolateSvg(block);
     } catch {
       if (ticket !== generation) return;
       showFailure(block);

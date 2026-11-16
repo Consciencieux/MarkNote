@@ -9,7 +9,7 @@
 | 新建与打开 | 首页可新建 Markdown、纯文本、SVG 和 LaTeX 文稿，也可通过系统选择器打开文件。文件管理器可以通过系统文件关联打开受支持的文稿，默认进入预览。格式优先按文件后缀识别，其次使用系统声明的类型 | [HomeView.ets](../entry/src/main/ets/pages/HomeView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[module.json5](../entry/src/main/module.json5) |
 | 最近文稿 | 记录已获得持久化授权的文件。首页“全部”显示这些记录，不包含从未打开的文件。首页更多菜单支持按修改时间、最近打开、名称或类型排序，双栏打开文稿时仍可通过首页更多菜单调整列表排序。默认按文件修改时间倒序；无法获取修改时间的文件排在后面。打开文件不会改变修改时间，保存后刷新文件时间。临时授权文件不加入列表；长按或再次打开失败时可以移除记录，移除记录不会删除文件，收藏的文件仍保留在收藏中 | [LocalState.ets](../entry/src/main/ets/storage/LocalState.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)、[RecentOrder.ts](../entry/src/main/ets/document/RecentOrder.ts)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
 | 收藏 | 预览和大纲标题栏、编辑和分栏的更多菜单可收藏或取消收藏具有持久授权的文件；首页“收藏”显示本机收藏。未保存或无法持久授权的文稿需要先保存或另存为。删除原文件后同步移除收藏；收藏只记录文件 URI，不复制文件 | [Index.ets](../entry/src/main/ets/pages/Index.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
-| 保存与另存为 | 有写入授权时可保存到原 URI；原文件无法写入或保存失败时可另存为。另存成功后继续编辑新文件；授权未持久化时保存后会提示。写入前检查文件是否被外部修改，发现冲突时拒绝覆盖。保存后重新读取并校验内容；文件提供方不保证写入操作具有原子性 | [DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
+| 保存与另存为 | 有写入授权时可保存到原 URI；原文件无法写入或保存失败时可另存为。另存成功后继续编辑新文件；授权未持久化时保存后会提示。写入前检查文件是否被外部修改，发现冲突时拒绝覆盖。有未保存修改时，先把完整编辑内容及保存基线写入私有恢复副本；恢复副本写入失败则停止写入目标文件。保存后重新读取并校验内容；文件提供方不保证写入操作具有原子性，恢复副本不等同于原文件字节级自动回滚 | [DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
 | 分享 | 预览和大纲标题栏、编辑和分栏的更多菜单可通过系统分享面板分享当前编辑内容，包括尚未保存的修改；分享文件为 UTF-8 临时副本，不修改原文件 | [DocumentShare.ets](../entry/src/main/ets/document/DocumentShare.ets)、[DocumentMenus.ets](../entry/src/main/ets/pages/DocumentMenus.ets) |
 | 删除文件 | 已保存文稿可以在预览、大纲标题栏或编辑、分栏的更多菜单中请求移入系统回收站；删除前确认，未保存修改会明确提示。原文件发生外部变化、文件提供方不支持或授权不足时不删除，保留当前文稿及草稿；尚未保存为文件的文稿不能删除 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
 | 未保存内容 | 离开已修改的文稿前，应用询问是否保存。编辑时会在应用私有目录保存草稿，供异常退出后恢复；正常离开时清除草稿。冷启动先恢复该草稿；若同时收到外部打开请求，先回到文稿页并确认离开，再打开外部文件 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
@@ -24,7 +24,7 @@
 | 快捷插入 | Markdown 编辑页提供标题、强调、链接、列表、待办、代码和公式等快捷操作；LaTeX 编辑页提供章节、小节、加粗、斜体、行内代码及公式快捷操作。工具栏位于顶部标题栏下方，空间不足时可横向滚动 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[FormatBarView.ets](../entry/src/main/ets/pages/FormatBarView.ets) |
 | 查找与替换 | 文稿菜单中的查找栏固定在顶部；输入时按字面文本统计匹配数，选择结果后显示当前位置，可在结果间前后跳转并替换单处。搜索词为空时隐藏结果导航；不支持正则表达式和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 文稿大纲 | Markdown 提取代码围栏以外的 ATX 标题，暂不解析 Setext 标题；LaTeX 使用预览解析得到的章节标题和源文本位置。两种格式共用分层大纲，可逐项展开、收起，并跳转到编辑位置 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[tex.ts](../renderer/src/renderers/tex.ts)、[DocumentOutlineView.ets](../entry/src/main/ets/pages/DocumentOutlineView.ets) |
-| 撤销与重做 | 编辑历史保存在内存中，连续输入在 600 毫秒内合并，最多保留 200 步；切换文稿时清空 | [EditHistory.ets](../entry/src/main/ets/document/EditHistory.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
+| 撤销与重做 | 编辑历史保存在内存中，连续输入在 600 毫秒内合并；替换、工具栏操作及保存边界不与相邻输入合并。历史最多保留 200 步，并按 32 MiB 的逻辑 UTF-16 文本量淘汰较旧记录；至少保留当前状态和一次撤销，因此两份超大文本本身仍可超过该预算。该预算不等同于运行时堆内存；切换文稿时清空 | [EditHistory.ets](../entry/src/main/ets/document/EditHistory.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。有底部导航避让区时，页签沿用组件对安全区的扩展，不再另加底边距。避让高度为 0 时（悬浮小窗是其中一种情况），页签栏与 `HdsTabs` 底边留出应用自己设定的 `sys.float.margin_left`，这不是华为规定的底部间距。宽度达到 `WIDTH_LG` 断点时可分栏显示，预览在左、编辑在右 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
 
 预览页面随应用离线打包。ArkUI 将格式、正文、主题、修订号和当前界面语言的预览提示传给网页；LaTeX 预览通过消息端口回传解析结果，网页不能调用文件或导航接口。内容安全策略禁止网络连接。
@@ -44,7 +44,7 @@
 
 文稿列表与文稿以双栏显示时，可通过文稿标题栏放大文稿或恢复文稿列表；文稿菜单可关闭当前文稿。放大期间窗口宽度发生变化时，恢复由系统自动选择单栏或双栏；单栏时显示返回按钮。预览和编辑并排的分栏页签另按窗口宽度提供。
 
-“关于”页显示应用名称、版本，提供 GitHub 项目主页和开源许可证入口；主页交给系统浏览器打开。开源许可证页分别提供本项目和第三方许可证全文。使用帮助可从设置页直接打开，支持离线查看。
+“关于”页显示应用名称、版本，提供 GitHub 项目主页和开源许可证入口；主页交给系统浏览器打开。开源许可证页分别提供本项目和第三方许可证全文。页面先打开，再读取并按段显示原文，不删减许可证内容。使用帮助可从设置页直接打开，支持离线查看。
 
 标题栏使用 HDS 导航组件，菜单使用系统菜单组件。文稿标题栏显示文件名，不显示行数、字符数或保存状态。菜单在高、中材质等级使用沉浸材质，在低材质等级或能力查询失败时关闭菜单材质并使用系统默认背板，以避免菜单内容与正文重叠。
 
