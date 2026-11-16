@@ -22,7 +22,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 
 ## 界面与导航
 
-首页使用 `HdsNavigation`。文稿和设置页面使用 `HdsNavDestination`，并由同一个 `NavPathStack` 管理。`Index` 创建设置页路由，`SettingsPage` 构建各级页面；每个页面持有自己的滚动控制器。`EntryAbility` 在加载页面前按已保存的语言偏好设置应用语言。跟随系统时解析为当前系统语言对应的资源，因此切换立即生效；下次冷启动会按当时的系统语言重新解析。
+首页使用 `HdsNavigation`。文稿和设置页面使用 `HdsNavDestination`，并由同一个 `NavPathStack` 管理。`Index` 创建设置页路由，`SettingsPage` 构建各级页面；每个页面持有自己的滚动控制器。许可证页进入后再读取原文，并按段放进列表。`EntryAbility` 在加载页面前按已保存的语言偏好设置应用语言。跟随系统时解析为当前系统语言对应的资源，因此切换立即生效；下次冷启动会按当时的系统语言重新解析。
 
 `HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，各自保留滚动控制器。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
 

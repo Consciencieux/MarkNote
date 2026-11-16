@@ -2,7 +2,6 @@ import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
 import {
   ColorMetrics, ComponentContent, LengthMetrics, mediaquery, SegmentButtonV2Items, TabSegmentButtonV2
 } from '@kit.ArkUI';
-import { util } from '@kit.ArkTS';
 import {
   HdsNavigation, HdsNavigationTitleMode,
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
@@ -33,8 +32,6 @@ import { applyAppLanguage, isRightToLeftLanguage, normalizeAppLanguage, publishA
 @Entry
 @Component
 struct Index {
-  @State private legalText: string = '';
-  @State private projectLicenseText: string = '';
   @State private recents: RecentDocument[] = [];
   @State private sortOrder: string = 'modified';
   @State private theme: string = 'system';
@@ -404,18 +401,9 @@ struct Index {
 
   /**
    * 将设置子页推入当前导航栈。
-   * 许可证全文按需读一次，其余页面不碰磁盘。
-   * 本项目许可证和第三方声明分开放，避免后打开的页面覆盖先打开的全文。
+   * 许可证页先进入，再由页面自己异步读取原文。
    */
   private openSetting(section: string): void {
-    if (section === 'project-license' && this.projectLicenseText.length === 0) {
-      this.projectLicenseText = this.readRawLicense('licenses/LICENSE',
-        AppText.text($r('app.string.license_project_failed')));
-    }
-    if (section === 'licenses' && this.legalText.length === 0) {
-      this.legalText = this.readRawLicense('licenses/THIRD_PARTY_NOTICES.txt',
-        AppText.text($r('app.string.license_third_failed')));
-    }
     this.routes.pushPathByName(section, '');
   }
 
@@ -436,16 +424,6 @@ struct Index {
       action: 'ohos.want.action.sendToData',
       uri: 'mailto:zhouyi1227@outlook.com?subject=MarkNote%20Feedback'
     }).catch(() => this.toast($r('app.string.mail_open_failed')));
-  }
-
-  private readRawLicense(path: string, failure: string): string {
-    if (!this.context) return failure;
-    try {
-      const bytes = this.context.resourceManager.getRawFileContentSync(path);
-      return util.TextDecoder.create('utf-8').decodeToString(bytes);
-    } catch {
-      return failure;
-    }
   }
 
   /**
@@ -732,7 +710,6 @@ struct Index {
         section: name,
         theme: $theme,
         version: this.version,
-        text: name === 'project-license' ? this.projectLicenseText : this.legalText,
         onOpen: (section: string): void => this.openSetting(section),
         onOpenProject: (): void => this.openProjectHome(),
         onFeedback: (): void => this.openFeedback(),

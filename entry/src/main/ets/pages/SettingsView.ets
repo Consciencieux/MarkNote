@@ -67,19 +67,19 @@ export struct SettingsView {
   build() {
     List({ spaceWidth: $r('sys.float.padding_level6'), scroller: this.scroller }) {
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        // 右侧小字取决于当前选项。@Builder 默认按值传参，两个及以上参数时状态变化不会刷新函数内的 UI。
-        // 所以这两行直接写在 build 里，并用当前选项当键重建。
+        // 外观行直接绑定当前主题。键若跟着主题变化，ForEach 会拆掉原行再新建。
+        // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-rendering-control-foreach
+        ListItem({ style: ListItemStyle.CARD }) {
+          SettingsListRow({
+            title: $r('app.string.settings_appearance'),
+            value: themeLabel(this.theme),
+            showArrow: true
+          })
+        }
+        .onClick(() => this.onOpen('appearance'))
+        // 语言行的右侧文字取决于当前语言。@Builder 默认按值传参，两个及以上参数时状态变化不会刷新函数内的 UI。
+        // 所以这一行直接写在 build 里，并用当前语言当键重建。
         // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
-        ForEach([this.theme], (choice: string) => {
-          ListItem({ style: ListItemStyle.CARD }) {
-            SettingsListRow({
-              title: $r('app.string.settings_appearance'),
-              value: themeLabel(choice),
-              showArrow: true
-            })
-          }
-          .onClick(() => this.onOpen('appearance'))
-        }, (choice: string) => choice)
         ForEach([this.language], (choice: string) => {
           ListItem({ style: ListItemStyle.CARD }) {
             SettingsListRow({
