@@ -1,10 +1,13 @@
-* text=auto eol=lf
-*.png binary
+# HarmonyOS ArkTS source
+*.ets linguist-language=ArkTS
 
-# 生成文件不参与 GitHub 语言统计。
+# Generated resources committed for offline builds
 entry/src/main/resources/rawfile/preview/index.html linguist-generated
 entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt linguist-generated
-renderer/package-lock.json linguist-generated
 
-# .ets 按 ArkTS 统计。
-*.ets linguist-language=ArkTS
+# Linguist already treats package-lock.json as generated and hides its diff.
+# JSON is not counted in language stats. Keep the dependency diff visible.
+renderer/package-lock.json -linguist-generated
+
+# Binary assets
+*.png binary
