@@ -6,7 +6,13 @@ import { previewLanguageTag } from '../i18n/AppLanguage';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
 
 interface ParsedHeading { level: number; text: string; offset: number }
-interface ParsedResult { kind: string; revision: number; headings: ParsedHeading[] }
+interface ParsedResult {
+  kind: string;
+  revision: number;
+  headings: ParsedHeading[];
+  url?: string;
+  documentId?: number;
+}
 interface PreviewCopy {
   lang: string;
   empty: string;
@@ -45,6 +51,8 @@ export struct DocumentPreviewView {
    */
   @StorageLink('marknote_language') @Watch('scheduleUpdate') language: string = 'default';
   onOutline: (revision: number, headings: Heading[]) => void = (_revision: number, _headings: Heading[]): void => {};
+  /** 预览里点击已校验的网页链接。页面不打开这个地址。 */
+  onOpenExternalLink: (link: string) => void = (_link: string): void => {};
   scroller: Scroller = new Scroller();
   private controller: webview.WebviewController = new webview.WebviewController();
   private ready: boolean = false;
@@ -81,6 +89,14 @@ export struct DocumentPreviewView {
         if (typeof message !== 'string') return;
         try {
           const result = JSON.parse(message) as ParsedResult;
+          if (result.kind === 'open-link') {
+            const url = result.url;
+            if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return;
+            if (result.revision !== this.parseRevision || result.documentId !== this.documentGeneration) return;
+            if (this.kind !== 'markdown' || !this.ready) return;
+            this.onOpenExternalLink(url);
+            return;
+          }
           if (result.kind !== 'tex-outline' || result.revision !== this.parseRevision ||
             this.kind !== 'tex-math' || !Array.isArray(result.headings)) return;
           const headings: Heading[] = [];

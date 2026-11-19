@@ -53,6 +53,7 @@ marknote/
 | 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
 | 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/LocalState.ets` |
 | Markdown 本地图片 | `document/LocalImages.ets`、`pages/DocumentPreviewView.ets`，以及仓库根目录下的 `renderer/src/renderers/markdown.ts` |
+| Markdown 网页链接 | `pages/DocumentPreviewView.ets`、`pages/DocumentView.ets`，以及仓库根目录下的 `renderer/src/renderers/external-link.ts`、`renderer/src/preview-link-message.ts` |
 | 文稿分享 | `document/DocumentShare.ets`、`pages/DocumentMenus.ets` |
 | 文件编码与换行 | `document/TextEncoding.ets` |
 | 格式注册与文件关联 | `document/FormatRegistry.ets`，仓库根目录下的 `entry/src/main/module.json5` 和 `renderer/src/renderers/` |
