@@ -76,8 +76,8 @@ struct HomeMenuView {
         MenuItem({ content: $r('app.string.settings') })
           .onClick(() => menuBridge.openSettings())
       }
-    // 宽度容纳英文排序项和系统勾选图标。
-    }.width(240).subMenuExpandingMode(SubMenuExpandingMode.EMBEDDED_EXPAND)
+    }
+    .subMenuExpandingMode(SubMenuExpandingMode.EMBEDDED_EXPAND)
   }
 }
 
