@@ -1,4 +1,5 @@
-import { common } from '@kit.AbilityKit';
+import { common, OpenLinkOptions } from '@kit.AbilityKit';
+import { url } from '@kit.ArkTS';
 import { FrameCallback, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
@@ -244,6 +245,27 @@ export struct DocumentView {
 
   private toast(message: string | Resource): void {
     this.getUIContext().getPromptAction().showToast({ message });
+  }
+
+  /** 再次确认协议、主机和凭据后交给系统，不让预览页面自己打开。 */
+  private openExternalLink(link: string): void {
+    if (!this.context || link.length === 0 || link.length > 2048) return;
+    let parsed = '';
+    try {
+      const address = new url.URL(link);
+      if ((address.protocol === 'http:' || address.protocol === 'https:') &&
+        address.hostname.length > 0 && address.username.length === 0 && address.password.length === 0 &&
+        address.href.length <= 2048) {
+        parsed = address.href;
+      }
+    } catch {
+      return;
+    }
+    if (parsed.length === 0) return;
+    const options: OpenLinkOptions = { appLinkingOnly: false, hideFailureTipDialog: true };
+    this.context.openLink(parsed, options).catch((): void => {
+      this.toast($r('app.string.link_open_failed'));
+    });
   }
 
   private async shareDocument(): Promise<void> {
@@ -962,7 +984,8 @@ export struct DocumentView {
         DocumentPreviewView({
           scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
           kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
-          onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
+          onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings),
+          onOpenExternalLink: (link: string): void => this.openExternalLink(link)
         })
       }
         .layoutWeight(1)
@@ -996,7 +1019,8 @@ export struct DocumentView {
           DocumentPreviewView({
             scroller: this.previewScroller, theme: this.theme, source: this.source,
             kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
-            onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings)
+            onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings),
+            onOpenExternalLink: (link: string): void => this.openExternalLink(link)
           })
         }
           .attributeModifier(this.tabContentPolicy)

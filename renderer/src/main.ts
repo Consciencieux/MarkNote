@@ -8,11 +8,13 @@ import { renderPlain } from './renderers/plain';
 import { installReferenceHook, isolateSvg, refreshIsolatedSvg, sanitizeSvg } from './renderers/svg';
 import { renderTexDocument, type TexDocument } from './renderers/tex';
 import type { PreviewUpdate } from './globals';
+import { encodePreviewLinkRequest } from './preview-link-message';
 import { imageLabel, previewText, usePreviewText } from './preview-text';
 import katex from 'katex';
 
 type Kind = PreviewUpdate['kind'];
 let resultPort: MessagePort | undefined;
+let linkTarget: { kind: Kind; revision: number; documentId: number } | undefined;
 let lastResult: string | undefined;
 let lastRendered: {
   kind: Kind; source: string; documentId?: number; textStamp: string; theme: PreviewTheme; tex?: TexDocument;
@@ -26,6 +28,31 @@ window.addEventListener('message', (event: MessageEvent) => {
 
 const host = document.getElementById('preview');
 if (!host) throw new Error('missing preview root');
+
+function notePreviewTarget(update: PreviewUpdate): void {
+  const revision = update.revision;
+  const documentId = update.documentId;
+  if (update.kind === 'markdown' && typeof revision === 'number' && Number.isInteger(revision) && revision >= 0 &&
+    typeof documentId === 'number' && Number.isInteger(documentId) && documentId >= 0) {
+    linkTarget = { kind: update.kind, revision, documentId };
+    return;
+  }
+  linkTarget = undefined;
+}
+
+host.addEventListener('click', (event: MouseEvent) => {
+  const target = linkTarget;
+  const port = resultPort;
+  if (!target || target.kind !== 'markdown' || !port) return;
+  const origin = event.target instanceof Element ? event.target :
+    (event.target instanceof Node ? event.target.parentElement : null);
+  const link = origin?.closest('a[data-mn-external-url]');
+  if (!link || !host.contains(link)) return;
+  event.preventDefault();
+  const encoded = encodePreviewLinkRequest(link.getAttribute('data-mn-external-url') ?? '',
+    target.revision, target.documentId);
+  if (encoded) port.postMessage(encoded);
+});
 
 function paintDiagrams(theme: PreviewTheme): void {
   const ticket = nextMermaidGeneration();
@@ -93,6 +120,7 @@ function render(update: PreviewUpdate): void {
   if (!['system', 'light', 'dark'].includes(update.theme)) return;
   if (!['markdown', 'plain', 'svg', 'tex-math'].includes(update.kind)) return;
   if (typeof update.source !== 'string') return;
+  notePreviewTarget(update);
   const textStamp = usePreviewText(update.text);
   document.documentElement.lang = previewText().lang;
   document.documentElement.dir = /^(ar|ug)(-|$)/i.test(previewText().lang) ? 'rtl' : 'ltr';
@@ -137,6 +165,7 @@ function render(update: PreviewUpdate): void {
     tex = update.kind === 'tex-math' ? renderTexDocument(update.source) : undefined;
     html = tex ? tex.html : renderBody(update.kind, update.source);
   } catch {
+    linkTarget = undefined;
     nextMermaidGeneration();
     lastRendered = undefined;
     host!.textContent = previewText().failed;

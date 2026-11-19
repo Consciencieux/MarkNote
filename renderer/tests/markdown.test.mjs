@@ -26,6 +26,37 @@ test('uses the encoded address markdown-it will render', () => {
   assert.match(html, /data-mn-src="my%20pic\.png"/);
 });
 
+test('renders task markers as disabled checkboxes and leaves ordinary lists unchanged', () => {
+  const html = renderMarkdown([
+    '- [ ] A',
+    '- [x] B',
+    '- [X] C',
+    '',
+    '1. [ ] D',
+    '',
+    '- text',
+    '- parent',
+    '  - [x] child',
+    '',
+    '`[x]`',
+    '',
+    '```',
+    '- [x] code',
+    '```'
+  ].join('\n'));
+  assert.match(html, /<input type="checkbox" class="task-list-item-checkbox"[^>]*disabled="disabled"><label[^>]*> A<\/label>/);
+  assert.match(html, /<input type="checkbox"[^>]*checked="checked"[^>]*disabled="disabled"><label[^>]*> B<\/label>/);
+  assert.match(html, /<input type="checkbox"[^>]*checked="checked"[^>]*disabled="disabled"><label[^>]*> C<\/label>/);
+  assert.match(html, /<ol class="task-list-container">[\s\S]*<label[^>]*> D<\/label>/);
+  assert.match(html, /<ul class="task-list-container">[\s\S]*<label[^>]*> child<\/label>/);
+  assert.match(html, /<li>text<\/li>/);
+  assert.doesNotMatch(html, /task-list-item">text/);
+  assert.match(html, /<code>\[x\]<\/code>/);
+  assert.match(html, /<pre><code>- \[x\] code/);
+  assert.doesNotMatch(html, /<pre>[\s\S]*type="checkbox"/);
+  assert.doesNotMatch(html, /<code>[\s\S]*type="checkbox"/);
+});
+
 test('keeps a mermaid fence as a numbered placeholder', () => {
   const html = renderMarkdown('```mermaid\nflowchart LR\n  A-->B\n```\n\n```Mermaid\npie\n  "a" : 1\n```\n\n```js\nconst a = 1\n```');
   assert.match(html, /<section class="mermaid-block" data-mn-mermaid="0"><\/section>/);
