@@ -2,11 +2,17 @@ import MarkdownIt from 'markdown-it';
 import { katex as katexPlugin } from '@mdit/plugin-katex';
 import { tasklist } from '@mdit/plugin-tasklist';
 import { imagePlaceholder, previewError, previewText } from '../preview-text.ts';
+import { highlightFencedCode } from './code-highlight.ts';
 import { beginMermaidDiagrams, mermaidPlaceholder } from './mermaid-block.ts';
 import { safeExternalUrl } from './external-link.ts';
 import { sanitizeSvg } from './svg.ts';
 
-const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
+const md = new MarkdownIt({
+  html: false,
+  linkify: false,
+  typographer: false,
+  highlight: highlightFencedCode
+});
 md.use(tasklist, { disabled: true, label: true });
 md.use(katexPlugin, {
   delimiters: 'all',
