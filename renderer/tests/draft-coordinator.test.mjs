@@ -226,3 +226,39 @@ test('a failed automatic draft retries until it succeeds and stops after the att
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(reported, ['disk full']);
 });
+
+test('a failed in-flight draft is not written again after the recovery file is cleared', async () => {
+  const time = clock();
+  const writes = [];
+  let rejectWrite = null;
+  const api = coordinator(time, {
+    LocalState: {
+      writeDraft: (_context, draft) => {
+        writes.push(draft.text);
+        if (rejectWrite === null) return new Promise((_resolve, reject) => { rejectWrite = reject; });
+        return Promise.resolve();
+      },
+      clearDraft: async () => { writes.push('clear'); }
+    }
+  });
+  const drafts = new api.DraftCoordinator({});
+  const errors = [];
+  drafts.onError = (_sessionId, error) => { errors.push(error.message); };
+  drafts.activate(1);
+  drafts.schedule(snapshot(api, 1, 'A'));
+  time.advance(450);
+  await new Promise((resolve) => setImmediate(resolve));
+  const clearing = drafts.clear(snapshot(api, 1, 'base'));
+  rejectWrite(new Error('disk full'));
+  assert.equal(await clearing, true);
+  time.advance(500);
+  await new Promise((resolve) => setImmediate(resolve));
+  time.advance(1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  time.advance(2000);
+  await new Promise((resolve) => setImmediate(resolve));
+  time.advance(4000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(writes, ['A', 'clear']);
+  assert.deepEqual(errors, []);
+});

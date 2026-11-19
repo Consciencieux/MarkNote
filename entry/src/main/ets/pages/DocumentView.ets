@@ -255,10 +255,12 @@ export struct DocumentView {
     documentBridge.requestLeave = (): void => {};
   }
 
-  /** 先处理未保存的改动，再关闭会话并请首页弹栈；取消时留在原处。 */
+  /** 先处理未保存的改动，再关闭会话并请首页弹栈；取消或草稿清不掉时留在原处。 */
   private requestLeave(): void {
-    void this.closeToLibrary().then((left: boolean) => {
+    void this.closeToLibrary().then((left: boolean): void => {
       if (left) this.onLeave();
+    }).catch((): void => {
+      this.toast($r('app.string.draft_write_failed'));
     });
   }
 
@@ -574,16 +576,37 @@ export struct DocumentView {
     });
   }
 
+  /**
+   * 确认离开，再清理草稿。清理失败就留在文稿并提示。
+   * 清理期间正文又变了，只再确认一次；之后仍清不掉或又有新编辑，就停止关闭。
+   */
   private async closeToLibrary(): Promise<boolean> {
     if (!await this.saveBeforeLeaving()) return false;
     const owner = DocumentService.current();
-    const source = owner.source;
-    const cleared = await DocumentService.clearRecovery(owner, 'discarded');
-    if ((!cleared || owner.source !== source) && owner.editing && owner.source !== owner.savedText) {
-      return this.closeToLibrary();
+    let confirmAgain = true;
+    while (DocumentService.current() === owner && owner.editing) {
+      const source = owner.source;
+      let cleared = false;
+      try {
+        cleared = await DocumentService.clearRecovery(owner, 'discarded');
+      } catch (_error) {
+        this.toast($r('app.string.draft_write_failed'));
+        return false;
+      }
+      if (DocumentService.current() !== owner || !owner.editing) return false;
+      const interrupted = (!cleared || owner.source !== source) && owner.source !== owner.savedText;
+      if (!interrupted) {
+        DocumentService.close();
+        return true;
+      }
+      if (!confirmAgain) {
+        this.toast($r('app.string.draft_write_failed'));
+        return false;
+      }
+      confirmAgain = false;
+      if (!await this.saveBeforeLeaving()) return false;
     }
-    DocumentService.close();
-    return true;
+    return false;
   }
 
   private analysisRequest(): AnalysisRequest {

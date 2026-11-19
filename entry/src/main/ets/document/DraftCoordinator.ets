@@ -40,6 +40,7 @@ class DraftTask {
  * One writer for the private recovery file.
  * Automatic saves keep one in-flight write and one latest snapshot.
  * A failed automatic snapshot is retried with a short backoff, then reported.
+ * A later edit, a clear, or a session change retires that snapshot for good.
  * A checkpoint waits until its own snapshot is durable.
  */
 export class DraftCoordinator {
@@ -56,6 +57,8 @@ export class DraftCoordinator {
   private retryTimer: number = -1;
   private retryAttempt: number = 0;
   private retrySnapshot: DraftSnapshot | null = null;
+  /** Automatic writes created before this operation must not be retried. */
+  private minLiveOp: number = 0;
 
   constructor(context: common.UIAbilityContext) {
     this.context = context;
@@ -65,6 +68,7 @@ export class DraftCoordinator {
     this.activeSession = sessionId;
     this.disarm();
     this.cancelRetry();
+    this.supersede(this.nextOp);
     this.pendingAuto = null;
     const kept: DraftTask[] = [];
     for (let index = 0; index < this.queue.length; index++) {
@@ -84,6 +88,7 @@ export class DraftCoordinator {
     if (snapshot.sessionId !== this.activeSession) return;
     this.cancelRetry();
     this.pendingAuto = new DraftTask('write', snapshot, this.nextOp++, false);
+    this.supersede(this.pendingAuto.op);
     this.armIdle();
     this.armDeadline();
   }
@@ -98,6 +103,7 @@ export class DraftCoordinator {
   clear(snapshot: DraftSnapshot): Promise<boolean> {
     this.cancelRetry();
     const task = new DraftTask('clear', snapshot, this.nextOp++, true);
+    this.supersede(task.op);
     if (this.pendingAuto !== null && this.pendingAuto.op < task.op) {
       this.pendingAuto = null;
       this.disarm();
@@ -231,7 +237,7 @@ export class DraftCoordinator {
       const queued = this.queue[index];
       if (queued.kind === 'write' && queued.sessionId === task.sessionId) newerQueued = true;
     }
-    if (task.sessionId !== this.activeSession || newerPending || newerQueued) {
+    if (task.sessionId !== this.activeSession || task.op < this.minLiveOp || newerPending || newerQueued) {
       task.resolve(false);
       return;
     }
@@ -245,17 +251,23 @@ export class DraftCoordinator {
     }
     this.retrySnapshot = task.snapshot;
     const delay = retryDelay(this.retryAttempt);
+    const op = task.op;
     task.resolve(false);
-    this.armRetry(delay);
+    this.armRetry(delay, op);
   }
 
-  private armRetry(delay: number): void {
+  private supersede(op: number): void {
+    if (op > this.minLiveOp) this.minLiveOp = op;
+  }
+
+  private armRetry(delay: number, op: number): void {
     if (this.retryTimer >= 0) clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout((): void => {
       this.retryTimer = -1;
       const shot = this.retrySnapshot;
       this.retrySnapshot = null;
-      if (shot === null || shot.sessionId !== this.activeSession || this.pendingAuto !== null) return;
+      if (shot === null || op < this.minLiveOp || shot.sessionId !== this.activeSession ||
+        this.pendingAuto !== null) return;
       this.enqueue(new DraftTask('write', shot, this.nextOp++, false));
     }, delay);
   }
