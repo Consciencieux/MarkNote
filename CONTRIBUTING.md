@@ -70,7 +70,7 @@ devecocli build --modules entry
 
 `dev` 用于集成下一版本，`main` 保存已发布版本。新功能和普通修复从最新 `dev` 创建 `feature/xxx` 或 `fix/xxx` 分支，并通过 PR 合并到 `dev`。需要立即修复已发布版本时，从 `main` 创建 `hotfix/xxx` 分支。
 
-功能和普通修复使用 Squash merge。合并后删除短期分支，后续工作从最新 `dev` 创建新分支。
+功能和普通修复默认使用 Squash merge；需要保留阶段性提交或重要分支整合历史时使用 Merge commit。合并后删除短期分支，后续工作从最新 `dev` 创建新分支。
 
 ### 发布
 
