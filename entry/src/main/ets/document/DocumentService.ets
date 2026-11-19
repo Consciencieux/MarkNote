@@ -108,7 +108,8 @@ export class DocumentService {
     if (!session.editing || session.source === text) return false;
     session.source = text;
     session.revision++;
-    DocumentService.scheduleDraft(session);
+    if (session.source === session.savedText) DocumentService.releaseDraft(session);
+    else DocumentService.scheduleDraft(session);
     return true;
   }
 
@@ -116,8 +117,11 @@ export class DocumentService {
     DocumentService.session.editing = false;
   }
 
-  static startNew(id: string): void {
-    if (DocumentService.session.fileOperation !== 'idle') return;
+  /** Drop the previous recovery file before publishing another session. */
+  static async startNew(id: string): Promise<boolean> {
+    if (DocumentService.session.fileOperation !== 'idle') return false;
+    if (!await DocumentService.abandonCurrentRecovery()) return false;
+    if (DocumentService.session.fileOperation !== 'idle') return false;
     const format = FormatRegistry.byId(id);
     const info = new DocumentInfo();
     info.name = FormatRegistry.defaultName(format);
@@ -129,6 +133,7 @@ export class DocumentService {
     session.editing = true;
     DocumentService.session = session;
     DocumentService.activateSession(session);
+    return true;
   }
 
   /**
@@ -153,12 +158,13 @@ export class DocumentService {
     if (DocumentService.session.fileOperation !== 'idle') return false;
     if (beforeAdopt !== null && !await beforeAdopt()) return false;
     if (DocumentService.session.fileOperation !== 'idle') return false;
-    DocumentService.adopt(loaded);
-    return true;
+    return DocumentService.adopt(loaded);
   }
 
-  static adopt(opened: FileContents): void {
-    if (DocumentService.session.fileOperation !== 'idle') return;
+  static async adopt(opened: FileContents): Promise<boolean> {
+    if (DocumentService.session.fileOperation !== 'idle') return false;
+    if (!await DocumentService.abandonCurrentRecovery()) return false;
+    if (DocumentService.session.fileOperation !== 'idle') return false;
     const session = new DocumentSession(DocumentService.allocateId());
     session.info = opened.info;
     session.source = opened.text;
@@ -166,6 +172,7 @@ export class DocumentService {
     session.editing = true;
     DocumentService.session = session;
     DocumentService.activateSession(session);
+    return true;
   }
 
   static async restore(draft: RecoveryData, canAdopt: (() => boolean) | null = null): Promise<boolean> {
@@ -247,11 +254,11 @@ export class DocumentService {
           target.lineEndings = '';
         }
       }
-      DocumentFiles.validateForWrite(target, snapshot);
+      const encoded = DocumentFiles.encodedForWrite(target, snapshot);
       if (snapshot !== baseline) await DocumentService.checkpointRecovery(session, snapshot, baseline, previous);
       if (DocumentService.session !== session || !session.editing) return result;
       const sameTarget = previous.uri.length > 0 && uri === previous.uri;
-      const verified = await DocumentFiles.write(target, snapshot, !saveAs || sameTarget);
+      const verified = await DocumentFiles.write(target, snapshot, !saveAs || sameTarget, encoded);
       if (DocumentService.session !== session || !session.editing || session.fileOperation !== 'save') return result;
       target.name = verified.info.name.length > 0 ? verified.info.name : previous.name;
       target.fingerprint = verified.info.fingerprint;
@@ -272,8 +279,12 @@ export class DocumentService {
         DocumentService.scheduleDraft(session);
         result.message = AppText.text($r('app.string.saved_dirty'));
       } else {
-        const cleared = await DocumentService.clearRecovery(session, 'saved');
-        if (!cleared) DocumentService.scheduleDraft(session);
+        try {
+          const cleared = await DocumentService.clearRecovery(session, 'saved');
+          if (!cleared) DocumentService.scheduleDraft(session);
+        } catch (error) {
+          DocumentService.reportRecovery(session.id, error);
+        }
         if (readOnly) result.message = AppText.text($r('app.string.saved_readonly'));
         else result.message = AppText.text($r('app.string.saved'));
       }
@@ -304,7 +315,11 @@ export class DocumentService {
         session.savedText = '';
         DocumentService.scheduleDraft(session);
       } else {
-        await DocumentService.clearRecovery(session, 'discarded');
+        try {
+          await DocumentService.clearRecovery(session, 'discarded');
+        } catch (error) {
+          DocumentService.reportRecovery(session.id, error);
+        }
         session.editing = false;
       }
       return result;
@@ -316,6 +331,28 @@ export class DocumentService {
   static async clearRecovery(owner: DocumentSession, _reason: string): Promise<boolean> {
     if (DocumentService.drafts === null) return true;
     return DocumentService.drafts.clear(DocumentService.makeSnapshot(owner));
+  }
+
+  private static reportRecovery(sessionId: number, error: Object): void {
+    const wrapped = error instanceof Error ? error : new Error('draft failed');
+    DocumentService.recoveryError(sessionId, wrapped);
+  }
+
+  /** Clear a recovery file before another document takes its place. A busy or newer edit keeps the current session. */
+  private static async abandonCurrentRecovery(): Promise<boolean> {
+    const owner = DocumentService.session;
+    if (!owner.editing) return true;
+    const source = owner.source;
+    const cleared = await DocumentService.clearRecovery(owner, 'discarded');
+    if (DocumentService.session !== owner || owner.fileOperation !== 'idle' || owner.source !== source) return false;
+    return cleared;
+  }
+
+  private static releaseDraft(session: DocumentSession): void {
+    if (DocumentService.drafts === null) return;
+    DocumentService.drafts.clear(DocumentService.makeSnapshot(session)).catch((error: Object): void => {
+      DocumentService.reportRecovery(session.id, error);
+    });
   }
 
   private static scheduleDraft(session: DocumentSession): void {

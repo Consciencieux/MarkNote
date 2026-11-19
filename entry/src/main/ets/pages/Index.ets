@@ -483,7 +483,7 @@ struct Index {
   }
 
   private async startNew(kind: string): Promise<void> {
-    DocumentService.startNew(kind);
+    if (!await DocumentService.startNew(kind)) return;
     this.presentOpened();
   }
 

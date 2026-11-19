@@ -4,7 +4,7 @@ import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { fileManagerService } from '@kit.FileManagerServiceKit';
 import { DocumentInfo } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
-import { TextEncoding } from '../document/TextEncoding';
+import { TextEncoding, EncodedText } from '../document/TextEncoding';
 import { AppText } from '../i18n/AppText';
 import { userNotice } from '../document/UserNotice';
 
@@ -227,8 +227,8 @@ export class DocumentFiles {
     return result;
   }
 
-  /** Reject a save that cannot be encoded or would exceed the size limit, before any file is opened. */
-  static validateForWrite(info: DocumentInfo, text: string): void {
+  /** Encode once and reject a save that cannot be stored, before any file is opened. */
+  static encodedForWrite(info: DocumentInfo, text: string): EncodedText {
     if (info.uri.length === 0) throw userNotice(AppText.text($r('app.string.no_writable_file')));
     if (!info.writable) throw userNotice(AppText.text($r('app.string.no_write_use_save_as')));
     if (info.newline === 'mixed') {
@@ -239,15 +239,21 @@ export class DocumentFiles {
     }
     const encoded = TextEncoding.encode(text, info);
     if (encoded.bytes.length > MAX_BYTES) throw userNotice(AppText.text($r('app.string.save_too_large')));
+    return encoded;
+  }
+
+  /** Reject a save that cannot be encoded or would exceed the size limit, before any file is opened. */
+  static validateForWrite(info: DocumentInfo, text: string): void {
+    DocumentFiles.encodedForWrite(info, text);
   }
 
   /**
    * Outside providers cannot guarantee atomic replacement. Compare the byte fingerprint
    * taken at open or the last successful save, then verify the bytes written back.
    */
-  static async write(info: DocumentInfo, text: string, checkConflict: boolean): Promise<FileContents> {
-    DocumentFiles.validateForWrite(info, text);
-    const encoded = TextEncoding.encode(text, info);
+  static async write(info: DocumentInfo, text: string, checkConflict: boolean,
+    prepared: EncodedText | null = null): Promise<FileContents> {
+    const encoded = prepared === null ? DocumentFiles.encodedForWrite(info, text) : prepared;
     if (checkConflict) {
       if (info.fingerprint.length === 0) {
         throw userNotice(AppText.text($r('app.string.missing_fingerprint')));

@@ -4,7 +4,8 @@ import { loadArktsModules } from './helpers/arkts-loader.mjs';
 
 const formats = {
   markdown: { id: 'markdown', starter: '' },
-  plain: { id: 'plain', starter: '' }
+  plain: { id: 'plain', starter: '' },
+  svg: { id: 'svg', starter: '<svg></svg>' }
 };
 const registry = {
   byId: (id) => formats[id],
@@ -13,9 +14,13 @@ const registry = {
   resolve: (name, _type, unknown) => name.endsWith('.md') ? formats.markdown : unknown ? formats.plain : null
 };
 
-function service(overrides = {}) {
+async function service(overrides = {}, time = { setTimeout, clearTimeout }) {
   const writes = [];
   const drafts = [];
+  const clears = [];
+  const recoveryErrors = [];
+  let encodings = 0;
+  const prepared = { bytes: new Uint8Array([1]), newline: '\n', lineEndings: '' };
   let releaseWrite = null;
   const files = {
     prepare: async () => ({ writable: true, persistent: true }),
@@ -25,9 +30,14 @@ function service(overrides = {}) {
         fingerprint: 'disk', formatId: 'markdown', writable: true, persistent: true },
       text: 'disk'
     }),
+    encodedForWrite: () => {
+      encodings++;
+      return prepared;
+    },
     validateForWrite: () => {},
-    write: async (info, text, conflict) => {
-      writes.push({ text, conflict });
+    moveToTrash: async () => {},
+    write: async (info, text, conflict, encoded) => {
+      writes.push({ text, conflict, encoded });
       if (overrides.holdWrite) await new Promise((resolve) => { releaseWrite = resolve; });
       if (overrides.failWrite) throw new Error('partial write');
       return { info: { ...info, fingerprint: 'written' }, text };
@@ -39,14 +49,14 @@ function service(overrides = {}) {
       if (overrides.failDraft) throw new Error('disk full');
       drafts.push({ ...draft });
     },
-    clearDraft: async () => {},
+    clearDraft: async () => { clears.push('clear'); },
     ...overrides.local
   };
   const api = loadArktsModules(
     ['model/Document.ets', 'document/DraftCoordinator.ets', 'document/DocumentService.ets'],
     '({ DocumentService, DocumentInfo })',
     {
-      setTimeout, clearTimeout, DocumentFiles: files, LocalState: local, FormatRegistry: registry,
+      setTimeout: time.setTimeout, clearTimeout: time.clearTimeout, DocumentFiles: files, LocalState: local, FormatRegistry: registry,
       AppText: { text: (name) => name }, $r: (name) => name,
       userNotice: (message) => { const error = new Error(message); error.name = 'UserNotice'; return error; }
     }
@@ -61,37 +71,41 @@ function service(overrides = {}) {
   info.formatId = 'markdown';
   info.writable = true;
   info.persistent = true;
-  api.DocumentService.adopt({ info, text: 'base' });
-  api.DocumentService.edit('edited');
-  return { api: api.DocumentService, writes, drafts, release: () => releaseWrite?.() };
+  api.DocumentService.bindRecoveryError((_sessionId, error) => { recoveryErrors.push(error.message); });
+  await api.DocumentService.adopt({ info, text: 'base' });
+  if (overrides.skipEdit !== true) api.DocumentService.edit('edited');
+  return {
+    api: api.DocumentService, writes, drafts, clears, recoveryErrors, prepared,
+    encodings: () => encodings, release: () => releaseWrite?.()
+  };
 }
 
 test('save-as to the original URI does not bypass conflict checking', async () => {
-  const opened = service();
+  const opened = await service();
   await opened.api.save({}, true);
   assert.equal(opened.writes[0].conflict, true);
 });
 
 test('checkpoint failure prevents an external write', async () => {
-  const opened = service({ failDraft: true });
+  const opened = await service({ failDraft: true });
   await assert.rejects(opened.api.save({}, false), /disk full/);
   assert.equal(opened.writes.length, 0);
 });
 
 test('provider write failure leaves complete recovery text', async () => {
-  const opened = service({ failWrite: true });
+  const opened = await service({ failWrite: true });
   await assert.rejects(opened.api.save({}, false), /partial write/);
   assert.equal(opened.drafts[0].text, 'edited');
   assert.equal(opened.drafts[0].savedText, 'base');
 });
 
 test('typing during a save keeps the newer text and the captured baseline', async () => {
-  const opened = service({ holdWrite: true });
+  const opened = await service({ holdWrite: true });
   const id = opened.api.current().id;
   const pending = opened.api.save({}, false);
   await new Promise((resolve) => setImmediate(resolve));
   opened.api.edit('B');
-  opened.api.startNew('plain');
+  await opened.api.startNew('plain');
   const blocked = await opened.api.save({}, false);
   assert.equal(blocked.saved, false);
   opened.release();
@@ -105,14 +119,83 @@ test('typing during a save keeps the newer text and the captured baseline', asyn
 });
 
 test('opaque file URI is resolved using the provider filename', async () => {
-  const opened = service();
+  const opened = await service();
   assert.equal(await opened.api.openUri('file://12345', '', true, true), true);
   assert.equal(opened.api.current().info.formatId, 'markdown');
 });
 
 test('rejected late confirmation does not replace the current session', async () => {
-  const opened = service();
+  const opened = await service();
   const owner = opened.api.current();
   assert.equal(await opened.api.openUri('file://b.md', '', true, true, async () => false), false);
   assert.equal(opened.api.current(), owner);
 });
+
+test('undo back to the saved text drops the pending draft', async () => {
+  const time = clock();
+  const opened = await service({ skipEdit: true }, time);
+  opened.api.edit('B');
+  time.advance(449);
+  opened.api.edit('base');
+  time.advance(2000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(opened.drafts.length, 0);
+  assert.equal(opened.clears.length, 1);
+});
+
+test('replacing a discarded document clears its recovery file before a templated document', async () => {
+  const opened = await service();
+  assert.equal(await opened.api.startNew('svg'), true);
+  assert.equal(opened.api.current().source, '<svg></svg>');
+  assert.equal(opened.clears.length, 1);
+  assert.equal(opened.api.current().savedText, '');
+});
+
+test('a failed recovery cleanup does not hide a completed save or delete', async () => {
+  const opened = await service({
+    local: { clearDraft: async () => { throw new Error('unlink failed'); } }
+  });
+  const saved = await opened.api.save({}, false);
+  assert.equal(saved.saved, true);
+  assert.equal(opened.writes.length, 1);
+  assert.equal(opened.encodings(), 1);
+  assert.equal(opened.writes[0].encoded, opened.prepared);
+  assert.deepEqual(opened.recoveryErrors, ['unlink failed']);
+  opened.api.edit('again');
+  const deleted = await opened.api.moveToTrash();
+  assert.equal(deleted.deleted, true);
+  assert.equal(opened.api.current().editing, false);
+  assert.equal(opened.recoveryErrors.length, 2);
+});
+
+function clock() {
+  const timers = [];
+  let now = 0;
+  let sequence = 1;
+  return {
+    setTimeout(fn, ms) {
+      const id = sequence++;
+      timers.push({ id, fn, at: now + ms });
+      return id;
+    },
+    clearTimeout(id) {
+      const index = timers.findIndex((item) => item.id === id);
+      if (index >= 0) timers.splice(index, 1);
+    },
+    advance(ms) {
+      now += ms;
+      let fired = true;
+      while (fired) {
+        fired = false;
+        const due = timers.filter((item) => item.at <= now).sort((left, right) => left.at - right.at);
+        if (due.length === 0) return;
+        const item = due[0];
+        const index = timers.indexOf(item);
+        if (index < 0) continue;
+        timers.splice(index, 1);
+        item.fn();
+        fired = true;
+      }
+    }
+  };
+}

@@ -237,6 +237,7 @@ export struct DocumentView {
     this.stopEditing();
     this.searchVisible = false;
     const session = DocumentService.current();
+    // 换篇前已经清过上一份草稿。这里只清掉与当前已保存正文相同的恢复文件。
     if (session.source === session.savedText) void DocumentService.clearRecovery(session, 'discarded');
   }
 

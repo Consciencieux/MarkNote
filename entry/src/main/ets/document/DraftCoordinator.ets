@@ -4,6 +4,14 @@ import { LocalState } from '../storage/LocalState';
 
 const IDLE_MS: number = 450;
 const DEADLINE_MS: number = 2000;
+const MAX_AUTO_ATTEMPTS: number = 4;
+
+function retryDelay(attempt: number): number {
+  if (attempt <= 1) return 500;
+  if (attempt === 2) return 1000;
+  if (attempt === 3) return 2000;
+  return 4000;
+}
 
 class DraftTask {
   kind: string = 'write';
@@ -31,6 +39,7 @@ class DraftTask {
 /**
  * One writer for the private recovery file.
  * Automatic saves keep one in-flight write and one latest snapshot.
+ * A failed automatic snapshot is retried with a short backoff, then reported.
  * A checkpoint waits until its own snapshot is durable.
  */
 export class DraftCoordinator {
@@ -44,6 +53,9 @@ export class DraftCoordinator {
   private inflight: Promise<boolean> | null = null;
   private idleTimer: number = -1;
   private deadlineTimer: number = -1;
+  private retryTimer: number = -1;
+  private retryAttempt: number = 0;
+  private retrySnapshot: DraftSnapshot | null = null;
 
   constructor(context: common.UIAbilityContext) {
     this.context = context;
@@ -52,6 +64,7 @@ export class DraftCoordinator {
   activate(sessionId: number): void {
     this.activeSession = sessionId;
     this.disarm();
+    this.cancelRetry();
     this.pendingAuto = null;
     const kept: DraftTask[] = [];
     for (let index = 0; index < this.queue.length; index++) {
@@ -69,6 +82,7 @@ export class DraftCoordinator {
 
   schedule(snapshot: DraftSnapshot): void {
     if (snapshot.sessionId !== this.activeSession) return;
+    this.cancelRetry();
     this.pendingAuto = new DraftTask('write', snapshot, this.nextOp++, false);
     this.armIdle();
     this.armDeadline();
@@ -82,6 +96,7 @@ export class DraftCoordinator {
   }
 
   clear(snapshot: DraftSnapshot): Promise<boolean> {
+    this.cancelRetry();
     const task = new DraftTask('clear', snapshot, this.nextOp++, true);
     if (this.pendingAuto !== null && this.pendingAuto.op < task.op) {
       this.pendingAuto = null;
@@ -92,6 +107,14 @@ export class DraftCoordinator {
   }
 
   flush(): Promise<void> {
+    if (this.retrySnapshot !== null && this.pendingAuto === null &&
+      this.retrySnapshot.sessionId === this.activeSession) {
+      const shot = this.retrySnapshot;
+      this.cancelRetry();
+      this.enqueue(new DraftTask('write', shot, this.nextOp++, false));
+    } else {
+      this.cancelRetry();
+    }
     this.commitAuto();
     const pending: Promise<boolean>[] = [];
     if (this.inflight !== null) pending.push(this.inflight);
@@ -130,12 +153,16 @@ export class DraftCoordinator {
       const kept: DraftTask[] = [];
       for (let index = 0; index < this.queue.length; index++) {
         const queued = this.queue[index];
-        if (queued.sessionId === task.sessionId || queued.kind !== 'write') {
-          kept.push(queued);
-        } else if (queued.forced) {
-          queued.reject(new Error('stale session'));
-        } else {
+        const olderAuto = !task.forced && queued.kind === 'write' && !queued.forced &&
+          queued.sessionId === task.sessionId;
+        const otherSession = queued.kind === 'write' && queued.sessionId !== task.sessionId;
+        if (olderAuto) {
           queued.resolve(false);
+        } else if (otherSession) {
+          if (queued.forced) queued.reject(new Error('stale session'));
+          else queued.resolve(false);
+        } else {
+          kept.push(queued);
         }
       }
       this.queue = kept;
@@ -183,6 +210,7 @@ export class DraftCoordinator {
         return;
       }
       await LocalState.writeDraft(this.context, task.snapshot.data);
+      if (!task.forced) this.cancelRetry();
       task.resolve(true);
     } catch (error) {
       const message = error instanceof Error ? error.message :
@@ -190,12 +218,52 @@ export class DraftCoordinator {
           (error as Error).message : 'draft failed');
       const wrapped = new Error(message.length > 0 ? message : 'draft failed');
       if (task.forced) task.reject(wrapped);
-      else {
-        task.resolve(false);
-        this.onError(task.sessionId, wrapped);
-      }
+      else this.failAuto(task, wrapped);
     } finally {
       this.inflight = null;
     }
+  }
+
+  private failAuto(task: DraftTask, error: Error): void {
+    const newerPending = this.pendingAuto !== null;
+    let newerQueued = false;
+    for (let index = 0; index < this.queue.length; index++) {
+      const queued = this.queue[index];
+      if (queued.kind === 'write' && queued.sessionId === task.sessionId) newerQueued = true;
+    }
+    if (task.sessionId !== this.activeSession || newerPending || newerQueued) {
+      task.resolve(false);
+      return;
+    }
+    this.retryAttempt++;
+    if (this.retryAttempt >= MAX_AUTO_ATTEMPTS) {
+      this.retryAttempt = 0;
+      this.retrySnapshot = null;
+      task.resolve(false);
+      this.onError(task.sessionId, error);
+      return;
+    }
+    this.retrySnapshot = task.snapshot;
+    const delay = retryDelay(this.retryAttempt);
+    task.resolve(false);
+    this.armRetry(delay);
+  }
+
+  private armRetry(delay: number): void {
+    if (this.retryTimer >= 0) clearTimeout(this.retryTimer);
+    this.retryTimer = setTimeout((): void => {
+      this.retryTimer = -1;
+      const shot = this.retrySnapshot;
+      this.retrySnapshot = null;
+      if (shot === null || shot.sessionId !== this.activeSession || this.pendingAuto !== null) return;
+      this.enqueue(new DraftTask('write', shot, this.nextOp++, false));
+    }, delay);
+  }
+
+  private cancelRetry(): void {
+    if (this.retryTimer >= 0) clearTimeout(this.retryTimer);
+    this.retryTimer = -1;
+    this.retrySnapshot = null;
+    this.retryAttempt = 0;
   }
 }

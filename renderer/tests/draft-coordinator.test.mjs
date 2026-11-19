@@ -137,3 +137,92 @@ test('drops an old session timer, serializes clearing, and keeps working after a
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(writes.filter((item) => item.text === 'old').length, 0);
 });
+
+test('a slow automatic draft keeps only the newest queued snapshot', async () => {
+  const time = clock();
+  const writes = [];
+  let release = null;
+  const api = coordinator(time, {
+    LocalState: {
+      writeDraft: (_context, draft) => {
+        writes.push(draft.text);
+        if (writes.length === 1) return new Promise((resolve) => { release = resolve; });
+        return Promise.resolve();
+      },
+      clearDraft: async () => {}
+    }
+  });
+  const drafts = new api.DraftCoordinator({});
+  drafts.activate(1);
+  drafts.schedule(snapshot(api, 1, 'A'));
+  time.advance(450);
+  await new Promise((resolve) => setImmediate(resolve));
+  drafts.schedule(snapshot(api, 1, 'B'));
+  time.advance(2000);
+  drafts.schedule(snapshot(api, 1, 'C'));
+  time.advance(2000);
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(writes, ['A', 'C']);
+});
+
+test('a failed automatic draft retries until it succeeds and stops after the attempt limit', async () => {
+  const time = clock();
+  const writes = [];
+  const errors = [];
+  let failures = 0;
+  const api = coordinator(time, {
+    LocalState: {
+      writeDraft: (_context, draft) => {
+        failures++;
+        if (failures < 3) return Promise.reject(new Error('disk full'));
+        writes.push(draft.text);
+        return Promise.resolve();
+      },
+      clearDraft: async () => {}
+    }
+  });
+  const drafts = new api.DraftCoordinator({});
+  drafts.onError = (_sessionId, error) => { errors.push(error.message); };
+  drafts.activate(1);
+  drafts.schedule(snapshot(api, 1, 'A'));
+  time.advance(450);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(writes, []);
+  assert.deepEqual(errors, []);
+  time.advance(499);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(failures, 1);
+  time.advance(1);
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  time.advance(1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(writes, ['A']);
+  assert.deepEqual(errors, []);
+
+  failures = 0;
+  writes.length = 0;
+  const failing = coordinator(time, {
+    LocalState: {
+      writeDraft: () => Promise.reject(new Error('disk full')),
+      clearDraft: async () => {}
+    }
+  });
+  const again = new failing.DraftCoordinator({});
+  const reported = [];
+  again.onError = (_sessionId, error) => { reported.push(error.message); };
+  again.activate(1);
+  again.schedule(snapshot(failing, 1, 'B'));
+  time.advance(450);
+  await new Promise((resolve) => setImmediate(resolve));
+  time.advance(500);
+  await new Promise((resolve) => setImmediate(resolve));
+  time.advance(1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  time.advance(2000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(reported, ['disk full']);
+});
