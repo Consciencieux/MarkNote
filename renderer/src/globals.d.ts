@@ -3,6 +3,7 @@ export interface PreviewUpdate {
   kind: 'markdown' | 'plain' | 'svg' | 'tex-math';
   source: string;
   theme: 'system' | 'light' | 'dark';
+  codeTheme?: 'off' | 'github' | 'atom' | 'vs';
   revision?: number;
   documentId?: number;
   /** Localized preview copy. Absent fields keep the base Chinese text. */

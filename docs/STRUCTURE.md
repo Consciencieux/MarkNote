@@ -11,17 +11,19 @@ marknote/
 │       ├── ets/
 │       │   ├── entryability/         应用启动及系统文件打开入口
 │       │   ├── pages/                首页、文稿、设置及公共界面组件
-│       │   ├── document/             文稿会话、格式、编辑历史、查找和编码
+│       │   ├── document/             文稿会话、格式、编辑桥接、查找和编码
 │       │   ├── i18n/                 界面文字资源读取
 │       │   ├── model/                文稿及大纲数据结构
 │       │   └── storage/              文件访问和本机状态
-│       └── resources/rawfile/        构建生成的预览页与许可证文本
+│       └── resources/rawfile/        构建生成的编辑器、预览页与许可证文本
 ├── renderer/                         离线预览源码及构建脚本
 │   ├── package.json、package-lock.json  npm 依赖声明与锁定版本
 │   ├── src/renderers/                各文稿格式的渲染器
 │   ├── src/styles.css                预览样式
 │   ├── scripts/                      安装依赖修复、打包资源及生成许可证声明
 │   └── tests/                        预览、依赖安装及许可证收集测试
+├── editor/                           CodeMirror 离线编辑器源码、测试和构建脚本
+├── shared/                           预览与编辑器共用的语言标识、配色与编辑消息类型
 ├── docs/                             功能、架构、隐私及发布文档
 ├── tools/                            资源键、占位符及依赖元数据检查
 ├── examples/                         Markdown、SVG 和 TeX 示例文稿

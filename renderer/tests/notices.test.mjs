@@ -45,6 +45,21 @@ test('collects version-matched upstream license and additional notice', t => {
   assert.ok(output.includes(f.notice));
 });
 
+test('includes editor production dependencies and rejects missing editor packages', t => {
+  const f = fixture(t);
+  const editor = join(f.root, 'editor');
+  const pkg = join(editor, 'node_modules', 'editor-package');
+  mkdirSync(pkg, { recursive: true });
+  writeFileSync(join(editor, 'package.json'), JSON.stringify({ dependencies: { 'editor-package': '1.0.0' } }));
+  writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'editor-package', version: '1.0.0', license: 'MIT' }));
+  writeFileSync(join(pkg, 'LICENSE'), 'Editor package license');
+  assert.equal(run(f).status, 0);
+  const output = readFileSync(join(f.root, 'entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt'), 'utf8');
+  assert.match(output, /editor-package@1\.0\.0/);
+  rmSync(join(pkg, 'LICENSE'));
+  assert.notEqual(run(f).status, 0);
+});
+
 test('blocks a missing version and a modified license', t => {
   const missing = run(fixture(t, { version: '2.0.0' }));
   assert.notEqual(missing.status, 0);

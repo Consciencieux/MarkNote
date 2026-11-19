@@ -30,6 +30,7 @@ interface PreviewCommand {
   kind: string;
   source: string;
   theme: string;
+  codeTheme: string;
   revision: number;
   documentId: number;
   text: PreviewCopy;
@@ -50,6 +51,7 @@ export struct DocumentPreviewView {
    * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
    */
   @StorageLink('marknote_language') @Watch('scheduleUpdate') language: string = 'default';
+  @StorageLink('marknote_code_theme') @Watch('scheduleUpdate') codeTheme: string = 'github';
   onOutline: (revision: number, headings: Heading[]) => void = (_revision: number, _headings: Heading[]): void => {};
   /** 预览里点击已校验的网页链接。页面不打开这个地址。 */
   onOpenExternalLink: (link: string) => void = (_link: string): void => {};
@@ -195,6 +197,7 @@ export struct DocumentPreviewView {
       kind: this.kind,
       source: this.source,
       theme: this.theme,
+      codeTheme: this.codeTheme,
       revision: this.parseRevision,
       documentId: this.documentGeneration,
       text: copy
