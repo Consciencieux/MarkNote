@@ -1,5 +1,6 @@
 import {
-  hdsMaterial, HdsNavigationTitleBarOptions, ScrollEffectType, TitleBarContentOptions
+  hdsMaterial, HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationTitleBarOptions,
+  ScrollEffectType, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 
 /**
@@ -28,4 +29,18 @@ export function scrollingTitleBar(content: TitleBarContentOptions): HdsNavigatio
       }
     }
   };
+}
+
+/** 标题栏菜单项的数据。页面自己决定有哪些项、顺序和动作。 */
+export function navigationMenuIcon(label: ResourceStr, symbol: Resource, id: string,
+  action: () => void, enabled: boolean = true): HdsNavigationMenuItemOptions {
+  const content: HdsNavigationIconOptions = {
+    label: label,
+    icon: symbol,
+    isEnabled: enabled,
+    action: action,
+    componentId: id
+  };
+  const item: HdsNavigationMenuItemOptions = { content: content };
+  return item;
 }

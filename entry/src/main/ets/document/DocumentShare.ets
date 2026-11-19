@@ -5,7 +5,7 @@ import { systemShare } from '@kit.ShareKit';
 import { DocumentInfo } from '../model/Document';
 import { TextEncoding } from './TextEncoding';
 import { AppText } from '../i18n/AppText';
-import { userNotice } from './UserNotice';
+import { writeAll } from '../storage/FileBytes';
 
 /** Share a snapshot of the editor through the system panel, without modifying the original file. */
 export class DocumentShare {
@@ -22,15 +22,7 @@ export class DocumentShare {
     const bytes = TextEncoding.encode(source, new DocumentInfo()).bytes;
     const file = await fileIo.open(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
     try {
-      let offset = 0;
-      while (offset < bytes.length) {
-        const length = Math.min(64 * 1024, bytes.length - offset);
-        const chunk = new ArrayBuffer(length);
-        new Uint8Array(chunk).set(bytes.subarray(offset, offset + length));
-        const written = await fileIo.write(file.fd, chunk);
-        if (written <= 0) throw userNotice(AppText.text($r('app.string.share_write_failed')));
-        offset += written;
-      }
+      await writeAll(file.fd, bytes, AppText.text($r('app.string.share_write_failed')));
     } finally {
       await fileIo.close(file);
     }

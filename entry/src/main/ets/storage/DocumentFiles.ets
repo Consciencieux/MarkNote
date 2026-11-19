@@ -7,6 +7,7 @@ import { FormatRegistry } from '../document/FormatRegistry';
 import { TextEncoding, EncodedText } from '../document/TextEncoding';
 import { AppText } from '../i18n/AppText';
 import { userNotice } from '../document/UserNotice';
+import { writeAll } from './FileBytes';
 
 const MAX_BYTES: number = 8 * 1024 * 1024;
 const CHUNK_BYTES: number = 64 * 1024;
@@ -41,18 +42,6 @@ async function fingerprintOf(bytes: Uint8Array): Promise<string> {
     hex += (value < 16 ? '0' : '') + value.toString(16);
   }
   return hex;
-}
-
-async function writeBytes(fd: number, bytes: Uint8Array, interrupted: string): Promise<void> {
-  let offset = 0;
-  while (offset < bytes.length) {
-    const length = Math.min(CHUNK_BYTES, bytes.length - offset);
-    const chunk = new ArrayBuffer(length);
-    new Uint8Array(chunk).set(bytes.subarray(offset, offset + length));
-    const written = await fileIo.write(fd, chunk);
-    if (written <= 0) throw userNotice(interrupted);
-    offset += written;
-  }
 }
 
 function policy(uri: string, mode: number): fileShare.PolicyInfo {
@@ -267,7 +256,7 @@ export class DocumentFiles {
     const expected = await fingerprintOf(bytes);
     const file = await fileIo.open(info.uri, fileIo.OpenMode.READ_WRITE);
     try {
-      await writeBytes(file.fd, bytes, AppText.text($r('app.string.write_interrupted')));
+      await writeAll(file.fd, bytes, AppText.text($r('app.string.write_interrupted')));
       await fileIo.truncate(file.fd, bytes.length);
       await fileIo.fsync(file.fd);
     } finally {

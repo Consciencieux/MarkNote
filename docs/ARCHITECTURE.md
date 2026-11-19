@@ -6,12 +6,12 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 
 `EntryAbility` 接收桌面启动和系统文件打开请求。文件请求经 `LaunchRequests` 交给页面；页面尚未就绪时，请求会暂存。冷启动先恢复异常退出留下的草稿，再按队列处理打开请求。草稿仍有未保存修改时，先按离开文稿的规则确认，再打开外部文件。
 
-`DocumentService` 管理当前文稿会话，并协调新建、打开、保存和草稿恢复。换成另一篇文稿或新建前，先清掉当前会话的恢复文件。正文回到已保存内容时也会清掉恢复文件。原生大纲提取只处理 Markdown。相关模块的职责如下：
+`DocumentService` 管理当前文稿会话，并协调新建、打开、保存和草稿恢复。换成另一篇文稿或新建前，先清掉当前会话的恢复文件。正文回到已保存内容时也会清掉恢复文件。`Index` 把打开请求排成一个队列：已打开文稿时先显示文稿页并确认离开，读完文件后若正文已变再确认一次，然后才采用新会话。原生大纲提取只处理 Markdown。相关模块的职责如下：
 
 | 模块 | 职责 |
 | --- | --- |
 | `FormatRegistry` | 定义文件扩展名、系统类型、默认文件名、大纲支持和编辑快捷操作。 |
-| `DocumentFiles` | 调用系统文件选择器，用异步文件接口处理 URI 授权、读取、写入、写后校验和外部修改检查。编码和 SHA-256 仍在调用线程计算。 |
+| `DocumentFiles` | 调用系统文件选择器，用异步文件接口处理 URI 授权、读取、写入、写后校验和外部修改检查。分块写完由 `FileBytes.writeAll` 完成；编码和 SHA-256 仍在调用线程计算。 |
 | `DocumentShare` | 将当前编辑内容异步写入临时分享文件，并调用系统分享面板。 |
 | `DraftCoordinator` | 串行安排同一份草稿的写入、强制检查点和清理。自动草稿同时只保留一笔在途和一笔最新快照；写入失败会短暂重试。停笔 450 ms 提交，最长等待 2 s 后提交调度；落盘完成时间取决于存储。 |
 | `DocumentAnalysis` | 正文变化立即进入会话。Markdown 大纲和查找计数按需合并，过期的会话或修订不采用。 |
@@ -28,7 +28,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 
 `HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，各自保留滚动控制器。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
 
-`DocumentView` 持有文稿编辑和保存界面状态，并按页签是否可见决定预览工作方式；保存和删除后的文稿数据由 `DocumentService` 更新。`DocumentPreviewView` 管理各自的 Web 控制器，`PreviewDispatch` 保证每个实例最多一笔在途发送和一笔最新请求。`DocumentOutlineView` 管理大纲展示与展开状态。
+`DocumentView` 持有文稿编辑、查找和保存界面状态，并按页签是否可见决定预览工作方式；查找栏 `DocumentFindBar` 只绘制查询和替换控件。保存和删除后的文稿数据由 `DocumentService` 更新。`DocumentPreviewView` 管理各自的 Web 控制器，`PreviewDispatch` 保证每个实例最多一笔在途发送和一笔最新请求。`DocumentOutlineView` 管理大纲展示与展开状态。
 
 首页和文稿页的标题栏菜单使用系统菜单组件；`DocumentMenus` 和 `DocumentBridge` 负责跨页面的菜单动作与离开确认。
 

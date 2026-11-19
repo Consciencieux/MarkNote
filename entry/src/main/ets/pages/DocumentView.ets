@@ -3,7 +3,7 @@ import { url } from '@kit.ArkTS';
 import { FrameCallback, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
-  HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
+  HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
   TitleBarContentOptions, HdsNavigationTitleBarOptions, HdsTabs, hdsMaterial
 } from '@kit.UIDesignKit';
 import { DocumentInfo, Heading } from '../model/Document';
@@ -15,6 +15,7 @@ import { AnalysisRequest, AnalysisResult, DocumentAnalysis } from '../document/D
 import { EditHistory, EditStep } from '../document/EditHistory';
 import { insertEditorAction } from '../document/EditorActions';
 import { FormatBarView } from './FormatBarView';
+import { DocumentFindBar } from './DocumentFindBar';
 import { DocumentOutlineView } from './DocumentOutlineView';
 import { DocumentPreviewView } from './DocumentPreviewView';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
@@ -23,9 +24,8 @@ import { menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { AppText } from '../i18n/AppText';
 import { shownDetail } from '../document/UserNotice';
-import { scrollingTitleBar } from './HdsMaterialStyles';
-import { searchFieldMaterial } from './ImmersiveMaterials';
-import { bodyInput, toolbarIcon } from './TextRoles';
+import { scrollingTitleBar, navigationMenuIcon } from './HdsMaterialStyles';
+import { bodyInput } from './TextRoles';
 
 /**
  * Tab positions on the document page. Preview comes first so a document opens in reading
@@ -103,7 +103,6 @@ export struct DocumentView {
   @State private matchCount: number = 0;
   @State private matchOrdinal: number = 0;
   @State private findBarHeight: number = 112;
-  @State private searchControlsWidth: number = 80;
   /** Drives the enabled state of the title bar undo and redo icons. */
   @State private undoAvailable: boolean = false;
   @State private redoAvailable: boolean = false;
@@ -132,8 +131,6 @@ export struct DocumentView {
     if (data.type !== window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) return;
     this.navigationInsetAbsent = data.area.bottomRect.height === 0;
   };
-  // 官方沉浸光感指南将 THIN 列为搜索框适用样式；不支持时保留系统输入框样式。
-  private searchMaterial = searchFieldMaterial();
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     // 文稿页自己的菜单项：另存为和查找只对当前文稿有意义。
@@ -322,42 +319,29 @@ export struct DocumentView {
     return AppText.format(resource, first, second);
   }
 
-  private menuIcon(label: ResourceStr, symbol: Resource, id: string, action: () => void,
-    enabled: boolean = true): HdsNavigationMenuItemOptions {
-    const content: HdsNavigationIconOptions = {
-      label: label,
-      icon: symbol,
-      isEnabled: enabled,
-      action: action,
-      componentId: id
-    };
-    const item: HdsNavigationMenuItemOptions = { content: content };
-    return item;
-  }
-
   private documentTitle(): HdsNavigationTitleBarOptions {
     // 读取 language，语言切换后重新构建标题栏里的查找栏。查找栏的计数是取好的字符串。
     if (this.language.length === 0) {
       return scrollingTitleBar({ title: { mainTitle: this.title } });
     }
     const heading: HdsNavigationTitle = { mainTitle: this.title };
-    const more = this.menuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
+    const more = navigationMenuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
       (): void => this.openDocumentMenu());
     const actions: HdsNavigationMenuItemOptions[] = this.inEditTab() ? [
-      this.menuIcon($r('app.string.menu_undo'), $r('sys.symbol.undo'), 'marknote-undo',
+      navigationMenuIcon($r('app.string.menu_undo'), $r('sys.symbol.undo'), 'marknote-undo',
         (): void => this.undo(), this.undoAvailable),
-      this.menuIcon($r('app.string.menu_redo'), $r('sys.symbol.redo'), 'marknote-redo',
+      navigationMenuIcon($r('app.string.menu_redo'), $r('sys.symbol.redo'), 'marknote-redo',
         (): void => this.redo(), this.redoAvailable),
       more,
-      this.menuIcon($r('app.string.menu_save'), $r('sys.symbol.checkmark'), 'marknote-save',
+      navigationMenuIcon($r('app.string.menu_save'), $r('sys.symbol.checkmark'), 'marknote-save',
         (): void => { void this.saveFile(false); })
     ] : [
-      this.menuIcon($r('app.string.menu_share'), $r('sys.symbol.share'), 'marknote-share',
+      navigationMenuIcon($r('app.string.menu_share'), $r('sys.symbol.share'), 'marknote-share',
         (): void => { void this.shareDocument(); }),
-      this.menuIcon(this.favorite ? $r('app.string.menu_unfavorite') : $r('app.string.menu_favorite'),
+      navigationMenuIcon(this.favorite ? $r('app.string.menu_unfavorite') : $r('app.string.menu_favorite'),
         this.favorite ? $r('sys.symbol.star_fill') : $r('sys.symbol.star'), 'marknote-favorite',
         (): void => this.toggleFavorite()),
-      this.menuIcon($r('app.string.menu_delete'), $r('sys.symbol.trash'), 'marknote-delete',
+      navigationMenuIcon($r('app.string.menu_delete'), $r('sys.symbol.trash'), 'marknote-delete',
         (): void => this.confirmDelete(), this.info.uri.length > 0 && !this.deleting),
       more
     ];
@@ -381,7 +365,7 @@ export struct DocumentView {
     if (this.searchVisible && this.selectedTab === TAB_EDIT) {
       // 搜索栏固定在导航标题下方，由 HDS 管理布局和组件安全区。
       // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
-      content.bottomBuilder = { builder: (): void => this.FindBar(), height: this.findBarHeight };
+      content.bottomBuilder = { builder: (): void => this.TopFindBar(), height: this.findBarHeight };
     } else if (this.formatBarWanted()) {
       // 官方导航自定义区域：标题栏负责底部区域布局和安全区。
       // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
@@ -655,20 +639,20 @@ export struct DocumentView {
   }
 
   /**
-   * Every edit to the buffer goes through here, including the toolbar inserts and replace,
-   * so undo covers them as well as typing.
+   * One path for buffer changes. History restore must not record another step.
+   * Toolbar inserts and replace still place their own undo boundaries around this call.
    */
-  private updateSource(text: string, caret: number = -1): void {
+  private commitBuffer(text: string, recordHistory: boolean, caret: number = -1): void {
     const changed = DocumentService.edit(text);
     this.source = text;
     if (changed) this.parseRevision = DocumentService.current().revision;
     this.currentMatch = -1;
     this.matchOrdinal = 0;
-    const position = caret >= 0 ? caret : this.selectionEnd;
-    if (changed) {
+    if (changed && recordHistory) {
+      const position = caret >= 0 ? caret : this.selectionEnd;
       this.history.record(text, position, Date.now());
-      this.submitAnalysis();
     }
+    if (changed) this.submitAnalysis();
     this.refreshHistoryState();
   }
 
@@ -689,17 +673,9 @@ export struct DocumentView {
     this.applyHistoryStep(step);
   }
 
-  /**
-   * Restore a snapshot without recording it again, otherwise every undo would push a new step.
-   */
+  /** Restore a snapshot without recording it again, otherwise every undo would push a new step. */
   private applyHistoryStep(step: EditStep): void {
-    DocumentService.edit(step.text);
-    this.source = step.text;
-    this.parseRevision = DocumentService.current().revision;
-    this.currentMatch = -1;
-    this.matchOrdinal = 0;
-    this.refreshHistoryState();
-    this.submitAnalysis();
+    this.commitBuffer(step.text, false);
     const caret = Math.min(step.caret, step.text.length);
     this.selectionStart = caret;
     this.selectionEnd = caret;
@@ -720,27 +696,10 @@ export struct DocumentView {
     this.matchOrdinal = TextSearch.count(this.source, this.query, hit.start) + 1;
     const query = this.query;
     const revision = this.revision;
-    this.getUIContext().postFrameCallback(new AfterFrame((): void => {
-      if (!this.searchVisible || this.selectedTab !== TAB_EDIT || this.revision !== revision ||
-        this.query !== query || this.currentMatch !== hit.start) return;
-      // TextArea 的文本选区需要组件获焦；编辑框随内容增高，因此由外层 Scroll 定位。
-      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-basic-components-textarea
-      this.getUIContext().getFocusController().requestFocus('marknote-main-editor');
-      this.cursor.caretPosition(hit.start);
-      this.getUIContext().postFrameCallback(new AfterFrame((): void => {
-        if (!this.searchVisible || this.selectedTab !== TAB_EDIT || this.revision !== revision ||
-          this.query !== query || this.currentMatch !== hit.start) return;
-        const caret = this.cursor.getCaretOffset();
-        if (caret && caret.index === hit.start) {
-          this.editScroller.scrollTo({
-            xOffset: 0,
-            yOffset: Math.max(0, this.editTop + this.getUIContext().px2vp(caret.y)),
-            animation: false
-          });
-        }
-        this.cursor.setTextSelection(hit.start, hit.start + hit.length, { menuPolicy: MenuPolicy.HIDE });
-      }));
-    }));
+    this.revealCaret(hit.start, hit.length, (): boolean => {
+      return this.searchVisible && this.selectedTab === TAB_EDIT && this.revision === revision &&
+        this.query === query && this.currentMatch === hit.start;
+    }, false);
   }
 
   private replaceMatch(): void {
@@ -753,7 +712,7 @@ export struct DocumentView {
     }
     const caret = this.currentMatch + this.replacement.length;
     this.history.boundary();
-    this.updateSource(changed, caret);
+    this.commitBuffer(changed, true, caret);
     this.history.boundary();
     this.currentMatch = -1;
     this.scheduleCaret(caret);
@@ -765,7 +724,7 @@ export struct DocumentView {
     const changed = edit.text;
     const position = edit.caret;
     this.history.boundary();
-    this.updateSource(changed, position);
+    this.commitBuffer(changed, true, position);
     this.history.boundary();
     this.scheduleCaret(position);
   }
@@ -794,7 +753,7 @@ export struct DocumentView {
   }
 
   /**
-   * TextArea 自适应内容高度，外层 Scroll 才是滚动容器。Tab 显示后先设置光标，
+   * TextArea 自适应内容高度，外层 Scroll 才是滚动容器。先设置光标，
    * 再于后续帧读取光标相对输入框的像素坐标并转换为 Scroll 所需的 vp。
    * 官方文档：ts-universal-attributes-text-style 的 getCaretOffset、ts-container-scroll 的 scrollTo。
    */
@@ -803,20 +762,26 @@ export struct DocumentView {
     const offset = this.pendingHeadingOffset;
     const jump = this.headingJump;
     this.pendingHeadingOffset = -1;
+    this.revealCaret(offset, 0, (): boolean => jump === this.headingJump && this.selectedTab === TAB_EDIT, true);
+  }
+
+  /** 查找选中一段文字；大纲只落到标题起点。失效回调不得移动后来的文稿。 */
+  private revealCaret(position: number, selectLength: number, stillCurrent: () => boolean,
+    reportFailure: boolean): void {
     this.getUIContext().postFrameCallback(new AfterFrame((): void => {
-      if (jump !== this.headingJump || this.selectedTab !== TAB_EDIT) return;
+      if (!stillCurrent()) return;
       try {
         this.getUIContext().getFocusController().requestFocus('marknote-main-editor');
-        this.cursor.caretPosition(offset);
+        this.cursor.caretPosition(position);
       } catch {
-        this.toast($r('app.string.heading_locate_failed'));
+        if (reportFailure) this.toast($r('app.string.heading_locate_failed'));
         return;
       }
       this.getUIContext().postFrameCallback(new AfterFrame((): void => {
-        if (jump !== this.headingJump || this.selectedTab !== TAB_EDIT) return;
+        if (!stillCurrent()) return;
         const caret = this.cursor.getCaretOffset();
-        if (!caret || caret.index !== offset) {
-          this.toast($r('app.string.heading_locate_failed'));
+        if (!caret || caret.index !== position) {
+          if (reportFailure) this.toast($r('app.string.heading_locate_failed'));
           return;
         }
         this.editScroller.scrollTo({
@@ -824,106 +789,34 @@ export struct DocumentView {
           yOffset: Math.max(0, this.editTop + this.getUIContext().px2vp(caret.y)),
           animation: false
         });
+        if (selectLength > 0) {
+          this.cursor.setTextSelection(position, position + selectLength, { menuPolicy: MenuPolicy.HIDE });
+        }
       }));
     }));
   }
 
-  /** 搜索框与结果导航共享系统材质；替换操作的右边缘与搜索区域对齐。 */
   @Builder
-  private FindBar() {
-    Column() {
-      Row() {
-        Stack({ alignContent: Alignment.End }) {
-          Search({ value: this.query, placeholder: $r('app.string.find_placeholder') })
-            .onSubmit(() => this.findNext())
-            .onChange((value: string) => {
-              this.query = value;
-              this.currentMatch = -1;
-              this.matchOrdinal = 0;
-              this.submitAnalysis();
-            })
-            .width('100%')
-            // 清除按钮由 Search 提供；仅有文字时为它预留位置。
-            .cancelButton({ style: this.query.length > 0 ? CancelButtonStyle.CONSTANT : CancelButtonStyle.INVISIBLE })
-            .padding({ end: LengthMetrics.vp(this.query.length > 0 ? this.searchControlsWidth + 40 : 0) })
-            .systemMaterial(this.searchMaterial)
-          if (this.query.length > 0) {
-            Row() {
-              Text(this.matchOrdinal > 0 ? `${this.matchOrdinal}/${this.matchCount}` :
-                this.uiFormat($r('app.string.match_total'), String(this.matchCount)))
-                .fontColor($r('sys.color.font_secondary'))
-                .accessibilityText(this.matchOrdinal > 0 ?
-                  this.uiFormat($r('app.string.match_position'), String(this.matchOrdinal), String(this.matchCount)) :
-                  this.uiFormat($r('app.string.match_total'), String(this.matchCount)))
-              Button() {
-                SymbolGlyph($r('sys.symbol.chevron_up'))
-                  .attributeModifier(toolbarIcon)
-              }
-              .buttonStyle(ButtonStyleMode.TEXTUAL)
-              .width(40)
-              .height(40)
-              .accessibilityText($r('app.string.find_previous'))
-              .enabled(this.matchCount > 0)
-              .onClick(() => this.findNext(false))
-              Button() {
-                SymbolGlyph($r('sys.symbol.chevron_down'))
-                  .attributeModifier(toolbarIcon)
-              }
-              .buttonStyle(ButtonStyleMode.TEXTUAL)
-              .width(40)
-              .height(40)
-              .accessibilityText($r('app.string.find_next'))
-              .enabled(this.matchCount > 0)
-              .onClick(() => this.findNext())
-            }
-            .margin({ end: LengthMetrics.vp(40) })
-            .onAreaChange((_oldArea: Area, newArea: Area) => {
-              const width = parseFloat(String(newArea.width)) || 0;
-              if (width > 0 && width !== this.searchControlsWidth) this.searchControlsWidth = width;
-            })
-          }
-        }
-        .layoutWeight(1)
-        .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
-        Button() {
-          SymbolGlyph($r('sys.symbol.xmark'))
-            .attributeModifier(toolbarIcon)
-        }
-        .buttonStyle(ButtonStyleMode.TEXTUAL)
-        // 华为通用应用 UX 体验标准：交互热区不得小于 40vp × 40vp。
-        .width(40)
-        .height(40)
-        .accessibilityText($r('app.string.find_close'))
-        .onClick(() => this.searchVisible = false)
+  private TopFindBar() {
+    DocumentFindBar({
+      query: this.query,
+      replacement: this.replacement,
+      matchCount: this.matchCount,
+      matchOrdinal: this.matchOrdinal,
+      onQueryChange: (value: string): void => {
+        this.query = value;
+        this.currentMatch = -1;
+        this.matchOrdinal = 0;
+        this.submitAnalysis();
+      },
+      onReplacementChange: (value: string): void => { this.replacement = value; },
+      onNext: (): void => this.findNext(),
+      onPrevious: (): void => this.findNext(false),
+      onReplace: (): void => this.replaceMatch(),
+      onClose: (): void => { this.searchVisible = false; },
+      onHeightChange: (height: number): void => {
+        if (height > 0 && height !== this.findBarHeight) this.findBarHeight = height;
       }
-      .width('100%')
-      Row() {
-        Row() {
-          TextInput({ text: this.replacement, placeholder: $r('app.string.replace_placeholder') })
-            .onChange((value: string) => { this.replacement = value; })
-            .layoutWeight(1)
-            .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
-            .systemMaterial(this.searchMaterial)
-          Button($r('app.string.replace_action'))
-            .onClick(() => this.replaceMatch())
-        }
-        .layoutWeight(1)
-        .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
-        Blank().width(40)
-      }
-      .width('100%')
-      .margin({ top: $r('sys.float.padding_level4') })
-    }
-    .padding({
-      start: LengthMetrics.resource($r('sys.float.margin_left')),
-      end: LengthMetrics.resource($r('sys.float.margin_right')),
-      top: LengthMetrics.resource($r('sys.float.padding_level4')),
-      bottom: LengthMetrics.resource($r('sys.float.padding_level4'))
-    })
-    .width('100%')
-    .onAreaChange((_oldArea: Area, newArea: Area) => {
-      const height = parseFloat(String(newArea.height)) || 0;
-      if (height > 0 && height !== this.findBarHeight) this.findBarHeight = height;
     })
   }
 
@@ -954,7 +847,7 @@ export struct DocumentView {
           // 手感被打断。enableKeyboardOnFocus(false) 让点击以外的获焦不弹键盘，只有点击文字才弹。
           // 这是官方「管理软键盘」和 faqs-arkui-932 推荐的写法。
           .enableKeyboardOnFocus(false)
-          .onChange((value: string) => this.updateSource(value))
+          .onChange((value: string) => this.commitBuffer(value, true))
           .onTextSelectionChange((start: number, end: number) => {
             this.selectionStart = start;
             this.selectionEnd = end;

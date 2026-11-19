@@ -5,7 +5,7 @@ import { preferences } from '@kit.ArkData';
 import { RecentDocument, RecoveryData } from '../model/Document';
 import { RecentEntry, removeRecentDocument, toggleFavoriteDocument, updateRecentDocument } from '../document/RecentOrder';
 import { AppText } from '../i18n/AppText';
-import { userNotice } from '../document/UserNotice';
+import { writeAll } from './FileBytes';
 import { normalizeAppLanguage } from '../i18n/AppLanguage';
 
 const RECENT_KEY: string = 'recent_files';
@@ -156,15 +156,7 @@ export class LocalState {
     try {
       await fileIo.truncate(file.fd, 0);
       const data = new util.TextEncoder().encodeInto(JSON.stringify(draft));
-      let offset = 0;
-      while (offset < data.length) {
-        const length = Math.min(64 * 1024, data.length - offset);
-        const chunk = new ArrayBuffer(length);
-        new Uint8Array(chunk).set(data.subarray(offset, offset + length));
-        const written = await fileIo.write(file.fd, chunk);
-        if (written <= 0) throw userNotice(AppText.text($r('app.string.draft_interrupted')));
-        offset += written;
-      }
+      await writeAll(file.fd, data, AppText.text($r('app.string.draft_interrupted')));
       await fileIo.fsync(file.fd);
     } finally {
       await fileIo.close(file);

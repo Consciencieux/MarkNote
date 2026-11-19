@@ -4,7 +4,6 @@ import {
 } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationTitleMode,
-  HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleBarOptions, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { RecentDocument } from '../model/Document';
@@ -14,7 +13,7 @@ import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
 import { HomeView } from './HomeView';
 import { DocumentView } from './DocumentView';
 import { SettingsPage } from './SettingsPage';
-import { scrollingTitleBar } from './HdsMaterialStyles';
+import { scrollingTitleBar, navigationMenuIcon } from './HdsMaterialStyles';
 import { segmentButtonMaterial } from './ImmersiveMaterials';
 import { menuMaterialOptions } from './MenuMaterialOptions';
 import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
@@ -172,17 +171,7 @@ struct Index {
    */
   private async openAfterReady(request: OpenRequest): Promise<void> {
     if (this.disposed) return;
-    if (this.documentOpen) {
-      this.revealDocumentRoute();
-      const visible = await documentBridge.whenVisible();
-      if (this.disposed) return;
-      if (!visible) {
-        this.toast($r('app.string.document_not_visible'));
-        return;
-      }
-      const accepted = await documentBridge.saveBeforeLeaving();
-      if (!accepted) return;
-    }
+    if (!await this.confirmLeaveIfOpen(true)) return;
     if (!this.disposed) await this.openExternal(request);
   }
 
@@ -273,20 +262,6 @@ struct Index {
     }
   }
 
-  private menuIcon(label: ResourceStr, symbol: Resource, id: string,
-    action: () => void): HdsNavigationMenuItemOptions {
-    // 只配必要的字段；isEnabled 默认 true、type 默认 IconStyleMode.NORMAL，不再重复写。
-    // componentId 是 openMenu 的锚点 id（见《不依赖UI组件的全局菜单》），必须保留。
-    const content: HdsNavigationIconOptions = {
-      label: label,
-      icon: symbol,
-      action: action,
-      componentId: id
-    };
-    const item: HdsNavigationMenuItemOptions = { content: content };
-    return item;
-  }
-
   @Builder
   private HomeSegment() {
     // 标题栏自定义区域按官方示例给两侧操作保留空间。
@@ -333,7 +308,7 @@ struct Index {
     };
     content.menu = {
       value: [
-        this.menuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
+        navigationMenuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
           (): void => this.openHomeMenu())
       ]
     };
@@ -435,11 +410,7 @@ struct Index {
     void this.startupTask.then((): void => {
       this.openQueue = this.openQueue.catch((): void => {}).then(async (): Promise<void> => {
         if (this.disposed) return;
-        if (this.documentOpen) {
-          this.revealDocumentRoute();
-          if (!await documentBridge.whenVisible() || this.disposed) return;
-          if (!await documentBridge.saveBeforeLeaving()) return;
-        }
+        if (!await this.confirmLeaveIfOpen(false)) return;
         if (!this.disposed) await proceed();
       }).catch((error: Error): void => {
         if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
@@ -447,6 +418,19 @@ struct Index {
     }).catch((error: Error): void => {
       if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
     });
+  }
+
+  /** 已打开文稿时先显示文稿页，再按离开规则确认。外部打开在页面不可见时提示；普通切换只停止。 */
+  private async confirmLeaveIfOpen(requireVisible: boolean): Promise<boolean> {
+    if (!this.documentOpen) return true;
+    this.revealDocumentRoute();
+    const visible = await documentBridge.whenVisible();
+    if (this.disposed) return false;
+    if (!visible) {
+      if (requireVisible) this.toast($r('app.string.document_not_visible'));
+      return false;
+    }
+    return documentBridge.saveBeforeLeaving();
   }
 
   private showDocumentRoute(): void {
@@ -494,8 +478,7 @@ struct Index {
     try {
       const uri = await DocumentFiles.chooseOpen(this.context);
       if (uri.length === 0) return;
-      if (!await DocumentService.openUri(uri, '', true, false,
-        (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource))) return;
+      if (!await this.openApproved(uri, '', true, false, owner, approvedSource)) return;
       this.presentOpened();
     } catch (error) {
       this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
@@ -507,11 +490,8 @@ struct Index {
   }
 
   private async openStored(item: RecentDocument): Promise<void> {
-    const owner = DocumentService.current();
-    const approvedSource = owner.source;
     try {
-      if (!await DocumentService.openUri(item.uri, '', true, false,
-        (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource))) return;
+      if (!await this.openCurrent(item.uri, '', true, false)) return;
       this.presentOpened();
     } catch {
       // 华为《固定样式弹出框》：需要用户决定后续操作时使用警告弹窗。
@@ -540,17 +520,27 @@ struct Index {
 
   private async openExternal(request: OpenRequest): Promise<void> {
     const writeRequested = request.writeGranted || !request.readGranted;
-    const owner = DocumentService.current();
-    const approvedSource = owner.source;
     try {
-      if (!await DocumentService.openUri(request.uri, request.declaredType, writeRequested, true,
-        (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource))) return;
+      if (!await this.openCurrent(request.uri, request.declaredType, writeRequested, true)) return;
       // 没有现有文稿时，不能把设置页留在新文稿的返回路径下面。
       if (!this.documentOpen) this.routes.clear();
       this.presentOpened();
     } catch (error) {
       this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
     }
+  }
+
+  /** 读取前记下用户同意离开时的会话和正文。读取期间正文变了，仍由 confirmPreparedOpen 再确认。 */
+  private openCurrent(uri: string, declaredType: string, writeRequested: boolean,
+    external: boolean): Promise<boolean> {
+    const owner = DocumentService.current();
+    return this.openApproved(uri, declaredType, writeRequested, external, owner, owner.source);
+  }
+
+  private openApproved(uri: string, declaredType: string, writeRequested: boolean, external: boolean,
+    owner: DocumentSession, approvedSource: string): Promise<boolean> {
+    return DocumentService.openUri(uri, declaredType, writeRequested, external,
+      (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource));
   }
 
   private async confirmPreparedOpen(owner: DocumentSession, approvedSource: string): Promise<boolean> {

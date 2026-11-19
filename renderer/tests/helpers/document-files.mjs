@@ -102,7 +102,7 @@ const textUtil = {
 /** Load the real DocumentFiles implementation against a harness. */
 export function loadDocumentFiles(harness, extras = {}) {
   return loadArktsModules(
-    ['model/Document.ets', 'document/TextEncoding.ets', 'storage/DocumentFiles.ets'],
+    ['model/Document.ets', 'document/TextEncoding.ets', 'storage/FileBytes.ets', 'storage/DocumentFiles.ets'],
     'DocumentFiles',
     {
       fileIo: harness.fileIo,

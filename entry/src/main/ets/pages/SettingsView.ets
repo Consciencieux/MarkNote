@@ -1,5 +1,5 @@
 import { PageScrollPolicy } from './PageScrollPolicy';
-import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
+import { SettingsActionRow, SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { LANGUAGE_VALUES } from '../i18n/AppLanguage';
 
 export const THEME_VALUES: string[] = ['system', 'light', 'dark'];
@@ -56,14 +56,6 @@ export struct SettingsView {
   onOpen: (section: string) => void = (_section: string): void => {};
   onFeedback: () => void = (): void => {};
 
-  @Builder
-  private LinkRow(title: ResourceStr, section: string) {
-    ListItem({ style: ListItemStyle.CARD }) {
-      SettingsListRow({ title: title, showArrow: true })
-    }
-    .onClick(() => this.onOpen(section))
-  }
-
   build() {
     List({ spaceWidth: $r('sys.float.padding_level6'), scroller: this.scroller }) {
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
@@ -92,14 +84,23 @@ export struct SettingsView {
         }, (choice: string) => choice)
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow($r('app.string.settings_help'), 'help')
+        SettingsActionRow({
+          title: $r('app.string.settings_help'),
+          onSelect: (): void => this.onOpen('help')
+        })
         ListItem({ style: ListItemStyle.CARD }) {
           SettingsListRow({ title: $r('app.string.settings_feedback'), showArrow: true })
         }.onClick(() => this.onFeedback())
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow($r('app.string.settings_privacy'), 'privacy')
-        this.LinkRow($r('app.string.settings_about'), 'about')
+        SettingsActionRow({
+          title: $r('app.string.settings_privacy'),
+          onSelect: (): void => this.onOpen('privacy')
+        })
+        SettingsActionRow({
+          title: $r('app.string.settings_about'),
+          onSelect: (): void => this.onOpen('about')
+        })
       }.attributeModifier(this.groupStyle)
     }
     .attributeModifier(this.scrollPolicy)
