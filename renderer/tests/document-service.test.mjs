@@ -36,8 +36,9 @@ async function service(overrides = {}, time = { setTimeout, clearTimeout }) {
     },
     validateForWrite: () => {},
     moveToTrash: async () => {},
-    write: async (info, text, conflict, encoded) => {
+    write: async (info, text, conflict, encoded, onWriteStart) => {
       writes.push({ text, conflict, encoded });
+      onWriteStart?.();
       if (overrides.holdWrite) await new Promise((resolve) => { releaseWrite = resolve; });
       if (overrides.failWrite) throw new Error('partial write');
       return { info: { ...info, fingerprint: 'written' }, text };
@@ -84,6 +85,52 @@ test('save-as to the original URI does not bypass conflict checking', async () =
   const opened = await service();
   await opened.api.save({}, true);
   assert.equal(opened.writes[0].conflict, true);
+});
+
+test('saving an unchanged original file does not write or truncate it', async () => {
+  const opened = await service({ skipEdit: true, failWrite: true });
+  const result = await opened.api.save({}, false);
+  assert.equal(result.saved, true);
+  assert.equal(opened.writes.length, 0);
+  assert.equal(opened.encodings(), 0);
+});
+
+test('save-as still writes an unchanged document', async () => {
+  const opened = await service({ skipEdit: true });
+  const result = await opened.api.save({}, true);
+  assert.equal(result.saved, true);
+  assert.equal(opened.writes.length, 1);
+  assert.equal(opened.drafts[0].writeUncertain, true);
+});
+
+test('failure before the provider starts writing does not mark the original file uncertain', async () => {
+  const opened = await service({ files: { write: async () => { throw new Error('conflict'); } } });
+  await assert.rejects(opened.api.save({}, false), /conflict/);
+  assert.equal(opened.api.current().writeUncertain, false);
+  assert.equal(opened.api.current().source, 'edited');
+});
+
+test('an interrupted write retains both the latest edit and the attempted snapshot after undo', async () => {
+  const time = clock();
+  const opened = await service({ holdWrite: true, failWrite: true }, time);
+  const pending = opened.api.save({}, false);
+  await new Promise((resolve) => setImmediate(resolve));
+  opened.api.edit('base');
+  time.advance(2000);
+  await new Promise((resolve) => setImmediate(resolve));
+  opened.release();
+  await assert.rejects(pending, /partial write/);
+  time.advance(2000);
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(opened.api.current().source, 'base');
+  assert.equal(opened.api.current().savedText, 'base');
+  assert.equal(opened.api.current().writeUncertain, true);
+  const recovery = opened.drafts.at(-1);
+  assert.equal(recovery.text, 'base');
+  assert.equal(recovery.pendingWriteText, 'edited');
+  assert.equal(recovery.writeUncertain, true);
+  assert.equal(opened.clears.length, 0);
 });
 
 test('checkpoint failure prevents an external write', async () => {

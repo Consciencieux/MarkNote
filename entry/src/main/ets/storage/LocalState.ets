@@ -157,7 +157,10 @@ export class LocalState {
       parsed.hasBom = parsed.hasBom === true;
       parsed.writable = parsed.writable === true;
       parsed.persistent = parsed.persistent === true;
-      if (parsed.text === parsed.savedText) return null;
+      parsed.writeUncertain = parsed.writeUncertain === true;
+      if (typeof parsed.pendingWriteText !== 'string') parsed.pendingWriteText = '';
+      if (typeof parsed.pendingWriteUri !== 'string') parsed.pendingWriteUri = '';
+      if (parsed.text === parsed.savedText && !parsed.writeUncertain) return null;
       return parsed;
     } catch {
       return null;

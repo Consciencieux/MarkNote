@@ -16,6 +16,9 @@ export class DocumentSession {
   source: string = '';
   savedText: string = '';
   editing: boolean = false;
+  writeUncertain: boolean = false;
+  pendingWriteText: string = '';
+  pendingWriteUri: string = '';
 
   constructor(id: number) {
     this.id = id;
@@ -108,7 +111,7 @@ export class DocumentService {
     if (!session.editing || session.source === text) return false;
     session.source = text;
     session.revision++;
-    if (session.source === session.savedText) DocumentService.releaseDraft(session);
+    if (session.source === session.savedText && !session.writeUncertain) DocumentService.releaseDraft(session);
     else DocumentService.scheduleDraft(session);
     return true;
   }
@@ -211,6 +214,9 @@ export class DocumentService {
     session.info = info;
     session.source = draft.text;
     session.savedText = draft.savedText;
+    session.writeUncertain = draft.writeUncertain === true;
+    session.pendingWriteText = typeof draft.pendingWriteText === 'string' ? draft.pendingWriteText : '';
+    session.pendingWriteUri = typeof draft.pendingWriteUri === 'string' ? draft.pendingWriteUri : '';
     session.editing = true;
     if (DocumentService.session !== previous || previous.source !== previousSource ||
       previous.editing !== previousEditing || DocumentService.session.fileOperation !== 'idle' ||
@@ -231,6 +237,17 @@ export class DocumentService {
     const baseline = session.savedText;
     const previous = session.info;
     const readOnly = !asNewFile && previous.uri.length > 0 && !previous.writable;
+    if (!asNewFile && previous.uri.length > 0 && previous.writable && snapshot === baseline && !session.writeUncertain) {
+      session.fileOperation = 'idle';
+      result.saved = true;
+      result.message = AppText.text($r('app.string.saved'));
+      return result;
+    }
+    let writeStarted = false;
+    let checkpointPrepared = false;
+    const oldUncertain = session.writeUncertain;
+    const oldPendingText = session.pendingWriteText;
+    const oldPendingUri = session.pendingWriteUri;
     try {
       let saveAs = asNewFile || previous.uri.length === 0 || !previous.writable;
       let uri = saveAs ? '' : previous.uri;
@@ -255,10 +272,15 @@ export class DocumentService {
         }
       }
       const encoded = DocumentFiles.encodedForWrite(target, snapshot);
-      if (snapshot !== baseline) await DocumentService.checkpointRecovery(session, snapshot, baseline, previous);
+      session.writeUncertain = true;
+      session.pendingWriteText = snapshot;
+      session.pendingWriteUri = uri;
+      checkpointPrepared = true;
+      await DocumentService.checkpointRecovery(session, baseline, previous);
       if (DocumentService.session !== session || !session.editing) return result;
       const sameTarget = previous.uri.length > 0 && uri === previous.uri;
-      const verified = await DocumentFiles.write(target, snapshot, !saveAs || sameTarget, encoded);
+      const verified = await DocumentFiles.write(target, snapshot, !saveAs || sameTarget, encoded,
+        (): void => { writeStarted = true; });
       if (DocumentService.session !== session || !session.editing || session.fileOperation !== 'save') return result;
       target.name = verified.info.name.length > 0 ? verified.info.name : previous.name;
       target.fingerprint = verified.info.fingerprint;
@@ -272,6 +294,9 @@ export class DocumentService {
       if (resolved !== null) target.formatId = resolved.id;
       session.info = target;
       session.savedText = snapshot;
+      session.writeUncertain = false;
+      session.pendingWriteText = '';
+      session.pendingWriteUri = '';
       result.saved = true;
       result.stillDirty = session.source !== snapshot;
       result.sessionId = session.id;
@@ -289,6 +314,24 @@ export class DocumentService {
         else result.message = AppText.text($r('app.string.saved'));
       }
       return result;
+    } catch (error) {
+      if (checkpointPrepared && !writeStarted) {
+        session.writeUncertain = oldUncertain;
+        session.pendingWriteText = oldPendingText;
+        session.pendingWriteUri = oldPendingUri;
+      }
+      if (checkpointPrepared && DocumentService.session === session && session.editing) {
+        if (writeStarted) {
+          try {
+            await DocumentService.checkpointRecovery(session, session.savedText, session.info);
+          } catch (recoveryError) {
+            DocumentService.reportRecovery(session.id, recoveryError);
+            DocumentService.scheduleDraft(session);
+          }
+        } else if (session.source !== session.savedText || session.writeUncertain) DocumentService.scheduleDraft(session);
+        else DocumentService.releaseDraft(session);
+      }
+      throw error instanceof Error ? error : new Error('save failed');
     } finally {
       if (session.fileOperation === 'save') session.fileOperation = 'idle';
     }
@@ -357,15 +400,14 @@ export class DocumentService {
 
   private static scheduleDraft(session: DocumentSession): void {
     if (DocumentService.drafts === null || !session.editing) return;
-    if (session.source === session.savedText) return;
+    if (session.source === session.savedText && !session.writeUncertain) return;
     DocumentService.drafts.schedule(DocumentService.makeSnapshot(session));
   }
 
-  private static async checkpointRecovery(owner: DocumentSession, text: string, savedBaseline: string,
-    info: DocumentInfo): Promise<void> {
-    if (DocumentService.drafts === null || text === savedBaseline) return;
+  private static async checkpointRecovery(owner: DocumentSession, savedBaseline: string, info: DocumentInfo): Promise<void> {
+    if (DocumentService.drafts === null) throw new Error('recovery unavailable');
     const shot = DocumentService.makeSnapshot(owner);
-    shot.data.text = text;
+    shot.data.text = owner.source;
     shot.data.savedText = savedBaseline;
     shot.data.name = info.name;
     shot.data.uri = info.uri;
@@ -394,6 +436,9 @@ export class DocumentService {
     data.formatId = session.info.formatId;
     data.writable = session.info.writable;
     data.persistent = session.info.persistent;
+    data.writeUncertain = session.writeUncertain;
+    data.pendingWriteText = session.pendingWriteText;
+    data.pendingWriteUri = session.pendingWriteUri;
     const shot = new DraftSnapshot();
     shot.sessionId = session.id;
     shot.revision = session.revision;

@@ -97,6 +97,22 @@ test('waits 450 ms, keeps only the newest automatic draft, and resolves a checkp
   void held;
 });
 
+test('a durable checkpoint supersedes an older pending automatic draft', async () => {
+  const time = clock();
+  const writes = [];
+  const api = coordinator(time, { LocalState: {
+    writeDraft: async (_context, draft) => { writes.push(draft.text); },
+    clearDraft: async () => {}
+  } });
+  const drafts = new api.DraftCoordinator({});
+  drafts.activate(1);
+  drafts.schedule(snapshot(api, 1, 'old'));
+  await drafts.checkpoint(snapshot(api, 1, 'current'));
+  time.advance(2000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(writes, ['current']);
+});
+
 test('drops an old session timer, serializes clearing, and keeps working after a failure', async () => {
   const time = clock();
   const writes = [];

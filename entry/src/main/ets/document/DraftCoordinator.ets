@@ -96,6 +96,13 @@ export class DraftCoordinator {
   checkpoint(snapshot: DraftSnapshot): Promise<void> {
     if (snapshot.sessionId !== this.activeSession) return Promise.reject(new Error('stale session'));
     const task = new DraftTask('write', snapshot, this.nextOp++, true);
+    this.cancelRetry();
+    this.supersede(task.op);
+    if (this.pendingAuto !== null && this.pendingAuto.sessionId === task.sessionId &&
+      this.pendingAuto.op < task.op) {
+      this.pendingAuto = null;
+      this.disarm();
+    }
     this.enqueue(task);
     return task.done.then((): void => {});
   }
@@ -159,7 +166,7 @@ export class DraftCoordinator {
       const kept: DraftTask[] = [];
       for (let index = 0; index < this.queue.length; index++) {
         const queued = this.queue[index];
-        const olderAuto = !task.forced && queued.kind === 'write' && !queued.forced &&
+        const olderAuto = queued.kind === 'write' && !queued.forced &&
           queued.sessionId === task.sessionId;
         const otherSession = queued.kind === 'write' && queued.sessionId !== task.sessionId;
         if (olderAuto) {

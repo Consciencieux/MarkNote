@@ -241,7 +241,7 @@ export class DocumentFiles {
    * taken at open or the last successful save, then verify the bytes written back.
    */
   static async write(info: DocumentInfo, text: string, checkConflict: boolean,
-    prepared: EncodedText | null = null): Promise<FileContents> {
+    prepared: EncodedText | null = null, onWriteStart: (() => void) | null = null): Promise<FileContents> {
     const encoded = prepared === null ? DocumentFiles.encodedForWrite(info, text) : prepared;
     if (checkConflict) {
       if (info.fingerprint.length === 0) {
@@ -256,6 +256,7 @@ export class DocumentFiles {
     const expected = await fingerprintOf(bytes);
     const file = await fileIo.open(info.uri, fileIo.OpenMode.READ_WRITE);
     try {
+      if (onWriteStart !== null) onWriteStart();
       await writeAll(file.fd, bytes, AppText.text($r('app.string.write_interrupted')));
       await fileIo.truncate(file.fd, bytes.length);
       await fileIo.fsync(file.fd);

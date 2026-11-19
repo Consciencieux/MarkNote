@@ -232,7 +232,7 @@ export struct DocumentView {
     this.stopEditing();
     this.searchVisible = false;
     const session = DocumentService.current();
-    if (session.source === session.savedText) void DocumentService.clearRecovery(session, 'discarded');
+    if (session.source === session.savedText && !session.writeUncertain) void DocumentService.clearRecovery(session, 'discarded');
     this.editorSessionKey++;
   }
 
@@ -394,7 +394,8 @@ export struct DocumentView {
     const confirmedSource = this.source;
     this.getUIContext().showAlertDialog({
       title: this.uiText($r('app.string.delete_title')),
-      message: this.uiText(this.isDirty() ? $r('app.string.delete_dirty') : $r('app.string.delete_clean')),
+      message: this.uiText(this.isDirty() || DocumentService.current().writeUncertain ?
+        $r('app.string.delete_dirty') : $r('app.string.delete_clean')),
       buttons: [
         { value: this.uiText($r('app.string.dialog_cancel')), action: (): void => {} },
         { value: this.uiText($r('app.string.menu_delete')), action: (): void => { void this.deleteDocument(uri, confirmedSource); } }
@@ -462,7 +463,7 @@ export struct DocumentView {
       this.editor.command({ action: 'resume' });
       return false;
     }
-    if (!DocumentService.current().editing || !this.isDirty()) return true;
+    if (!DocumentService.current().editing || (!this.isDirty() && !DocumentService.current().writeUncertain)) return true;
     const accepted = await this.askSaveOrDiscard();
     if (!accepted) this.editor.command({ action: 'resume' });
     return accepted;
@@ -487,8 +488,9 @@ export struct DocumentView {
         resolve(leave);
       };
       this.getUIContext().showAlertDialog({
-        message: this.uiText(this.info.uri.length > 0 && !this.info.writable ?
-          $r('app.string.save_prompt_readonly') : $r('app.string.save_prompt')),
+        message: this.uiText(DocumentService.current().writeUncertain ? $r('app.string.save_prompt_uncertain') :
+          (this.info.uri.length > 0 && !this.info.writable ?
+            $r('app.string.save_prompt_readonly') : $r('app.string.save_prompt'))),
         autoCancel: true,
         buttonDirection: DialogButtonDirection.HORIZONTAL,
         buttons: [
