@@ -3,6 +3,7 @@ import { katex as katexPlugin } from '@mdit/plugin-katex';
 import { tasklist } from '@mdit/plugin-tasklist';
 import { imagePlaceholder, previewError, previewText } from '../preview-text.ts';
 import { beginMermaidDiagrams, mermaidPlaceholder } from './mermaid-block.ts';
+import { safeExternalUrl } from './external-link.ts';
 import { sanitizeSvg } from './svg.ts';
 
 const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
@@ -28,6 +29,18 @@ md.renderer.rules.image = (tokens, idx) => {
   const safeSrc = md.utils.escapeHtml(imageAddress(token));
   // 不写 src。页面只在应用传入已读取的 data URL 时，才把这个占位换成图片。
   return `<span class="missing-image image-slot" data-mn-src="${safeSrc}" data-mn-alt="${safeAlt}">${imagePlaceholder(alt)}</span>`;
+};
+md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
+  const token = tokens[idx];
+  const href = token.attrGet('href');
+  const address = typeof href === 'string' ? href : '';
+  // In-page anchors stay on the preview. Every other address loses href.
+  if (address.startsWith('#')) return self.renderToken(tokens, idx, options);
+  const index = token.attrIndex('href');
+  if (index >= 0 && token.attrs) token.attrs.splice(index, 1);
+  const safe = safeExternalUrl(address);
+  if (safe) token.attrSet('data-mn-external-url', safe);
+  return self.renderToken(tokens, idx, options);
 };
 const defaultFence = md.renderer.rules.fence!;
 md.renderer.rules.fence = (tokens, idx, options, env, renderer) => {
