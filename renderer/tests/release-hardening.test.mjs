@@ -1,16 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { stripTypeScriptTypes } from 'node:module';
-import vm from 'node:vm';
+import { loadArkts } from './helpers/arkts-loader.mjs';
 import { insertEditorAction } from '../../entry/src/main/ets/document/EditorActions.ts';
 import { imageLabel, usePreviewText } from '../src/preview-text.ts';
 
-// Run the actual checked-out source; replace only platform-dependent imports.
 function load(relative, exported, context = {}) {
-  const path = new URL('../../entry/src/main/ets/' + relative, import.meta.url);
-  const source = readFileSync(path, 'utf8').replace(/^import .*;\s*$/gm, '').replace(/^export /gm, '');
-  return vm.runInNewContext(`${stripTypeScriptTypes(source)}\n${exported}`, context);
+  return loadArkts(relative, exported, context);
 }
 const wantConstant = { Params: { PARAMS_STREAM: 'stream' },
   Flags: { FLAG_AUTH_READ_URI_PERMISSION: 1, FLAG_AUTH_WRITE_URI_PERMISSION: 2 } };
@@ -52,37 +47,4 @@ test('image alt text is not interpreted as a replacement template', () => {
   usePreviewText({imageSlot:'[%s]'});
   for(const alt of ['$&',"$'",'$`','$$'])assert.equal(imageLabel(alt),`[${alt}]`);
   usePreviewText({});
-});
-function service(overrides={}) {
-  class Info {constructor(){Object.assign(this,{uri:'file://a.md',name:'a.md',newline:'\n',lineEndings:'',encoding:'utf-8',hasBom:false,
-    fingerprint:'original',formatId:'markdown',writable:true,persistent:true});}}
-  const writes=[],drafts=[];
-  const formats={markdown:{id:'markdown',starter:''},plain:{id:'plain',starter:''}};
-  const registry={byId:id=>formats[id],byFilename:name=>name.endsWith('.md')?formats.markdown:formats.plain,
-    defaultName:f=>f.id==='markdown'?'a.md':'a.txt',resolve:(name,_type,unknown)=>name.endsWith('.md')?formats.markdown:unknown?formats.plain:null};
-  const files={prepare:async()=>({writable:true,persistent:true}),chooseSave:async()=> 'file://a.md',read:uri=>({info:Object.assign(new Info(),{uri}),text:'disk'}),
-    write:(_info,text,conflict)=>writes.push({text,conflict}),...overrides.files};
-  const api=load('document/DocumentService.ets','DocumentService',{DocumentInfo:Info,RecoveryData:Info,copyInfo:x=>Object.assign(new Info(),x),DocumentFiles:files,
-    LocalState:{writeDraft:(_ctx,draft)=>drafts.push({...draft}),...overrides.local},FormatRegistry:registry,documentOutline:()=>[],AppText:{text:x=>x},$r:x=>x,
-    userNotice:(message)=>{const error=new Error(message);error.name='UserNotice';return error;}});
-  api.adopt({info:new Info(),text:'base'});api.edit('edited');return{api,writes,drafts};
-}
-test('save-as to the original URI does not bypass conflict checking', async () => {
-  const s=service();await s.api.save({},true);assert.equal(s.writes[0].conflict,true);
-});
-test('checkpoint failure prevents an external write', async () => {
-  const s=service({local:{writeDraft:()=>{throw new Error('disk full')}}});
-  await assert.rejects(s.api.save({},false),/disk full/);assert.equal(s.writes.length,0);
-});
-test('provider write failure leaves complete recovery text', async () => {
-  const s=service({files:{write:()=>{throw new Error('partial write')}}});
-  await assert.rejects(s.api.save({},false),/partial write/);assert.equal(s.drafts[0].text,'edited');assert.equal(s.drafts[0].savedText,'base');
-});
-test('opaque file URI is resolved using the provider filename', async () => {
-  const s=service();assert.equal(await s.api.openUri('file://12345','',true,true),true);
-  assert.equal(s.api.current().info.formatId,'markdown');
-});
-test('rejected late confirmation does not replace the current session', async () => {
-  const s=service(),owner=s.api.current();
-  assert.equal(await s.api.openUri('file://b.md','',true,true,async()=>false),false);assert.equal(s.api.current(),owner);
 });

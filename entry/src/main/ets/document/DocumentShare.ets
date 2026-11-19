@@ -16,20 +16,23 @@ export class DocumentShare {
     const filename = safeName.length === 0 || safeName === '.' || safeName === '..' ?
       AppText.text($r('app.string.file_share_fallback')) : safeName;
     const directory = `${context.cacheDir}/marknote-share/${Date.now()}-${DocumentShare.sequence++}`;
-    fileIo.mkdirSync(directory, true);
+    await fileIo.mkdir(directory, true);
     const path = `${directory}/${filename}`;
     // A UTF-8 snapshot also supports new, read-only and unsaved documents.
     const bytes = TextEncoding.encode(source, new DocumentInfo()).bytes;
-    const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
+    const file = await fileIo.open(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
     try {
       let offset = 0;
       while (offset < bytes.length) {
-        const written = fileIo.writeSync(file.fd, bytes.slice(offset).buffer);
+        const length = Math.min(64 * 1024, bytes.length - offset);
+        const chunk = new ArrayBuffer(length);
+        new Uint8Array(chunk).set(bytes.subarray(offset, offset + length));
+        const written = await fileIo.write(file.fd, chunk);
         if (written <= 0) throw userNotice(AppText.text($r('app.string.share_write_failed')));
         offset += written;
       }
     } finally {
-      fileIo.closeSync(file);
+      await fileIo.close(file);
     }
 
     let type: string = uniformTypeDescriptor.UniformDataType.FILE;

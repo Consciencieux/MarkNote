@@ -3,36 +3,16 @@ import { Heading } from '../model/Document';
 import { loadLocalImages, PreviewImage, sourcesFromPage } from '../document/LocalImages';
 import { AppText } from '../i18n/AppText';
 import { previewLanguageTag } from '../i18n/AppLanguage';
+import { PreviewCommand, PreviewCopy, PreviewDispatch } from './PreviewDispatch';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
 
 interface ParsedHeading { level: number; text: string; offset: number }
 interface ParsedResult {
   kind: string;
   revision: number;
+  documentId?: number;
   headings: ParsedHeading[];
   url?: string;
-  documentId?: number;
-}
-interface PreviewCopy {
-  lang: string;
-  empty: string;
-  failed: string;
-  unsafe: string;
-  markdownFailed: string;
-  svgUnsafe: string;
-  svgInvalid: string;
-  svgRejected: string;
-  mathFailed: string;
-  imageName: string;
-  imageSlot: string;
-}
-interface PreviewCommand {
-  kind: string;
-  source: string;
-  theme: string;
-  revision: number;
-  documentId: number;
-  text: PreviewCopy;
 }
 
 /** 文稿预览和分栏预览共用同一组 Web 与滚动配置。 */
@@ -44,19 +24,22 @@ export struct DocumentPreviewView {
   @Prop @Watch('scheduleUpdate') parseRevision: number = 0;
   /** 当前文稿 URI。空字符串表示还没有文件，本地图片无法定位。 */
   @Prop @Watch('scheduleUpdate') documentUri: string = '';
+  @Prop @Watch('scheduleUpdate') documentId: number = 0;
+  /** off 不发送；outline 只让 LaTeX 回传大纲；render 才更新可见预览。 */
+  @Prop @Watch('scheduleUpdate') workMode: string = 'off';
   /**
    * 界面语言。预览创建在 @Builder 里，按值传入的 language 不会更新。
    * 变化时重新发送预览文案，正文未变也要刷新占位和错误提示。
    * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
    */
   @StorageLink('marknote_language') @Watch('scheduleUpdate') language: string = 'default';
-  onOutline: (revision: number, headings: Heading[]) => void = (_revision: number, _headings: Heading[]): void => {};
+  onOutline: (documentId: number, revision: number, headings: Heading[]) => void =
+    (_documentId: number, _revision: number, _headings: Heading[]): void => {};
   /** 预览里点击已校验的网页链接。页面不打开这个地址。 */
   onOpenExternalLink: (link: string) => void = (_link: string): void => {};
   scroller: Scroller = new Scroller();
   private controller: webview.WebviewController = new webview.WebviewController();
   private ready: boolean = false;
-  private updateGeneration: number = 0;
   @State private previewFailed: boolean = false;
   private ports: webview.WebMessagePort[] = [];
   private timer: number = -1;
@@ -66,11 +49,13 @@ export struct DocumentPreviewView {
   private imageTop: number = 0;
   private imageHeight: number = 0;
   private failedImages: string[] = [];
-  private publishedUri: string = '';
+  private publishedDocument: number = -1;
   private documentGeneration: number = 0;
+  private dispatch: PreviewDispatch = new PreviewDispatch((command: PreviewCommand): Promise<void> => this.deliver(command));
 
   aboutToDisappear(): void {
     this.imageGeneration++;
+    this.dispatch.dispose();
     if (this.timer >= 0) clearTimeout(this.timer);
     if (this.imageTimer >= 0) clearTimeout(this.imageTimer);
     this.timer = -1;
@@ -92,12 +77,13 @@ export struct DocumentPreviewView {
           if (result.kind === 'open-link') {
             const url = result.url;
             if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return;
-            if (result.revision !== this.parseRevision || result.documentId !== this.documentGeneration) return;
+            if (result.revision !== this.parseRevision || result.documentId !== this.documentId) return;
             if (this.kind !== 'markdown' || !this.ready) return;
             this.onOpenExternalLink(url);
             return;
           }
           if (result.kind !== 'tex-outline' || result.revision !== this.parseRevision ||
+            result.documentId !== this.documentId ||
             this.kind !== 'tex-math' || !Array.isArray(result.headings)) return;
           const headings: Heading[] = [];
           for (const item of result.headings) {
@@ -107,7 +93,7 @@ export struct DocumentPreviewView {
               !Number.isInteger(item.level) || item.level < 1 || item.level > 6) return;
             headings.push(new Heading(item.level, item.text, item.offset));
           }
-          this.onOutline(result.revision, headings);
+          this.onOutline(this.documentId, result.revision, headings);
         } catch { /* Ignore malformed results from the page. */ }
       });
       // 华为《建立应用侧与前端页面数据通道》：将一个端口转交网页。
@@ -121,34 +107,78 @@ export struct DocumentPreviewView {
     this.imageGeneration++;
     this.failedImages = [];
     if (this.timer >= 0) clearTimeout(this.timer);
+    this.timer = -1;
+    if (this.workMode === 'off') {
+      this.dispatch.pause();
+      if (this.imageTimer >= 0) clearTimeout(this.imageTimer);
+      this.imageTimer = -1;
+      return;
+    }
     this.timer = setTimeout(() => {
       this.timer = -1;
-      if (this.ready) this.publish();
+      if (this.ready && this.workMode !== 'off') this.publish();
     }, 120);
   }
 
   private publish(): void {
-    if (this.documentUri !== this.publishedUri) {
-      this.publishedUri = this.documentUri;
+    if (!this.ready || this.workMode === 'off') return;
+    if (this.documentId !== this.publishedDocument) {
+      this.publishedDocument = this.documentId;
       this.documentGeneration++;
     }
-    this.sendUpdate();
-    this.scheduleImages();
+    const copy: PreviewCopy = {
+      lang: this.language === 'default' ? previewLanguageTag() : this.language,
+      empty: AppText.text($r('app.string.preview_empty')),
+      failed: AppText.text($r('app.string.preview_failed')),
+      unsafe: AppText.text($r('app.string.preview_unsafe')),
+      markdownFailed: AppText.text($r('app.string.preview_markdown_failed')),
+      svgUnsafe: AppText.text($r('app.string.preview_svg_unsafe')),
+      svgInvalid: AppText.text($r('app.string.preview_svg_invalid')),
+      svgRejected: AppText.text($r('app.string.preview_svg_rejected')),
+      mathFailed: AppText.text($r('app.string.preview_math_failed')),
+      imageName: AppText.text($r('app.string.preview_image_name')),
+      imageSlot: AppText.text($r('app.string.preview_image_slot'))
+    };
+    const payload: PreviewCommand = {
+      kind: this.kind,
+      source: this.source,
+      theme: this.theme,
+      revision: this.parseRevision,
+      documentId: this.documentId,
+      mode: this.workMode,
+      text: copy
+    };
+    this.dispatch.request(payload);
+    this.dispatch.resume();
+    if (this.workMode === 'render') this.scheduleImages();
+  }
+
+  private deliver(command: PreviewCommand): Promise<void> {
+    const script = 'window.MarknotePreview.update(' + JSON.stringify(command) + ')';
+    const current = (): boolean => this.ready && this.workMode === command.mode &&
+      this.documentId === command.documentId && this.parseRevision === command.revision &&
+      this.source === command.source && this.theme === command.theme;
+    return this.controller.runJavaScript(script).then((): void => {
+      if (current()) this.previewFailed = false;
+    }).catch((): void => {
+      if (current()) this.previewFailed = true;
+    });
   }
 
   private scheduleImages(): void {
+    if (this.workMode !== 'render') return;
     this.imageGeneration++;
     if (this.imageTimer >= 0) clearTimeout(this.imageTimer);
     this.imageTimer = setTimeout(() => {
       this.imageTimer = -1;
-      void this.refreshImages();
+      if (this.workMode === 'render') void this.refreshImages();
     }, 150);
   }
 
   /** 根据原生 Scroll 的可视范围逐张读取，避免一次持有整篇文稿的图片。 */
   private async refreshImages(): Promise<void> {
-    if (this.imageBusy || !this.ready || this.kind !== 'markdown' || this.documentUri.length === 0 ||
-      this.imageHeight <= 0) return;
+    if (this.imageBusy || !this.ready || this.workMode !== 'render' || this.kind !== 'markdown' ||
+      this.documentUri.length === 0 || this.imageHeight <= 0) return;
     this.imageBusy = true;
     const generation = this.imageGeneration;
     const source = this.source;
@@ -177,47 +207,6 @@ export struct DocumentPreviewView {
     }
   }
 
-  private sendUpdate(): void {
-    const copy: PreviewCopy = {
-      lang: this.language === 'default' ? previewLanguageTag() : this.language,
-      empty: AppText.text($r('app.string.preview_empty')),
-      failed: AppText.text($r('app.string.preview_failed')),
-      unsafe: AppText.text($r('app.string.preview_unsafe')),
-      markdownFailed: AppText.text($r('app.string.preview_markdown_failed')),
-      svgUnsafe: AppText.text($r('app.string.preview_svg_unsafe')),
-      svgInvalid: AppText.text($r('app.string.preview_svg_invalid')),
-      svgRejected: AppText.text($r('app.string.preview_svg_rejected')),
-      mathFailed: AppText.text($r('app.string.preview_math_failed')),
-      imageName: AppText.text($r('app.string.preview_image_name')),
-      imageSlot: AppText.text($r('app.string.preview_image_slot'))
-    };
-    const payload: PreviewCommand = {
-      kind: this.kind,
-      source: this.source,
-      theme: this.theme,
-      revision: this.parseRevision,
-      documentId: this.documentGeneration,
-      text: copy
-    };
-    const command = 'window.MarknotePreview.update(' + JSON.stringify(payload) + ')';
-    const generation = ++this.updateGeneration;
-    const revision = this.parseRevision;
-    const uri = this.documentUri;
-    const source = this.source;
-    const current = (): boolean => this.ready && generation === this.updateGeneration &&
-      this.parseRevision === revision &&
-      this.documentUri === uri && this.source === source;
-    try {
-      void this.controller.runJavaScript(command).then((): void => {
-        if (current()) this.previewFailed = false;
-      }).catch((): void => {
-        if (current()) this.previewFailed = true;
-      });
-    } catch {
-      if (current()) this.previewFailed = true;
-    }
-  }
-
   @Builder
   private PreviewWeb() {
     // renderMode 是 Web 构造参数（web.d.ts 的 WebOptions，API 12 起），没有同名链式属性。
@@ -236,7 +225,7 @@ export struct DocumentPreviewView {
       .onPageEnd(() => {
         this.ready = true;
         this.connectResultPort();
-        this.publish();
+        if (this.workMode !== 'off') this.publish();
       })
       .width('100%')
       // 《Web组件大小自适应页面内容布局》：Web 按内容撑高，滚动交给外层 Scroll；

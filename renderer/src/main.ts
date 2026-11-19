@@ -116,10 +116,24 @@ function renderBody(kind: Kind, source: string): string {
   return renderMarkdown(source);
 }
 
+function postTexOutline(update: PreviewUpdate, tex: TexDocument): void {
+  lastResult = JSON.stringify({
+    kind: 'tex-outline', revision: update.revision, documentId: update.documentId,
+    headings: tex.headings, diagnostics: tex.diagnostics
+  });
+  resultPort?.postMessage(lastResult);
+}
+
 function render(update: PreviewUpdate): void {
   if (!['system', 'light', 'dark'].includes(update.theme)) return;
   if (!['markdown', 'plain', 'svg', 'tex-math'].includes(update.kind)) return;
   if (typeof update.source !== 'string') return;
+  const mode = update.mode === 'outline' ? 'outline' : 'render';
+  if (mode === 'outline') {
+    if (update.kind !== 'tex-math') return;
+    postTexOutline(update, renderTexDocument(update.source, false));
+    return;
+  }
   notePreviewTarget(update);
   const textStamp = usePreviewText(update.text);
   document.documentElement.lang = previewText().lang;
@@ -133,9 +147,7 @@ function render(update: PreviewUpdate): void {
     if (lastRendered.theme !== update.theme && update.kind === 'markdown') paintDiagrams(update.theme);
     lastRendered = { ...lastRendered, theme: update.theme };
     if (lastRendered.tex) {
-      lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision,
-        headings: lastRendered.tex.headings, diagnostics: lastRendered.tex.diagnostics });
-      resultPort?.postMessage(lastResult);
+      postTexOutline(update, lastRendered.tex);
     }
     return;
   }
@@ -153,7 +165,8 @@ function render(update: PreviewUpdate): void {
     lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, textStamp,
       theme: update.theme };
     if (update.kind === 'tex-math') {
-      lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision, headings: [], diagnostics: [] });
+      lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision, documentId: update.documentId,
+        headings: [], diagnostics: [] });
       resultPort?.postMessage(lastResult);
     }
     return;
@@ -162,7 +175,7 @@ function render(update: PreviewUpdate): void {
   let tex: TexDocument | undefined;
   let html: string;
   try {
-    tex = update.kind === 'tex-math' ? renderTexDocument(update.source) : undefined;
+    tex = update.kind === 'tex-math' ? renderTexDocument(update.source, true) : undefined;
     html = tex ? tex.html : renderBody(update.kind, update.source);
   } catch {
     linkTarget = undefined;
@@ -189,9 +202,7 @@ function render(update: PreviewUpdate): void {
         trust: false, strict: 'warn', maxSize: 100, maxExpand: 1000, output: 'htmlAndMathml'
       });
     }
-    lastResult = JSON.stringify({ kind: 'tex-outline', revision: update.revision,
-      headings: tex.headings, diagnostics: tex.diagnostics });
-    resultPort?.postMessage(lastResult);
+    postTexOutline(update, tex);
   }
 }
 

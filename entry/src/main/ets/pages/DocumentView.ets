@@ -6,11 +6,12 @@ import {
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
   TitleBarContentOptions, HdsNavigationTitleBarOptions, HdsTabs, hdsMaterial
 } from '@kit.UIDesignKit';
-import { DocumentInfo, Heading, RecoveryData } from '../model/Document';
+import { DocumentInfo, Heading } from '../model/Document';
 import { DocumentService, DocumentSession } from '../document/DocumentService';
 import { DocumentShare } from '../document/DocumentShare';
 import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
+import { AnalysisRequest, AnalysisResult, DocumentAnalysis } from '../document/DocumentAnalysis';
 import { EditHistory, EditStep } from '../document/EditHistory';
 import { insertEditorAction } from '../document/EditorActions';
 import { FormatBarView } from './FormatBarView';
@@ -25,8 +26,6 @@ import { shownDetail } from '../document/UserNotice';
 import { scrollingTitleBar } from './HdsMaterialStyles';
 import { searchFieldMaterial } from './ImmersiveMaterials';
 import { bodyInput, toolbarIcon } from './TextRoles';
-import { LocalState } from '../storage/LocalState';
-import { DocumentFiles } from '../storage/DocumentFiles';
 
 /**
  * Tab positions on the document page. Preview comes first so a document opens in reading
@@ -89,6 +88,12 @@ export struct DocumentView {
   @State private formatId: string = '';
   @State private headings: Heading[] = [];
   @State private parseRevision: number = 0;
+  @State private documentSessionId: number = 0;
+  @State private headingRevision: number = -1;
+  @State private pageVisible: boolean = false;
+  @State private previewShown: boolean = true;
+  @State private outlineShown: boolean = false;
+  @State private splitShown: boolean = false;
   @State private saving: boolean = false;
   @State private deleting: boolean = false;
   @State private searchVisible: boolean = false;
@@ -112,9 +117,10 @@ export struct DocumentView {
   private headingJump: number = 0;
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
-  private recoveryTimer: number = -1;
-  private recoveryDeadline: number = -1;
   private sessionOwner: DocumentSession | null = null;
+  private analysis: DocumentAnalysis = new DocumentAnalysis((result: AnalysisResult): void => {
+    this.applyAnalysis(result);
+  });
   /**
    * 底部导航避让高度为 0 时，页签栏与 HdsTabs 底边留出一段应用自己的距离。
    * 这段用 sys.float.margin_left，不是华为规定的底边距；有导航避让区时不再加。
@@ -152,7 +158,7 @@ export struct DocumentView {
         this.selectedTab = TAB_EDIT;
         this.currentMatch = -1;
         this.matchOrdinal = 0;
-        this.matchCount = TextSearch.count(this.source, this.query);
+        void this.flushAnalysis();
       });
     };
     menuBridge.closeDocument = (): void => menuBridge.dismiss((): void => this.requestLeave());
@@ -163,6 +169,12 @@ export struct DocumentView {
     this.watchNavigationIndicator();
     // 这里只标记文稿数据载入完毕；实际可见由 HdsNavDestination.onShown 标记。
     documentBridge.markAttached();
+    DocumentService.bindRecoveryError((sessionId: number, _error: Error): void => {
+      const owner = this.sessionOwner;
+      if (owner !== null && owner.id === sessionId && owner === DocumentService.current()) {
+        this.toast($r('app.string.draft_write_failed'));
+      }
+    });
   }
 
   /**
@@ -194,15 +206,20 @@ export struct DocumentView {
 
   /** 窄屏收起分栏时回到预览，和之前媒体查询监听里的行为一致。 */
   private onWideChange(): void {
-    if (!this.wide && this.selectedTab === this.splitTab()) this.selectedTab = TAB_PREVIEW;
+    if (!this.wide && this.selectedTab === this.splitTab()) {
+      this.selectedTab = TAB_PREVIEW;
+      this.splitShown = false;
+      this.previewShown = true;
+    }
   }
 
   /** 载入当前会话。首次进入和首页换篇（revision 变）都走这里。 */
   private loadSession(): void {
-    this.cancelRecoveryTimers();
+    this.analysis.cancel();
     this.headingJump++;
     this.pendingHeadingOffset = -1;
     this.syncFromService();
+    DocumentService.activateSession(DocumentService.current());
     // The history belongs to one document. Keeping it across a switch would let undo write
     // the previous document's text into this one.
     this.history.reset(this.source, 0);
@@ -213,17 +230,21 @@ export struct DocumentView {
     this.selectionStart = 0;
     this.selectionEnd = 0;
     this.selectedTab = TAB_PREVIEW;
+    this.previewShown = true;
+    this.outlineShown = false;
+    this.splitShown = false;
     // 新文档从预览开始，编辑区不应带着上一篇的光标或编辑态。
     this.stopEditing();
     this.searchVisible = false;
-    // 干净文稿会顺手清掉残留草稿；崩溃恢复来的文稿仍是脏的，继续留在磁盘上。
-    this.flushRecovery();
+    const session = DocumentService.current();
+    if (session.source === session.savedText) void DocumentService.clearRecovery(session, 'discarded');
   }
 
   aboutToDisappear(): void {
     this.stopNavigationIndicator();
-    this.flushRecovery();
-    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
+    this.analysis.cancel();
+    DocumentService.unbindRecoveryError();
+    void DocumentService.flushRecovery();
     menuBridge.saveAs = (): void => {};
     menuBridge.share = (): void => {};
     menuBridge.toggleFavorite = (): void => {};
@@ -396,28 +417,17 @@ export struct DocumentView {
       this.confirmDelete();
       return;
     }
-    const sourceBefore = this.source;
     this.deleting = true;
     try {
-      await DocumentFiles.moveToTrash(session.info);
+      const result = await DocumentService.moveToTrash();
+      if (!result.deleted || DocumentService.current() !== session) return;
       this.onDeleted(uri);
-      if (DocumentService.current() === session && session.editing && session.info.uri === uri) {
-        if (this.source !== sourceBefore) {
-          // An edit arriving while the file manager was working becomes an unsaved document.
-          session.info.uri = '';
-          session.info.writable = false;
-          session.info.persistent = false;
-          session.info.fingerprint = '';
-          session.savedText = ''; // A new unsaved document has an empty saved baseline.
-          this.savedText = session.savedText;
-          this.scheduleRecovery();
-          this.toast($r('app.string.delete_trashed_dirty'));
-        } else {
-          this.clearRecovery();
-          DocumentService.close();
-          this.onLeave();
-          this.toast($r('app.string.delete_trashed'));
-        }
+      if (result.retainedEdits) {
+        this.syncFromService();
+        this.toast($r('app.string.delete_trashed_dirty'));
+      } else {
+        this.onLeave();
+        this.toast($r('app.string.delete_trashed'));
       }
     } catch (error) {
       this.toast(this.uiFormat($r('app.string.delete_failed'), shownDetail(error)));
@@ -510,25 +520,29 @@ export struct DocumentView {
     const wasSplit = this.wide && this.selectedTab === this.splitTab();
     const wasOutline = this.currentFormat().outline && this.selectedTab === TAB_OUTLINE;
     const session = DocumentService.current();
+    const sameText = this.sessionOwner === session && this.source === session.source;
     this.sessionOwner = session;
     this.info = session.info;
     this.title = session.info.name;
     this.formatId = session.info.formatId;
     this.source = session.source;
     this.savedText = session.savedText;
+    this.parseRevision = session.revision;
+    this.documentSessionId = session.id;
+    if (!sameText) {
+      this.headings = [];
+      this.headingRevision = -1;
+    }
     if (wasSplit) this.selectedTab = this.splitTab();
     else if (wasOutline && !this.currentFormat().outline) this.selectedTab = TAB_PREVIEW;
-    this.updateHeadings();
   }
 
-  /** Refresh native Markdown headings and invalidate older LaTeX parse results. */
-  private updateHeadings(): void {
-    this.parseRevision++;
-    this.headings = DocumentService.nativeHeadingsFor(this.info, this.source);
-  }
-
-  private acceptTexOutline(revision: number, headings: Heading[]): void {
-    if (this.formatId === 'tex-math' && revision === this.parseRevision) this.headings = headings;
+  private acceptTexOutline(documentId: number, revision: number, headings: Heading[]): void {
+    const session = DocumentService.current();
+    if (this.formatId === 'tex-math' && documentId === session.id && revision === session.revision) {
+      this.headings = headings;
+      this.headingRevision = revision;
+    }
   }
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
@@ -549,14 +563,10 @@ export struct DocumentView {
       const plainSaved = result.message === this.uiText($r('app.string.saved'));
       this.toast(this.info.persistent ? result.message :
         plainSaved ? recentLimit : `${result.message}\n${recentLimit}`);
-      if (!this.isDirty()) this.clearRecovery();
-      else this.scheduleRecovery();
-      // 最近文稿列表在首页，保存成功只通知过去。
       if (this.info.persistent) this.onSaved(this.info.uri, this.title);
       return !result.stillDirty;
     } catch (error) {
       if (DocumentService.current() !== owner || !owner.editing) return false;
-      this.scheduleRecovery();
       if (!asNewFile && this.info.uri.length > 0) {
         this.offerSaveCopy(this.uiFormat($r('app.string.save_failed_copy'), shownDetail(error)));
       } else {
@@ -579,65 +589,68 @@ export struct DocumentView {
     });
   }
 
-  private cancelRecoveryTimers(): void {
-    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
-    if (this.recoveryDeadline >= 0) clearTimeout(this.recoveryDeadline);
-    this.recoveryTimer = -1;
-    this.recoveryDeadline = -1;
-  }
-
-  private clearRecovery(): void {
-    this.cancelRecoveryTimers();
-    if (this.context && this.sessionOwner === DocumentService.current()) LocalState.clearDraft(this.context);
-  }
-
-  private scheduleRecovery(): void {
-    if (this.sessionOwner !== DocumentService.current()) return;
-    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
-    this.recoveryTimer = setTimeout(() => this.flushRecovery(), 450);
-    if (this.recoveryDeadline < 0) {
-      this.recoveryDeadline = setTimeout(() => this.flushRecovery(), 2000);
-    }
-  }
-
-  private flushRecovery(): void {
-    this.cancelRecoveryTimers();
-    const session = DocumentService.current();
-    if (!this.context || session !== this.sessionOwner || !session.editing) return;
-    if (session.source === session.savedText) {
-      this.clearRecovery();
-      return;
-    }
-    const draft = new RecoveryData();
-    draft.name = session.info.name;
-    draft.uri = session.info.uri;
-    draft.text = session.source;
-    draft.savedText = session.savedText;
-    draft.newline = session.info.newline;
-    draft.lineEndings = session.info.lineEndings;
-    draft.encoding = session.info.encoding;
-    draft.hasBom = session.info.hasBom;
-    draft.fingerprint = session.info.fingerprint;
-    draft.formatId = session.info.formatId;
-    draft.writable = session.info.writable;
-    draft.persistent = session.info.persistent;
-    try {
-      LocalState.writeDraft(this.context, draft);
-    } catch {
-      this.toast($r('app.string.draft_write_failed'));
-    }
-  }
-
-  /**
-   * 离开文稿：先按规则处理未保存的改动，再清掉草稿副本。
-   * 返回 false 表示用户取消了离开，调用方不应弹栈。
-   */
   private async closeToLibrary(): Promise<boolean> {
     if (!await this.saveBeforeLeaving()) return false;
-    this.clearRecovery();
-    // close() 同时把会话的编辑态置为 false，页面不再维护第二份。
+    const owner = DocumentService.current();
+    const source = owner.source;
+    const cleared = await DocumentService.clearRecovery(owner, 'discarded');
+    if ((!cleared || owner.source !== source) && owner.editing && owner.source !== owner.savedText) {
+      return this.closeToLibrary();
+    }
     DocumentService.close();
     return true;
+  }
+
+  private analysisRequest(): AnalysisRequest {
+    const session = DocumentService.current();
+    const request = new AnalysisRequest();
+    request.sessionId = session.id;
+    request.revision = session.revision;
+    request.source = this.source;
+    request.formatId = this.formatId;
+    request.query = this.searchVisible ? this.query : '';
+    request.needOutline = this.formatId === 'markdown' && this.outlineTabVisible();
+    request.needCount = this.searchVisible && this.query.length > 0;
+    return request;
+  }
+
+  private submitAnalysis(): void {
+    this.analysis.schedule(this.analysisRequest());
+  }
+
+  private async flushAnalysis(): Promise<void> {
+    const request = this.analysisRequest();
+    if (this.outlineTabVisible() && this.formatId === 'markdown') request.needOutline = true;
+    if (this.searchVisible) request.needCount = this.query.length > 0;
+    this.applyAnalysis(await this.analysis.flush(request));
+  }
+
+  private applyAnalysis(result: AnalysisResult): void {
+    const session = DocumentService.current();
+    const query = this.searchVisible ? this.query : '';
+    if (result.sessionId !== session.id || result.revision !== session.revision || result.query !== query) return;
+    if (result.headings !== null) {
+      this.headings = result.headings;
+      this.headingRevision = result.revision;
+    }
+    if (result.matchCount !== null) this.matchCount = result.matchCount;
+    else if (!this.searchVisible || this.query.length === 0) this.matchCount = 0;
+  }
+
+  private outlineTabVisible(): boolean {
+    return this.currentFormat().outline && this.selectedTab === TAB_OUTLINE;
+  }
+
+  private mainWorkMode(): string {
+    if (!this.pageVisible || this.splitWorkMode() === 'render') return 'off';
+    if (this.selectedTab === TAB_PREVIEW && this.previewShown) return 'render';
+    if (this.outlineTabVisible() && this.outlineShown && this.formatId === 'tex-math') return 'outline';
+    return 'off';
+  }
+
+  private splitWorkMode(): string {
+    if (this.pageVisible && this.wide && this.selectedTab === this.splitTab() && this.splitShown) return 'render';
+    return 'off';
   }
 
   /**
@@ -645,16 +658,17 @@ export struct DocumentView {
    * so undo covers them as well as typing.
    */
   private updateSource(text: string, caret: number = -1): void {
-    DocumentService.edit(text);
+    const changed = DocumentService.edit(text);
     this.source = text;
+    if (changed) this.parseRevision = DocumentService.current().revision;
     this.currentMatch = -1;
     this.matchOrdinal = 0;
-    this.matchCount = this.searchVisible ? TextSearch.count(text, this.query) : 0;
-    this.updateHeadings();
     const position = caret >= 0 ? caret : this.selectionEnd;
-    this.history.record(text, position, Date.now());
+    if (changed) {
+      this.history.record(text, position, Date.now());
+      this.submitAnalysis();
+    }
     this.refreshHistoryState();
-    this.scheduleRecovery();
   }
 
   private refreshHistoryState(): void {
@@ -680,12 +694,11 @@ export struct DocumentView {
   private applyHistoryStep(step: EditStep): void {
     DocumentService.edit(step.text);
     this.source = step.text;
+    this.parseRevision = DocumentService.current().revision;
     this.currentMatch = -1;
     this.matchOrdinal = 0;
-    this.matchCount = this.searchVisible ? TextSearch.count(step.text, this.query) : 0;
-    this.updateHeadings();
     this.refreshHistoryState();
-    this.scheduleRecovery();
+    this.submitAnalysis();
     const caret = Math.min(step.caret, step.text.length);
     this.selectionStart = caret;
     this.selectionEnd = caret;
@@ -772,6 +785,8 @@ export struct DocumentView {
   }
 
   private focusHeading(heading: Heading): void {
+    if (this.headingRevision !== DocumentService.current().revision) return;
+    if (heading.offset < 0 || heading.offset > this.source.length) return;
     this.headingJump++;
     this.pendingHeadingOffset = heading.offset;
     this.selectedTab = TAB_EDIT;
@@ -824,7 +839,7 @@ export struct DocumentView {
               this.query = value;
               this.currentMatch = -1;
               this.matchOrdinal = 0;
-              this.matchCount = TextSearch.count(this.source, value);
+              this.submitAnalysis();
             })
             .width('100%')
             // 清除按钮由 Search 提供；仅有文字时为它预留位置。
@@ -984,7 +999,9 @@ export struct DocumentView {
         DocumentPreviewView({
           scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
           kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
-          onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings),
+          documentId: this.documentSessionId, workMode: this.splitWorkMode(),
+          onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
+            this.acceptTexOutline(documentId, revision, headings),
           onOpenExternalLink: (link: string): void => this.openExternalLink(link)
         })
       }
@@ -1019,10 +1036,14 @@ export struct DocumentView {
           DocumentPreviewView({
             scroller: this.previewScroller, theme: this.theme, source: this.source,
             kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
-            onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings),
+            documentId: this.documentSessionId, workMode: this.mainWorkMode(),
+            onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
+              this.acceptTexOutline(documentId, revision, headings),
             onOpenExternalLink: (link: string): void => this.openExternalLink(link)
           })
         }
+          .onWillShow((): void => { this.previewShown = true; })
+          .onWillHide((): void => { this.previewShown = false; })
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.eye'), $r('app.string.tab_preview')))
         TabContent() { this.EditPage(this.editScroller, this.cursor, 'marknote-main-editor') }
@@ -1037,11 +1058,18 @@ export struct DocumentView {
               onSelect: (heading: Heading): void => this.focusHeading(heading)
             })
           }
+            .onWillShow((): void => {
+              this.outlineShown = true;
+              void this.flushAnalysis();
+            })
+            .onWillHide((): void => { this.outlineShown = false; })
             .attributeModifier(this.tabContentPolicy)
             .tabBar(this.bottomTab($r('sys.symbol.list_bullet'), $r('app.string.tab_outline')))
         }
         if (this.wide) {
           TabContent() { this.SplitPage() }
+            .onWillShow((): void => { this.splitShown = true; })
+            .onWillHide((): void => { this.splitShown = false; })
             .attributeModifier(this.tabContentPolicy)
             .tabBar(this.bottomTab($r('sys.symbol.rectangle_split_2x1'), $r('app.string.tab_split')))
         }
@@ -1052,6 +1080,7 @@ export struct DocumentView {
         // 离开编辑页签就退出编辑态：键盘跟着收起，焦点不再挂在隐藏的 TextArea 上，
         // 回来时也不会把光标和键盘一起带回来。
         if (index !== TAB_EDIT && index !== this.splitTab()) this.stopEditing();
+        if (this.outlineTabVisible()) void this.flushAnalysis();
           })
       .barMode(BarMode.Fixed)
       // 按华为《沉浸光感》(ui-design-hds-component-material) 推荐值启用系统自适应材质。
@@ -1099,8 +1128,14 @@ export struct DocumentView {
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable(this.activeScrollers())
     .backgroundColor($r('sys.color.ohos_id_color_background'))
-    .onShown((): void => documentBridge.markShown())
-    .onHidden((): void => documentBridge.markHidden())
+    .onShown((): void => {
+      this.pageVisible = true;
+      documentBridge.markShown();
+    })
+    .onHidden((): void => {
+      this.pageVisible = false;
+      documentBridge.markHidden();
+    })
     // Keep the same destination layout contract as SettingsPage. HDS ignoreLayoutSafeArea
     // expands layout into the system avoid areas; it is not a paint-only transparency switch.
     // Scroll content extends through clipContent(SAFE_AREA) + PageTabsPolicy + PageTabContentPolicy.

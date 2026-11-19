@@ -64,6 +64,13 @@ export class RecoveryData {
   persistent: boolean = false;
 }
 
+/** Process-only handle for one recovery write. The disk record stays RecoveryData. */
+export class DraftSnapshot {
+  sessionId: number = 0;
+  revision: number = 0;
+  data: RecoveryData = new RecoveryData();
+}
+
 export class Heading {
   level: number;
   text: string;

@@ -123,6 +123,7 @@ struct Index {
 
   private async initialize(): Promise<void> {
     if (!this.context) return;
+    DocumentService.initializeRecovery(this.context);
     this.readVersion();
     const sortEpoch = this.sortEpoch;
     const themeEpoch = this.themeEpoch;
@@ -201,7 +202,7 @@ struct Index {
    */
   private async resumeDraft(): Promise<void> {
     if (!this.context || this.routes.size() > 0) return;
-    const draft = LocalState.readDraft(this.context);
+    const draft = await LocalState.readDraft(this.context);
     if (draft === null) return;
     try {
       if (!await DocumentService.restore(draft, (): boolean => !this.disposed) || this.disposed) return;

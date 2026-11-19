@@ -19,6 +19,10 @@ const SORT_KEY: string = 'recent_sort';
 const DRAFT: string = '/unsaved-draft.json';
 const TEMP: string = '/unsaved-draft.tmp';
 
+interface CodedError {
+  code?: number;
+}
+
 export class LocalState {
   static async readTheme(context: common.UIAbilityContext): Promise<string> {
     const store = await preferences.getPreferences(context, 'marknote-settings');
@@ -121,9 +125,9 @@ export class LocalState {
     return updated as RecentDocument[];
   }
 
-  static readDraft(context: common.UIAbilityContext): RecoveryData | null {
+  static async readDraft(context: common.UIAbilityContext): Promise<RecoveryData | null> {
     try {
-      const text = fileIo.readTextSync(context.filesDir + DRAFT);
+      const text = await fileIo.readText(context.filesDir + DRAFT);
       const parsed = JSON.parse(text) as RecoveryData;
       if (typeof parsed.text !== 'string' || typeof parsed.savedText !== 'string' ||
           typeof parsed.name !== 'string' || typeof parsed.uri !== 'string') return null;
@@ -145,27 +149,35 @@ export class LocalState {
     }
   }
 
-  static writeDraft(context: common.UIAbilityContext, draft: RecoveryData): void {
+  static async writeDraft(context: common.UIAbilityContext, draft: RecoveryData): Promise<void> {
     const temporary = context.filesDir + TEMP;
     const target = context.filesDir + DRAFT;
-    const file = fileIo.openSync(temporary, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
+    const file = await fileIo.open(temporary, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
     try {
-      fileIo.truncateSync(file.fd, 0);
+      await fileIo.truncate(file.fd, 0);
       const data = new util.TextEncoder().encodeInto(JSON.stringify(draft));
       let offset = 0;
       while (offset < data.length) {
-        const written = fileIo.writeSync(file.fd, data.slice(offset).buffer);
+        const length = Math.min(64 * 1024, data.length - offset);
+        const chunk = new ArrayBuffer(length);
+        new Uint8Array(chunk).set(data.subarray(offset, offset + length));
+        const written = await fileIo.write(file.fd, chunk);
         if (written <= 0) throw userNotice(AppText.text($r('app.string.draft_interrupted')));
         offset += written;
       }
-      fileIo.fsyncSync(file.fd);
+      await fileIo.fsync(file.fd);
     } finally {
-      fileIo.closeSync(file);
+      await fileIo.close(file);
     }
-    fileIo.renameSync(temporary, target);
+    await fileIo.rename(temporary, target);
   }
 
-  static clearDraft(context: common.UIAbilityContext): void {
-    try { fileIo.unlinkSync(context.filesDir + DRAFT); } catch { /* No draft yet. */ }
+  static async clearDraft(context: common.UIAbilityContext): Promise<void> {
+    try {
+      await fileIo.unlink(context.filesDir + DRAFT);
+    } catch (error) {
+      const coded = error as CodedError;
+      if (coded.code !== 13900002) throw error instanceof Error ? error : new Error('draft clear failed');
+    }
   }
 }

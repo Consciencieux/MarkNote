@@ -14,7 +14,7 @@
 | 删除文件 | 已保存文稿可以在预览、大纲标题栏或编辑、分栏的更多菜单中请求移入系统回收站；删除前确认，未保存修改会明确提示。原文件发生外部变化、文件提供方不支持或授权不足时不删除，保留当前文稿及草稿；尚未保存为文件的文稿不能删除 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
 | 未保存内容 | 离开已修改的文稿前，应用询问是否保存。编辑时会在应用私有目录保存草稿，供异常退出后恢复；正常离开时清除草稿。冷启动先恢复该草稿；若同时收到外部打开请求，先回到文稿页并确认离开，再打开外部文件 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets)、[LocalState.ets](../entry/src/main/ets/storage/LocalState.ets) |
 | 编码与换行 | 支持 UTF-8、UTF-16 LE/BE 和 GB18030，保存时保留原编码、BOM，以及 LF、CRLF 和 CR 换行。混合换行的文件在行数改变后不能直接按原方式保存；另存为时使用 LF。当前不能手动选择编码 | [TextEncoding.ets](../entry/src/main/ets/document/TextEncoding.ets)、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets) |
-| 文件大小 | 超过 8 MiB 的文件不能打开；保存后的编码字节超过 8 MiB 时拒绝写入。文件读写目前在 UI 线程同步执行 | [DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets) |
+| 文件大小 | 超过 8 MiB 的文件不能打开；保存后的编码字节超过 8 MiB 时拒绝写入。打开、保存、删除前读取和草稿使用异步文件接口。编码、摘要、大纲和查找计数仍在界面线程计算 | [DocumentFiles.ets](../entry/src/main/ets/storage/DocumentFiles.ets)、[DocumentService.ets](../entry/src/main/ets/document/DocumentService.ets)、[DraftCoordinator.ets](../entry/src/main/ets/document/DraftCoordinator.ets) |
 
 ## 编辑与预览
 
@@ -22,10 +22,10 @@
 | --- | --- | --- |
 | 编辑 | 使用 ArkUI `TextArea` 编辑源文本，支持光标和选区。切换到编辑页签不会主动弹出键盘；点击文本后才进入输入状态。不支持多光标、语法折叠或行级语法高亮 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 快捷插入 | Markdown 编辑页提供标题、强调、链接、列表、待办、代码和公式等快捷操作；LaTeX 编辑页提供章节、小节、加粗、斜体、行内代码及公式快捷操作。工具栏位于顶部标题栏下方，空间不足时可横向滚动 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[FormatBarView.ets](../entry/src/main/ets/pages/FormatBarView.ets) |
-| 查找与替换 | 文稿菜单中的查找栏固定在顶部；输入时按字面文本统计匹配数，选择结果后显示当前位置，可在结果间前后跳转并替换单处。搜索词为空时隐藏结果导航；不支持正则表达式和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
-| 文稿大纲 | Markdown 提取代码围栏以外的 ATX 标题，暂不解析 Setext 标题；LaTeX 使用预览解析得到的章节标题和源文本位置。两种格式共用分层大纲，可逐项展开、收起，并跳转到编辑位置 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[tex.ts](../renderer/src/renderers/tex.ts)、[DocumentOutlineView.ets](../entry/src/main/ets/pages/DocumentOutlineView.ets) |
+| 查找与替换 | 文稿菜单中的查找栏固定在顶部；查找栏打开后按字面文本统计匹配数，连续输入会合并后再更新。选择结果后显示当前位置，可在结果间前后跳转并替换单处。跳转和替换使用当时的正文。搜索词为空时隐藏结果导航；不支持正则表达式和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[DocumentAnalysis.ets](../entry/src/main/ets/document/DocumentAnalysis.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
+| 文稿大纲 | Markdown 提取代码围栏以外的 ATX 标题，暂不解析 Setext 标题；打开大纲或停留在大纲页时按当前正文更新，输入过程中不逐字重算。LaTeX 使用预览解析得到的章节标题和源文本位置；只看大纲时不生成完整预览页面。两种格式共用分层大纲，可逐项展开、收起，并跳转到编辑位置。标题位置与当前正文不一致时不跳转 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[DocumentAnalysis.ets](../entry/src/main/ets/document/DocumentAnalysis.ets)、[tex.ts](../renderer/src/renderers/tex.ts)、[DocumentOutlineView.ets](../entry/src/main/ets/pages/DocumentOutlineView.ets) |
 | 撤销与重做 | 编辑历史保存在内存中，连续输入在 600 毫秒内合并；替换、工具栏操作及保存边界不与相邻输入合并。历史最多保留 200 步，并按 32 MiB 的逻辑 UTF-16 文本量淘汰较旧记录；至少保留当前状态和一次撤销，因此两份超大文本本身仍可超过该预算。该预算不等同于运行时堆内存；切换文稿时清空 | [EditHistory.ets](../entry/src/main/ets/document/EditHistory.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
-| 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。有底部导航避让区时，页签沿用组件对安全区的扩展，不再另加底边距。避让高度为 0 时（悬浮小窗是其中一种情况），页签栏与 `HdsTabs` 底边留出应用自己设定的 `sys.float.margin_left`，这不是华为规定的底部间距。宽度达到 `WIDTH_LG` 断点时可分栏显示，预览在左、编辑在右 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
+| 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。当前没有显示的预览不排版。有底部导航避让区时，页签沿用组件对安全区的扩展，不再另加底边距。避让高度为 0 时（悬浮小窗是其中一种情况），页签栏与 `HdsTabs` 底边留出应用自己设定的 `sys.float.margin_left`，这不是华为规定的底部间距。宽度达到 `WIDTH_LG` 断点时可分栏显示，预览在左、编辑在右；分栏显示时只更新这一侧的预览 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[DocumentPreviewView.ets](../entry/src/main/ets/pages/DocumentPreviewView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
 
 预览页面随应用离线打包。ArkUI 将格式、正文、主题、修订号和当前界面语言的预览提示传给网页；LaTeX 预览通过消息端口回传解析结果，网页不能调用文件或导航接口。内容安全策略禁止网络连接。Markdown 的网页链接由系统打开，不在预览页面中加载。
 
