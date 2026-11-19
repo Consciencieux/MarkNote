@@ -1,0 +1,13 @@
+# HarmonyOS ArkTS source
+*.ets linguist-language=ArkTS
+
+# Generated resources committed for offline builds
+entry/src/main/resources/rawfile/preview/index.html linguist-generated
+entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt linguist-generated
+
+# Linguist already treats package-lock.json as generated and hides its diff.
+# JSON is not counted in language stats. Keep the dependency diff visible.
+renderer/package-lock.json -linguist-generated
+
+# Binary assets
+*.png binary
