@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.png binary
+
+# 生成文件不参与 GitHub 语言统计。
+entry/src/main/resources/rawfile/preview/index.html linguist-generated
+entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt linguist-generated
+renderer/package-lock.json linguist-generated
+
+# .ets 按 ArkTS 统计。
+*.ets linguist-language=ArkTS
