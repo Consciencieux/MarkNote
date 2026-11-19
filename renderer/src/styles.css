@@ -20,6 +20,8 @@ table{display:block;overflow-x:auto;border-collapse:collapse;width:100%;}
 td,th { border:1px solid var(--line);padding:6px 10px;text-align:start; }
 hr { border:none; border-top:1px solid var(--line); }
 a { color:inherit; text-decoration:underline; }
+li.task-list-item { list-style:none; }
+.task-list-item-checkbox { margin-inline-end:.45em; vertical-align:-.15em; }
 .preview img { display:block; max-width:100%; height:auto; margin:1em 0; }
 .missing-image { color:var(--secondary); }
 .image-slot-loaded { display:block; }

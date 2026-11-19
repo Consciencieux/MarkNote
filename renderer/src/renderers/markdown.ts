@@ -1,10 +1,12 @@
 import MarkdownIt from 'markdown-it';
 import { katex as katexPlugin } from '@mdit/plugin-katex';
+import { tasklist } from '@mdit/plugin-tasklist';
 import { imagePlaceholder, previewError, previewText } from '../preview-text.ts';
 import { beginMermaidDiagrams, mermaidPlaceholder } from './mermaid-block.ts';
 import { sanitizeSvg } from './svg.ts';
 
 const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
+md.use(tasklist, { disabled: true, label: true });
 md.use(katexPlugin, {
   delimiters: 'all',
   mathFence: true,
