@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 调整开发分支合并策略，允许按需保留提交历史。
 - 源码编辑器使用 CodeMirror 为 Markdown、LaTeX、SVG 提供高亮；编辑和分栏共用编辑历史，可选择配色或关闭高亮。
 - Markdown 预览按围栏语言着色，不再按代码长度关闭高亮。
 
