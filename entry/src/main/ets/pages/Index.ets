@@ -8,6 +8,7 @@ import {
 } from '@kit.UIDesignKit';
 import { RecentDocument } from '../model/Document';
 import { DocumentService, DocumentSession } from '../document/DocumentService';
+import { StartupRecovery } from '../document/StartupRecovery';
 import { sortRecentDocuments } from '../document/RecentOrder';
 import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
 import { HomeView } from './HomeView';
@@ -63,6 +64,10 @@ struct Index {
   /** 草稿恢复先入队，外部打开接在后面，避免两边同时替换会话。 */
   private openQueue: Promise<void> = Promise.resolve();
   private startupTask: Promise<void> = Promise.resolve();
+  private recovery: StartupRecovery = new StartupRecovery((): Promise<boolean> => this.resumeDraft(),
+    (_error: Error): void => {
+      if (!this.disposed) this.toast($r('app.string.draft_read_failed'));
+    });
   private externalWaiting: number = 0;
   private disposed: boolean = false;
 
@@ -145,7 +150,7 @@ struct Index {
     }
     if (this.disposed) return;
     // 先开始恢复草稿，再接入外部打开。绑定若立刻交出暂存请求，也会排到恢复之后。
-    this.openQueue = this.resumeDraft();
+    this.openQueue = this.recovery.ensure().then((): void => {});
     LaunchRequests.bind((request: OpenRequest): void => this.enqueueExternal(request));
     await this.openQueue;
   }
@@ -172,6 +177,7 @@ struct Index {
    */
   private async openAfterReady(request: OpenRequest): Promise<void> {
     if (this.disposed) return;
+    if (!await this.recovery.ensure()) return;
     if (!await this.confirmLeaveIfOpen(true)) return;
     try {
       if (!this.disposed) await this.openExternal(request);
@@ -194,18 +200,18 @@ struct Index {
    * 正常离开会清掉草稿，所以启动时还存在的草稿只可能是上次异常退出留下的。
    * 直接接着编辑，不再让用户去首页找一张恢复卡片。
    */
-  private async resumeDraft(): Promise<void> {
-    if (!this.context || this.routes.size() > 0) return;
+  private async resumeDraft(): Promise<boolean> {
+    if (!this.context || this.disposed) return false;
     const draft = await LocalState.readDraft(this.context);
-    if (draft === null) return;
-    try {
-      if (!await DocumentService.restore(draft, (): boolean => !this.disposed) || this.disposed) return;
-      this.presentOpened();
-      if (this.externalWaiting === 0) this.toast($r('app.string.draft_restored'));
-    } catch (error) {
-      // A failure to restore is not consent to destroy the only recovery copy.
-      this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
+    if (draft === null) return true;
+    if (!await DocumentService.restore(draft, (): boolean => !this.disposed)) {
+      if (!this.disposed) throw new Error('draft restore blocked');
+      return false;
     }
+    if (this.disposed) return false;
+    this.presentOpened();
+    if (this.externalWaiting === 0) this.toast($r('app.string.draft_restored'));
+    return true;
   }
 
   /**
@@ -415,6 +421,7 @@ struct Index {
     void this.startupTask.then((): void => {
       this.openQueue = this.openQueue.catch((): void => {}).then(async (): Promise<void> => {
         if (this.disposed) return;
+        if (!await this.recovery.ensure()) return;
         if (!await this.confirmLeaveIfOpen(false)) return;
         try {
           if (!this.disposed) await proceed();

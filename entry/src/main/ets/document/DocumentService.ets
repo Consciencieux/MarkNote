@@ -36,6 +36,7 @@ export class DeleteResult {
   sessionId: number = 0;
   deleted: boolean = false;
   retainedEdits: boolean = false;
+  recoveryCleanupFailed: boolean = false;
 }
 
 function fileNameFromUri(uri: string): string {
@@ -331,7 +332,11 @@ export class DocumentService {
         } else if (session.source !== session.savedText || session.writeUncertain) DocumentService.scheduleDraft(session);
         else DocumentService.releaseDraft(session);
       }
-      throw error instanceof Error ? error : new Error('save failed');
+      if (error instanceof Error) throw error;
+      const detail = error as Error;
+      const wrapped = new Error(detail && typeof detail.message === 'string' ? detail.message : 'save failed');
+      if (detail && detail.name === 'UserNotice') wrapped.name = 'UserNotice';
+      throw wrapped;
     } finally {
       if (session.fileOperation === 'save') session.fileOperation = 'idle';
     }
@@ -349,20 +354,35 @@ export class DocumentService {
       await DocumentFiles.moveToTrash(session.info);
       if (DocumentService.session !== session || session.info.uri !== uri) return result;
       result.deleted = true;
-      if (session.source !== sourceBefore) {
+      let keepSession = session.source !== sourceBefore;
+      if (!keepSession) {
+        try {
+          const cleared = await DocumentService.clearRecovery(session, 'discarded');
+          if (!cleared || session.source !== sourceBefore) keepSession = true;
+        } catch (error) {
+          DocumentService.reportRecovery(session.id, error);
+          result.recoveryCleanupFailed = true;
+          keepSession = true;
+        }
+      }
+      if (keepSession) {
         result.retainedEdits = true;
         session.info.uri = '';
         session.info.writable = false;
         session.info.persistent = false;
         session.info.fingerprint = '';
         session.savedText = '';
-        DocumentService.scheduleDraft(session);
-      } else {
-        try {
-          await DocumentService.clearRecovery(session, 'discarded');
-        } catch (error) {
-          DocumentService.reportRecovery(session.id, error);
+        if (result.recoveryCleanupFailed && DocumentService.drafts !== null) {
+          try {
+            await DocumentService.drafts.checkpoint(DocumentService.makeSnapshot(session));
+          } catch (error) {
+            DocumentService.reportRecovery(session.id, error);
+            DocumentService.scheduleDraft(session);
+          }
+        } else {
+          DocumentService.scheduleDraft(session);
         }
+      } else {
         session.editing = false;
       }
       return result;

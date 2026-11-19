@@ -95,6 +95,8 @@ export struct DocumentView {
   @State private splitShown: boolean = false;
   @State private saving: boolean = false;
   @State private deleting: boolean = false;
+  private leaveConfirming: boolean = false;
+  private closing: boolean = false;
   @State private searchVisible: boolean = false;
   @State private query: string = '';
   @State private replacement: string = '';
@@ -231,8 +233,6 @@ export struct DocumentView {
     // 新文档从预览开始，编辑区不应带着上一篇的光标或编辑态。
     this.stopEditing();
     this.searchVisible = false;
-    const session = DocumentService.current();
-    if (session.source === session.savedText && !session.writeUncertain) void DocumentService.clearRecovery(session, 'discarded');
     this.editorSessionKey++;
   }
 
@@ -422,7 +422,8 @@ export struct DocumentView {
       this.onDeleted(uri);
       if (result.retainedEdits) {
         this.syncFromService();
-        this.toast($r('app.string.delete_trashed_dirty'));
+        this.toast(result.recoveryCleanupFailed ? $r('app.string.draft_clear_failed') :
+          $r('app.string.delete_trashed_dirty'));
       } else {
         this.onLeave();
         this.toast($r('app.string.delete_trashed'));
@@ -458,15 +459,26 @@ export struct DocumentView {
    * 草稿副本只用于崩溃兜底，不再作为「未保存」的常驻入口。
    */
   private async saveBeforeLeaving(): Promise<boolean> {
-    if (this.deleting || this.saving) return false;
-    if (DocumentService.current().editing && !await this.editor.flush(true)) {
-      this.editor.command({ action: 'resume' });
-      return false;
+    if (this.deleting || this.saving || this.leaveConfirming) return false;
+    const owner = DocumentService.current();
+    if (!owner.editing || this.sessionOwner !== owner) return false;
+    this.leaveConfirming = true;
+    let accepted = false;
+    try {
+      if (!await this.editor.flush(true) || DocumentService.current() !== owner ||
+        this.sessionOwner !== owner || !owner.editing) return false;
+      const revision = owner.revision;
+      if (!this.isDirty() && !owner.writeUncertain) accepted = true;
+      else accepted = await this.askSaveOrDiscard(owner);
+      accepted = accepted && DocumentService.current() === owner && this.sessionOwner === owner &&
+        owner.editing && owner.revision === revision;
+      return accepted;
+    } finally {
+      this.leaveConfirming = false;
+      if ((!accepted || DocumentService.current() !== owner || !owner.editing) && this.sessionOwner === owner) {
+        this.editor.command({ action: 'resume' });
+      }
     }
-    if (!DocumentService.current().editing || (!this.isDirty() && !DocumentService.current().writeUncertain)) return true;
-    const accepted = await this.askSaveOrDiscard();
-    if (!accepted) this.editor.command({ action: 'resume' });
-    return accepted;
   }
 
   /**
@@ -477,7 +489,7 @@ export struct DocumentView {
    * 没有取消按钮。onWillDismiss 拦截侧滑、返回键和点击遮罩，关闭后留在文稿。
    * 侧滑和返回键的 reason 是 PRESS_BACK（ts-methods-alert-dialog-box，DismissReason）。
    */
-  private askSaveOrDiscard(): Promise<boolean> {
+  private askSaveOrDiscard(owner: DocumentSession): Promise<boolean> {
     const saveLabel = this.uiText(this.info.uri.length > 0 && !this.info.writable ?
       $r('app.string.menu_save_as') : $r('app.string.menu_save'));
     return new Promise<boolean>((resolve: (leave: boolean) => void) => {
@@ -485,7 +497,7 @@ export struct DocumentView {
       const finish = (leave: boolean): void => {
         if (settled) return;
         settled = true;
-        resolve(leave);
+        resolve(leave && DocumentService.current() === owner && this.sessionOwner === owner && owner.editing);
       };
       this.getUIContext().showAlertDialog({
         message: this.uiText(DocumentService.current().writeUncertain ? $r('app.string.save_prompt_uncertain') :
@@ -504,6 +516,10 @@ export struct DocumentView {
             style: DialogButtonStyle.DEFAULT,
             primary: true,
             action: (): void => {
+              if (DocumentService.current() !== owner || this.sessionOwner !== owner || !owner.editing) {
+                finish(false);
+                return;
+              }
               this.saveFile(this.info.uri.length > 0 && !this.info.writable)
                 .then((saved: boolean) => finish(saved))
                 .catch(() => finish(false));
@@ -600,37 +616,40 @@ export struct DocumentView {
    * 清理期间正文又变了，只再确认一次；之后仍清不掉或又有新编辑，就停止关闭。
    */
   private async closeToLibrary(): Promise<boolean> {
-    if (!await this.saveBeforeLeaving()) return false;
+    if (this.closing) return false;
     const owner = DocumentService.current();
+    this.closing = true;
     let confirmAgain = true;
     let closed = false;
     try {
-    while (DocumentService.current() === owner && owner.editing) {
-      const source = owner.source;
-      let cleared = false;
-      try {
-        cleared = await DocumentService.clearRecovery(owner, 'discarded');
-      } catch (_error) {
-        this.toast($r('app.string.draft_write_failed'));
-        return false;
+      if (!await this.saveBeforeLeaving() || DocumentService.current() !== owner || !owner.editing) return false;
+      while (DocumentService.current() === owner && owner.editing) {
+        const source = owner.source;
+        let cleared = false;
+        try {
+          cleared = await DocumentService.clearRecovery(owner, 'discarded');
+        } catch (_error) {
+          this.toast($r('app.string.draft_write_failed'));
+          return false;
+        }
+        if (DocumentService.current() !== owner || !owner.editing) return false;
+        const interrupted = !cleared || owner.source !== source;
+        if (!interrupted) {
+          DocumentService.close();
+          closed = true;
+          return true;
+        }
+        if (!confirmAgain) {
+          this.toast($r('app.string.draft_write_failed'));
+          return false;
+        }
+        confirmAgain = false;
+        if (!await this.saveBeforeLeaving()) return false;
       }
-      if (DocumentService.current() !== owner || !owner.editing) return false;
-      const interrupted = (!cleared || owner.source !== source) && owner.source !== owner.savedText;
-      if (!interrupted) {
-        DocumentService.close();
-        closed = true;
-        return true;
-      }
-      if (!confirmAgain) {
-        this.toast($r('app.string.draft_write_failed'));
-        return false;
-      }
-      confirmAgain = false;
-      if (!await this.saveBeforeLeaving()) return false;
-    }
-    return false;
+      return false;
     } finally {
-      if (!closed) this.editor.command({ action: 'resume' });
+      this.closing = false;
+      if (!closed && DocumentService.current() === owner) this.editor.command({ action: 'resume' });
     }
   }
 
@@ -687,8 +706,9 @@ export struct DocumentView {
   }
 
   /** Apply the editor's confirmed text to the active document service. */
-  private updateSource(text: string, anchor: number, head: number): void {
-    if (this.sessionOwner !== DocumentService.current() || !DocumentService.current().editing) return;
+  private updateSource(expected: string, text: string, anchor: number, head: number): boolean {
+    if (this.sessionOwner !== DocumentService.current() || !DocumentService.current().editing ||
+      DocumentService.current().source !== expected) return false;
     const changed = DocumentService.edit(text);
     this.source = text;
     this.selectionStart = anchor;
@@ -699,6 +719,7 @@ export struct DocumentView {
       this.parseRevision = DocumentService.current().revision;
       this.submitAnalysis();
     }
+    return true;
   }
 
   private undo(): void { this.editor.command({ action: 'undo' }); }
@@ -927,14 +948,11 @@ export struct DocumentView {
               textDirection: this.language === 'default' ? 'auto' :
                 (isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr'),
               controller: this.editor,
-              onChange: (source: string, anchor: number, head: number): void => {
-                if (key === this.editorSessionKey) this.updateSource(source, anchor, head);
+              onChange: (expected: string, source: string, anchor: number, head: number): boolean => {
+                return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head);
               },
               onRecover: (expected: string, source: string, anchor: number, head: number): boolean => {
-                if (key !== this.editorSessionKey || this.sessionOwner !== DocumentService.current() ||
-                  DocumentService.current().source !== expected) return false;
-                this.updateSource(source, anchor, head);
-                return true;
+                return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head);
               },
               onState: (anchor: number, head: number, canUndo: boolean, canRedo: boolean): void => {
                 if (key !== this.editorSessionKey) return;

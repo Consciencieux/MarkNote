@@ -198,7 +198,7 @@ test('replacing a discarded document clears its recovery file before a templated
   assert.equal(opened.api.current().savedText, '');
 });
 
-test('a failed recovery cleanup does not hide a completed save or delete', async () => {
+test('a failed recovery cleanup does not hide a completed save and keeps a deleted document open', async () => {
   const opened = await service({
     local: { clearDraft: async () => { throw new Error('unlink failed'); } }
   });
@@ -211,7 +211,11 @@ test('a failed recovery cleanup does not hide a completed save or delete', async
   opened.api.edit('again');
   const deleted = await opened.api.moveToTrash();
   assert.equal(deleted.deleted, true);
-  assert.equal(opened.api.current().editing, false);
+  assert.equal(deleted.recoveryCleanupFailed, true);
+  assert.equal(deleted.retainedEdits, true);
+  assert.equal(opened.api.current().editing, true);
+  assert.equal(opened.api.current().info.uri, '');
+  assert.equal(opened.drafts.at(-1).uri, '');
   assert.equal(opened.recoveryErrors.length, 2);
 });
 

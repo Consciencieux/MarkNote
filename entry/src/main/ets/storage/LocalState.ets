@@ -141,11 +141,19 @@ export class LocalState {
   }
 
   static async readDraft(context: common.UIAbilityContext): Promise<RecoveryData | null> {
+    let text: string;
     try {
-      const text = await fileIo.readText(context.filesDir + DRAFT);
-      const parsed = JSON.parse(text) as RecoveryData;
-      if (typeof parsed.text !== 'string' || typeof parsed.savedText !== 'string' ||
-          typeof parsed.name !== 'string' || typeof parsed.uri !== 'string') return null;
+      text = await fileIo.readText(context.filesDir + DRAFT);
+    } catch (error) {
+      const coded = error as CodedError;
+      if (coded && coded.code === 13900002) return null;
+      throw error instanceof Error ? error : new Error('draft read failed');
+    }
+    let parsed: RecoveryData;
+    try {
+      parsed = JSON.parse(text) as RecoveryData;
+      if (!parsed || typeof parsed.text !== 'string' || typeof parsed.savedText !== 'string' ||
+          typeof parsed.name !== 'string' || typeof parsed.uri !== 'string') throw new Error('invalid draft');
       if (typeof parsed.encoding !== 'string' || parsed.encoding.length === 0) parsed.encoding = 'utf-8';
       if (typeof parsed.lineEndings !== 'string') parsed.lineEndings = '';
       if (parsed.newline !== '\n' && parsed.newline !== '\r' && parsed.newline !== '\r\n' &&
@@ -163,7 +171,7 @@ export class LocalState {
       if (parsed.text === parsed.savedText && !parsed.writeUncertain) return null;
       return parsed;
     } catch {
-      return null;
+      throw new Error('invalid draft');
     }
   }
 

@@ -60,8 +60,8 @@ export struct DocumentCodeEditor {
   @Prop @Watch('updateLocale') language: string = 'zh-CN';
   @Prop @Watch('updateLocale') textDirection: string = 'ltr';
   controller: DocumentCodeEditorController = new DocumentCodeEditorController();
-  onChange: (source: string, anchor: number, head: number) => void =
-    (_source: string, _anchor: number, _head: number): void => {};
+  onChange: (expected: string, source: string, anchor: number, head: number) => boolean =
+    (_expected: string, _source: string, _anchor: number, _head: number): boolean => false;
   onConflict: () => void = (): void => {};
   onRecover: (expected: string, source: string, anchor: number, head: number) => boolean =
     (_expected: string, _source: string, _anchor: number, _head: number): boolean => false;
@@ -96,7 +96,9 @@ export struct DocumentCodeEditor {
     this.bridge = new EditorBridge(this.sessionId, this.activeEpoch, 0,
       (): string => this.sourceBuffer,
       (source: string, selection: EditorSelection): void => {
-        this.onChange(source, selection.anchor, selection.head);
+        if (!this.onChange(this.sourceBuffer, source, selection.anchor, selection.head)) {
+          throw new Error('document update rejected');
+        }
         this.sourceBuffer = source;
       });
   }
