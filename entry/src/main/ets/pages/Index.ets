@@ -89,6 +89,7 @@ struct Index {
     menuBridge.dismiss = (next: () => void): void => this.afterMenu(next);
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     if (this.context) this.language = LocalState.readLanguageSync(this.context);
+    AppStorage.setOrCreate('marknote_code_theme', this.context ? LocalState.readCodeThemeSync(this.context) : 'github');
     publishAppLanguage(this.language);
     this.bindWideBreakpoint();
     this.startupTask = this.initialize();
@@ -172,7 +173,11 @@ struct Index {
   private async openAfterReady(request: OpenRequest): Promise<void> {
     if (this.disposed) return;
     if (!await this.confirmLeaveIfOpen(true)) return;
-    if (!this.disposed) await this.openExternal(request);
+    try {
+      if (!this.disposed) await this.openExternal(request);
+    } finally {
+      documentBridge.resumeEditing();
+    }
   }
 
   /** 版本号只读一次，供「关于」页显示；读取失败时由页面显示提示。 */
@@ -411,7 +416,11 @@ struct Index {
       this.openQueue = this.openQueue.catch((): void => {}).then(async (): Promise<void> => {
         if (this.disposed) return;
         if (!await this.confirmLeaveIfOpen(false)) return;
-        if (!this.disposed) await proceed();
+        try {
+          if (!this.disposed) await proceed();
+        } finally {
+          documentBridge.resumeEditing();
+        }
       }).catch((error: Error): void => {
         if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
       });

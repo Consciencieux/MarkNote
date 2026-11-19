@@ -12,20 +12,19 @@ import { DocumentShare } from '../document/DocumentShare';
 import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
 import { AnalysisRequest, AnalysisResult, DocumentAnalysis } from '../document/DocumentAnalysis';
-import { EditHistory, EditStep } from '../document/EditHistory';
-import { insertEditorAction } from '../document/EditorActions';
 import { FormatBarView } from './FormatBarView';
 import { DocumentFindBar } from './DocumentFindBar';
 import { DocumentOutlineView } from './DocumentOutlineView';
 import { DocumentPreviewView } from './DocumentPreviewView';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
+import { DocumentCodeEditor, DocumentCodeEditorController } from './DocumentCodeEditor';
 import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { AppText } from '../i18n/AppText';
+import { isRightToLeftLanguage, resourceLanguage } from '../i18n/AppLanguage';
 import { shownDetail } from '../document/UserNotice';
 import { scrollingTitleBar, navigationMenuIcon } from './HdsMaterialStyles';
-import { bodyInput } from './TextRoles';
 
 /**
  * Tab positions on the document page. Preview comes first so a document opens in reading
@@ -60,6 +59,7 @@ export struct DocumentView {
   @Prop theme: string = 'system';
   /** 文稿页在导航栈里，不跟随首页 @Link。语言从 AppStorage 取，查找栏和预览才会重取。 */
   @StorageLink('marknote_language') language: string = 'default';
+  @StorageLink('marknote_code_theme') codeTheme: string = 'github';
   @Prop @Watch('onWideChange') wide: boolean = false;
   @Prop canExpand: boolean = false;
   @Prop expanded: boolean = false;
@@ -78,7 +78,6 @@ export struct DocumentView {
   private previewScroller: Scroller = new Scroller();
   private editScroller: Scroller = new Scroller();
   private outlineScroller: Scroller = new Scroller();
-  private splitEditScroller: Scroller = new Scroller();
   private splitPreviewScroller: Scroller = new Scroller();
   @State private title: string = AppText.text($r('app.string.file_untitled_md'));
   @State private source: string = '';
@@ -106,12 +105,10 @@ export struct DocumentView {
   /** Drives the enabled state of the title bar undo and redo icons. */
   @State private undoAvailable: boolean = false;
   @State private redoAvailable: boolean = false;
-  private history: EditHistory = new EditHistory();
+  private editor: DocumentCodeEditorController = new DocumentCodeEditorController();
+  @State private editorSessionKey: number = 0;
   private context: common.UIAbilityContext | null = null;
   private info: DocumentInfo = new DocumentInfo();
-  private cursor: TextAreaController = new TextAreaController();
-  private splitCursor: TextAreaController = new TextAreaController();
-  private editTop: number = 0;
   private pendingHeadingOffset: number = -1;
   private headingJump: number = 0;
   private selectionStart: number = 0;
@@ -161,6 +158,7 @@ export struct DocumentView {
     menuBridge.closeDocument = (): void => menuBridge.dismiss((): void => this.requestLeave());
     // 首页在换篇、返回列表前都要先问这里能否离开。
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => this.saveBeforeLeaving();
+    documentBridge.resumeEditing = (): void => { this.editor.command({ action: 'resume' }); };
     documentBridge.requestLeave = (): void => this.requestLeave();
     this.loadSession();
     this.watchNavigationIndicator();
@@ -219,8 +217,8 @@ export struct DocumentView {
     DocumentService.activateSession(DocumentService.current());
     // The history belongs to one document. Keeping it across a switch would let undo write
     // the previous document's text into this one.
-    this.history.reset(this.source, 0);
-    this.refreshHistoryState();
+    this.undoAvailable = false;
+    this.redoAvailable = false;
     this.currentMatch = -1;
     this.matchOrdinal = 0;
     this.matchCount = 0;
@@ -234,8 +232,8 @@ export struct DocumentView {
     this.stopEditing();
     this.searchVisible = false;
     const session = DocumentService.current();
-    // 换篇前已经清过上一份草稿。这里只清掉与当前已保存正文相同的恢复文件。
     if (session.source === session.savedText) void DocumentService.clearRecovery(session, 'discarded');
+    this.editorSessionKey++;
   }
 
   aboutToDisappear(): void {
@@ -252,6 +250,7 @@ export struct DocumentView {
     menuBridge.closeDocument = (): void => {};
     documentBridge.markDetached();
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
+    documentBridge.resumeEditing = (): void => {};
     documentBridge.requestLeave = (): void => {};
   }
 
@@ -291,6 +290,7 @@ export struct DocumentView {
 
   private async shareDocument(): Promise<void> {
     if (!this.context) return;
+    if (!await this.editor.flush()) return;
     try {
       await DocumentShare.show(this.context, this.info.name, this.source);
     } catch {
@@ -384,7 +384,12 @@ export struct DocumentView {
   }
 
   private confirmDelete(): void {
+    void this.showDeleteConfirmation();
+  }
+
+  private async showDeleteConfirmation(): Promise<void> {
     if (this.saving || this.deleting || this.info.uri.length === 0) return;
+    if (!await this.editor.flush()) return;
     const uri = this.info.uri;
     const confirmedSource = this.source;
     this.getUIContext().showAlertDialog({
@@ -400,7 +405,12 @@ export struct DocumentView {
   private async deleteDocument(uri: string, confirmedSource: string): Promise<void> {
     const session = DocumentService.current();
     if (this.deleting || this.saving || !session.editing || session.info.uri !== uri) return;
+    if (!await this.editor.flush(true) || DocumentService.current() !== session || !session.editing) {
+      this.editor.command({ action: 'resume' });
+      return;
+    }
     if (this.source !== confirmedSource) {
+      this.editor.command({ action: 'resume' });
       this.confirmDelete();
       return;
     }
@@ -420,6 +430,7 @@ export struct DocumentView {
       this.toast(this.uiFormat($r('app.string.delete_failed'), shownDetail(error)));
     } finally {
       this.deleting = false;
+      this.editor.command({ action: 'resume' });
     }
   }
 
@@ -430,7 +441,7 @@ export struct DocumentView {
   /** Bind HDS navigation effects to the shared Scroll surface(s) in the active tab. */
   private activeScrollers(): Scroller[] {
     if (this.wide && this.selectedTab === this.splitTab()) {
-      return [this.splitPreviewScroller, this.splitEditScroller];
+      return [this.splitPreviewScroller, this.editScroller];
     }
     if (this.currentFormat().outline && this.selectedTab === TAB_OUTLINE) return [this.outlineScroller];
     if (this.selectedTab === TAB_EDIT) return [this.editScroller];
@@ -447,8 +458,14 @@ export struct DocumentView {
    */
   private async saveBeforeLeaving(): Promise<boolean> {
     if (this.deleting || this.saving) return false;
+    if (DocumentService.current().editing && !await this.editor.flush(true)) {
+      this.editor.command({ action: 'resume' });
+      return false;
+    }
     if (!DocumentService.current().editing || !this.isDirty()) return true;
-    return await this.askSaveOrDiscard();
+    const accepted = await this.askSaveOrDiscard();
+    if (!accepted) this.editor.command({ action: 'resume' });
+    return accepted;
   }
 
   /**
@@ -538,10 +555,10 @@ export struct DocumentView {
       this.offerSaveCopy(this.uiText($r('app.string.save_copy_readonly')));
       return false;
     }
-    this.saving = true;
     const owner = DocumentService.current();
-    this.history.boundary();
+    this.saving = true;
     try {
+      if (!await this.editor.flush() || DocumentService.current() !== owner || !owner.editing) return false;
       const result = await DocumentService.save(this.context, asNewFile);
       if (DocumentService.current() !== owner || !owner.editing) return false;
       this.syncFromService();
@@ -584,6 +601,8 @@ export struct DocumentView {
     if (!await this.saveBeforeLeaving()) return false;
     const owner = DocumentService.current();
     let confirmAgain = true;
+    let closed = false;
+    try {
     while (DocumentService.current() === owner && owner.editing) {
       const source = owner.source;
       let cleared = false;
@@ -597,6 +616,7 @@ export struct DocumentView {
       const interrupted = (!cleared || owner.source !== source) && owner.source !== owner.savedText;
       if (!interrupted) {
         DocumentService.close();
+        closed = true;
         return true;
       }
       if (!confirmAgain) {
@@ -607,6 +627,9 @@ export struct DocumentView {
       if (!await this.saveBeforeLeaving()) return false;
     }
     return false;
+    } finally {
+      if (!closed) this.editor.command({ action: 'resume' });
+    }
   }
 
   private analysisRequest(): AnalysisRequest {
@@ -661,49 +684,23 @@ export struct DocumentView {
     return 'off';
   }
 
-  /**
-   * One path for buffer changes. History restore must not record another step.
-   * Toolbar inserts and replace still place their own undo boundaries around this call.
-   */
-  private commitBuffer(text: string, recordHistory: boolean, caret: number = -1): void {
+  /** Apply the editor's confirmed text to the active document service. */
+  private updateSource(text: string, anchor: number, head: number): void {
+    if (this.sessionOwner !== DocumentService.current() || !DocumentService.current().editing) return;
     const changed = DocumentService.edit(text);
     this.source = text;
-    if (changed) this.parseRevision = DocumentService.current().revision;
+    this.selectionStart = anchor;
+    this.selectionEnd = head;
     this.currentMatch = -1;
     this.matchOrdinal = 0;
-    if (changed && recordHistory) {
-      const position = caret >= 0 ? caret : this.selectionEnd;
-      this.history.record(text, position, Date.now());
+    if (changed) {
+      this.parseRevision = DocumentService.current().revision;
+      this.submitAnalysis();
     }
-    if (changed) this.submitAnalysis();
-    this.refreshHistoryState();
   }
 
-  private refreshHistoryState(): void {
-    this.undoAvailable = this.history.canUndo();
-    this.redoAvailable = this.history.canRedo();
-  }
-
-  private undo(): void {
-    const step: EditStep | null = this.history.undo(this.selectionEnd);
-    if (step === null) return;
-    this.applyHistoryStep(step);
-  }
-
-  private redo(): void {
-    const step: EditStep | null = this.history.redo(this.selectionEnd);
-    if (step === null) return;
-    this.applyHistoryStep(step);
-  }
-
-  /** Restore a snapshot without recording it again, otherwise every undo would push a new step. */
-  private applyHistoryStep(step: EditStep): void {
-    this.commitBuffer(step.text, false);
-    const caret = Math.min(step.caret, step.text.length);
-    this.selectionStart = caret;
-    this.selectionEnd = caret;
-    this.scheduleCaret(caret);
-  }
+  private undo(): void { this.editor.command({ action: 'undo' }); }
+  private redo(): void { this.editor.command({ action: 'redo' }); }
 
   private findNext(forward: boolean = true): void {
     if (!this.query) return;
@@ -719,104 +716,43 @@ export struct DocumentView {
     this.matchOrdinal = TextSearch.count(this.source, this.query, hit.start) + 1;
     const query = this.query;
     const revision = this.revision;
-    this.revealCaret(hit.start, hit.length, (): boolean => {
-      return this.searchVisible && this.selectedTab === TAB_EDIT && this.revision === revision &&
-        this.query === query && this.currentMatch === hit.start;
-    }, false);
+    this.getUIContext().postFrameCallback(new AfterFrame((): void => {
+      if (this.searchVisible && this.query === query && this.revision === revision &&
+        this.currentMatch === hit.start && this.selectedTab === TAB_EDIT) {
+        this.editor.command({ action: 'select', anchor: hit.start, head: hit.start + hit.length });
+      }
+    }));
   }
 
   private replaceMatch(): void {
     if (!this.query) return;
-    const changed: string | null =
-      TextSearch.replaceAt(this.source, this.currentMatch, this.query, this.replacement);
-    if (changed === null) {
+    const start = this.currentMatch;
+    if (TextSearch.replaceAt(this.source, start, this.query, this.replacement) === null) {
       this.findNext();
       return;
     }
-    const caret = this.currentMatch + this.replacement.length;
-    this.history.boundary();
-    this.commitBuffer(changed, true, caret);
-    this.history.boundary();
+    this.editor.command({ action: 'replace', from: start, to: start + this.query.length,
+      expected: this.query, text: this.replacement });
     this.currentMatch = -1;
-    this.scheduleCaret(caret);
   }
 
   private insertToken(action: InsertAction): void {
-    const edit = insertEditorAction(this.source, this.selectionStart, this.selectionEnd,
-      action.id, action.before, action.after);
-    const changed = edit.text;
-    const position = edit.caret;
-    this.history.boundary();
-    this.commitBuffer(changed, true, position);
-    this.history.boundary();
-    this.scheduleCaret(position);
-  }
-
-  private scheduleCaret(position: number): void {
-    const owner = this.sessionOwner;
-    const source = this.source;
-    const tab = this.selectedTab;
-    setTimeout((): void => {
-      if (owner === null || owner !== this.sessionOwner || owner !== DocumentService.current() ||
-        !owner.editing || this.source !== source || this.selectedTab !== tab) return;
-      this.activeCursor().caretPosition(position);
-    }, 20);
-  }
-
-  private activeCursor(): TextAreaController {
-    return this.wide && this.selectedTab === this.splitTab() ? this.splitCursor : this.cursor;
+    this.editor.command({ action: 'insert', id: action.id, before: action.before, after: action.after });
   }
 
   private focusHeading(heading: Heading): void {
     if (this.headingRevision !== DocumentService.current().revision) return;
     if (heading.offset < 0 || heading.offset > this.source.length) return;
-    this.headingJump++;
     this.pendingHeadingOffset = heading.offset;
     this.selectedTab = TAB_EDIT;
   }
 
-  /**
-   * TextArea 自适应内容高度，外层 Scroll 才是滚动容器。先设置光标，
-   * 再于后续帧读取光标相对输入框的像素坐标并转换为 Scroll 所需的 vp。
-   * 官方文档：ts-universal-attributes-text-style 的 getCaretOffset、ts-container-scroll 的 scrollTo。
-   */
   private jumpToPendingHeading(): void {
     if (this.pendingHeadingOffset < 0) return;
     const offset = this.pendingHeadingOffset;
-    const jump = this.headingJump;
     this.pendingHeadingOffset = -1;
-    this.revealCaret(offset, 0, (): boolean => jump === this.headingJump && this.selectedTab === TAB_EDIT, true);
-  }
-
-  /** 查找选中一段文字；大纲只落到标题起点。失效回调不得移动后来的文稿。 */
-  private revealCaret(position: number, selectLength: number, stillCurrent: () => boolean,
-    reportFailure: boolean): void {
-    this.getUIContext().postFrameCallback(new AfterFrame((): void => {
-      if (!stillCurrent()) return;
-      try {
-        this.getUIContext().getFocusController().requestFocus('marknote-main-editor');
-        this.cursor.caretPosition(position);
-      } catch {
-        if (reportFailure) this.toast($r('app.string.heading_locate_failed'));
-        return;
-      }
-      this.getUIContext().postFrameCallback(new AfterFrame((): void => {
-        if (!stillCurrent()) return;
-        const caret = this.cursor.getCaretOffset();
-        if (!caret || caret.index !== position) {
-          if (reportFailure) this.toast($r('app.string.heading_locate_failed'));
-          return;
-        }
-        this.editScroller.scrollTo({
-          xOffset: 0,
-          yOffset: Math.max(0, this.editTop + this.getUIContext().px2vp(caret.y)),
-          animation: false
-        });
-        if (selectLength > 0) {
-          this.cursor.setTextSelection(position, position + selectLength, { menuPolicy: MenuPolicy.HIDE });
-        }
-      }));
-    }));
+    if (this.headingRevision !== DocumentService.current().revision || offset > this.source.length) return;
+    this.editor.command({ action: 'select', anchor: offset, head: offset });
   }
 
   @Builder
@@ -841,44 +777,6 @@ export struct DocumentView {
         if (height > 0 && height !== this.findBarHeight) this.findBarHeight = height;
       }
     })
-  }
-
-  @Builder
-  private EditPage(scroller: Scroller, controller: TextAreaController, editorId: string) {
-    DocumentScrollLayer({ scroller: scroller }) {
-      Column() {
-        TextArea({ text: this.source, placeholder: $r('app.string.write_placeholder'), controller: controller })
-          .id(editorId)
-          .onAreaChange((_oldArea: Area, newArea: Area) => {
-            if (editorId === 'marknote-main-editor') {
-              this.editTop = parseFloat(String(newArea.position.y)) || 0;
-            }
-          })
-          .width('100%')
-          .padding({
-            top: LengthMetrics.vp(0),
-            end: LengthMetrics.vp(16),
-            bottom: LengthMetrics.vp(8),
-            start: LengthMetrics.vp(16)
-          })
-          // Keep the official ArkUI TextArea, with a transparent fill and the system no-corner resource
-          // so the editor surface remains the same page background instead of a separate card.
-          .backgroundColor(Color.Transparent)
-          .borderRadius($r('sys.float.corner_radius_none'))
-          .attributeModifier(bodyInput)
-          // 切回编辑页签时 Tabs 会把焦点还给上次编辑的 TextArea，光标停在原处并直接拉起键盘，
-          // 手感被打断。enableKeyboardOnFocus(false) 让点击以外的获焦不弹键盘，只有点击文字才弹。
-          // 这是官方「管理软键盘」和 faqs-arkui-932 推荐的写法。
-          .enableKeyboardOnFocus(false)
-          .onChange((value: string) => this.commitBuffer(value, true))
-          .onTextSelectionChange((start: number, end: number) => {
-            this.selectionStart = start;
-            this.selectionEnd = end;
-          })
-      }
-      .width('100%')
-      .backgroundColor($r('sys.color.ohos_id_color_background'))
-    }
   }
 
   private splitTab(): number {
@@ -925,7 +823,7 @@ export struct DocumentView {
         .layoutWeight(1)
         .height('100%')
       Divider().vertical(true).height('100%')
-      Column() { this.EditPage(this.splitEditScroller, this.splitCursor, 'marknote-split-editor') }
+      Column() { Blank() }
         .layoutWeight(1)
         .height('100%')
     }
@@ -946,7 +844,7 @@ export struct DocumentView {
    */
   @LocalBuilder
   private WorkspacePage() {
-    Stack() {
+    Stack({ alignContent: Alignment.TopEnd }) {
       HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
         // Preview is first so a newly opened document lands on its rendered content.
         TabContent() {
@@ -963,7 +861,7 @@ export struct DocumentView {
           .onWillHide((): void => { this.previewShown = false; })
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.eye'), $r('app.string.tab_preview')))
-        TabContent() { this.EditPage(this.editScroller, this.cursor, 'marknote-main-editor') }
+        TabContent() { Column() { Blank() } }
           .onWillShow(() => this.jumpToPendingHeading())
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), $r('app.string.tab_edit')))
@@ -1015,6 +913,42 @@ export struct DocumentView {
       .attributeModifier(this.tabsPolicy)
       .width('100%')
       .height('100%')
+      // One Web instance remains mounted while editing and split tabs change.
+      // Leave the floating tab bar uncovered so it retains its native interactions.
+      Column() {
+        ForEach([this.editorSessionKey], (key: number) => {
+          DocumentScrollLayer({ scroller: this.editScroller }) {
+            DocumentCodeEditor({
+              sessionId: `document-${key}`, source: this.source, formatId: this.formatId,
+              webTheme: this.theme, appearance: this.theme, theme: this.codeTheme,
+              language: resourceLanguage(this.language),
+              textDirection: this.language === 'default' ? 'auto' :
+                (isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr'),
+              controller: this.editor,
+              onChange: (source: string, anchor: number, head: number): void => {
+                if (key === this.editorSessionKey) this.updateSource(source, anchor, head);
+              },
+              onRecover: (expected: string, source: string, anchor: number, head: number): boolean => {
+                if (key !== this.editorSessionKey || this.sessionOwner !== DocumentService.current() ||
+                  DocumentService.current().source !== expected) return false;
+                this.updateSource(source, anchor, head);
+                return true;
+              },
+              onState: (anchor: number, head: number, canUndo: boolean, canRedo: boolean): void => {
+                if (key !== this.editorSessionKey) return;
+                this.selectionStart = anchor;
+                this.selectionEnd = head;
+                this.undoAvailable = canUndo;
+                this.redoAvailable = canRedo;
+              },
+              onConflict: (): void => { this.toast(this.uiFormat($r('app.string.save_failed'), '')); }
+            })
+          }
+        }, (key: number): string => key.toString())
+      }
+      .width(this.wide && this.selectedTab === this.splitTab() ? '50%' : '100%')
+      .height('calc(100% - 56vp)')
+      .visibility(this.inEditTab() ? Visibility.Visible : Visibility.Hidden)
     }
     .width('100%')
     .height('100%')
@@ -1022,8 +956,7 @@ export struct DocumentView {
 
   /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */
   private stopEditing(): void {
-    this.cursor.stopEditing();
-    this.splitCursor.stopEditing();
+    this.editor.command({ action: 'blur' });
   }
 
   /** The format bar applies to the editable tab, and to the split tab which also edits. */

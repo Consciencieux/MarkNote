@@ -1,6 +1,6 @@
 # 架构
 
-MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示离线预览。功能行为与限制见[功能目录](FEATURES.md)，文件位置见[仓库结构](STRUCTURE.md)。
+MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb 页面提供源码编辑和离线预览。功能行为与限制见[功能目录](FEATURES.md)，文件位置见[仓库结构](STRUCTURE.md)。
 
 ## 文稿数据流
 
@@ -17,7 +17,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 | `DocumentAnalysis` | 正文变化立即进入会话。Markdown 大纲和查找计数按需合并，过期的会话或修订不采用。 |
 | `TextEncoding` | 在文件字节和编辑器文本之间转换，记录并恢复编码、BOM 与换行方式。 |
 | `LocalState` | 保存最近文稿、外观和语言偏好，并异步读写 `unsaved-draft.json`。 |
-| `EditHistory`、`TextSearch` | 分别处理编辑历史和字面文本查找。 |
+| `TextSearch` | 处理字面文本查找；撤销和重做由 CodeMirror 管理。 |
 | `EditorActions` | 纯文本快捷编辑操作，处理行前缀、选区包裹和代码围栏。 |
 
 文件格式优先按已知后缀识别，其次按系统声明的类型识别。保存前的外部修改检查使用文件字节的 SHA-256 指纹。
@@ -26,7 +26,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 
 首页使用 `HdsNavigation`。文稿和设置页面使用 `HdsNavDestination`，并由同一个 `NavPathStack` 管理。`Index` 创建设置页路由，`SettingsPage` 构建各级页面；每个页面持有自己的滚动控制器。许可证页进入后再读取原文，并按段放进列表。`EntryAbility` 在加载页面前按已保存的语言偏好设置应用语言。跟随系统时解析为当前系统语言对应的资源，因此切换立即生效；下次冷启动会按当时的系统语言重新解析。
 
-`HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，各自保留滚动控制器。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
+`HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，预览和大纲各自保留滚动控制器；编辑与分栏复用一个编辑器及其滚动控制器。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
 
 `DocumentView` 持有文稿编辑、查找和保存界面状态，并按页签是否可见决定预览工作方式；查找栏 `DocumentFindBar` 只绘制查询和替换控件。保存和删除后的文稿数据由 `DocumentService` 更新。`DocumentPreviewView` 管理各自的 Web 控制器，`PreviewDispatch` 保证每个实例最多一笔在途发送和一笔最新请求。`DocumentOutlineView` 管理大纲展示与展开状态。
 
@@ -35,6 +35,10 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用 ArkWeb 展示�
 ## 离线预览
 
 `renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号、工作模式，以及当前界面语言的预览提示。工作模式为关闭时不发送；LaTeX 大纲模式只解析并回传标题，不生成页面。分栏只让可见的那一个预览实例排版。应用按原生滚动容器的可视范围向网页查询附近的 Markdown 图片地址，再用文稿 URI 取得所在目录 URI，尝试逐张读取相对路径。读到的图片以 data URL 传回页面，离开阅读区域后释放；打不开的图片保持占位。网页不注册文件或导航接口，也不加载网络图片。Markdown 的 mermaid 代码围栏在页面清理之后画成 SVG，布局使用 Dagre，不加载外部图标。用户 SVG 和 Mermaid 的清理结果以 SVG 图片上下文显示，隔离样式与片段 ID；KaTeX 自身的布局 SVG 不走这一转换。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过已有的 `WebMessagePort` 回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲。Markdown 预览中的 http、https 链接不带可导航的 `href`；用户点击后，网页经同一端口发送 `open-link`，ArkTS 再校验协议、主机、凭据、长度以及当前文稿和修订，然后调用 `openLink` 交给系统打开。预览页面不导航、不加载这些地址。预览资源和网络限制见[功能目录](FEATURES.md)。
+
+Markdown 代码围栏先显示转义后的原文，再由离线打包的 Worker 顺序运行 highlight.js；更新文稿会终止旧 Worker。着色结果仅允许 `span` 和 `class`，经 DOMPurify 清理后写回对应代码节点。Worker 不可用或解析失败时保留原文。预览和编辑器共用 `shared/code-languages.ts` 的语言别名以及 `shared/syntax-colors.ts` 的前景色，具体语言引擎各自配置。
+
+`editor/` 将 CodeMirror 6 和语言支持打包为独立离线编辑器。`DocumentCodeEditor` 通过受控消息端口连接 `DocumentView`，不向网页暴露文件、导航或通用 ArkTS 接口。普通编辑和宽屏分栏复用同一实例，CodeMirror 管理正文、选区和撤销历史；文件操作仍由 `DocumentService` 负责。桥接层通过会话 ID、代次、操作序号和 UTF-16 偏移传递增量，并在确认后推进修订。保存屏障等待输入法组合结束及变更确认；切换或离开前暂停编辑，取消切换后恢复。冲突时保留编辑器本地正文，校验原生会话未被其他操作修改后，用完整快照和新代次恢复。
 
 ## 文件关联
 

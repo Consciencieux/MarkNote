@@ -4,7 +4,7 @@ import { PreviewDispatch } from '../../entry/src/main/ets/pages/PreviewDispatch.
 
 function command(source) {
   return {
-    kind: 'markdown', source, theme: 'system', revision: 1, documentId: 1, mode: 'render',
+    kind: 'markdown', source, theme: 'system', codeTheme: 'github', revision: 1, documentId: 1, mode: 'render',
     text: {
       lang: 'zh', empty: '', failed: '', unsafe: '', markdownFailed: '', svgUnsafe: '',
       svgInvalid: '', svgRejected: '', mathFailed: '', imageName: '', imageSlot: ''
@@ -27,6 +27,17 @@ test('a paused preview keeps only the newest request', async () => {
   dispatch.resume();
   await later();
   assert.deepEqual(sent, ['b']);
+});
+
+test('a queued preview update retains the latest syntax theme', async () => {
+  const sent = [];
+  const dispatch = new PreviewDispatch(async (value) => { sent.push(value.codeTheme); });
+  dispatch.pause();
+  dispatch.request({ ...command('text'), codeTheme: 'github' });
+  dispatch.request({ ...command('text'), codeTheme: 'atom' });
+  dispatch.resume();
+  await later();
+  assert.deepEqual(sent, ['atom']);
 });
 
 test('an in-flight send keeps only the newest follow-up', async () => {

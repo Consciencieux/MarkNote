@@ -18,6 +18,7 @@ export interface PreviewCommand {
   kind: string;
   source: string;
   theme: string;
+  codeTheme: string;
   revision: number;
   documentId: number;
   mode: string;

@@ -3,6 +3,7 @@ export interface PreviewUpdate {
   kind: 'markdown' | 'plain' | 'svg' | 'tex-math';
   source: string;
   theme: 'system' | 'light' | 'dark';
+  codeTheme?: 'off' | 'github' | 'atom' | 'vs';
   revision?: number;
   documentId?: number;
   /** outline asks LaTeX for headings only. Absent or render keeps the full preview. */

@@ -33,6 +33,7 @@ export struct DocumentPreviewView {
    * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
    */
   @StorageLink('marknote_language') @Watch('scheduleUpdate') language: string = 'default';
+  @StorageLink('marknote_code_theme') @Watch('scheduleUpdate') codeTheme: string = 'github';
   onOutline: (documentId: number, revision: number, headings: Heading[]) => void =
     (_documentId: number, _revision: number, _headings: Heading[]): void => {};
   /** 预览里点击已校验的网页链接。页面不打开这个地址。 */
@@ -143,6 +144,7 @@ export struct DocumentPreviewView {
       kind: this.kind,
       source: this.source,
       theme: this.theme,
+      codeTheme: this.codeTheme,
       revision: this.parseRevision,
       documentId: this.documentId,
       mode: this.workMode,
@@ -157,7 +159,7 @@ export struct DocumentPreviewView {
     const script = 'window.MarknotePreview.update(' + JSON.stringify(command) + ')';
     const current = (): boolean => this.ready && this.workMode === command.mode &&
       this.documentId === command.documentId && this.parseRevision === command.revision &&
-      this.source === command.source && this.theme === command.theme;
+      this.source === command.source && this.theme === command.theme && this.codeTheme === command.codeTheme;
     return this.controller.runJavaScript(script).then((): void => {
       if (current()) this.previewFailed = false;
     }).catch((): void => {

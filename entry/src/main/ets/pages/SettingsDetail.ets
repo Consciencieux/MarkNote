@@ -3,7 +3,8 @@ import { util } from '@kit.ArkTS';
 import { PageScrollPolicy } from './PageScrollPolicy';
 import { SettingsActionRow, SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { SettingsReadingFrame } from './SettingsReadingFrame';
-import { LANGUAGE_VALUES, THEME_VALUES, languageLabel, themeLabel } from './SettingsView';
+import { CODE_THEME_VALUES, LANGUAGE_VALUES, THEME_VALUES, codeThemeLabel, languageLabel, themeLabel } from './SettingsView';
+import { LocalState } from '../storage/LocalState';
 import { cachedLicenseText, loadLicenseText, splitLicenseText } from './LicenseText';
 import { bodyText, sectionTitle } from './TextRoles';
 
@@ -86,6 +87,7 @@ export struct SettingsDetail {
   @Link theme: string;
   /** 导航页不会跟着首页的 @Link 重建，语言从 AppStorage 取。 */
   @StorageLink('marknote_language') language: string = 'default';
+  @StorageLink('marknote_code_theme') codeTheme: string = 'github';
   @Prop version: string = '';
   /** 许可证原文尚未读完时显示加载指示。失败时改显示对应的说明。 */
   @State private licenseLoading: boolean = false;
@@ -114,6 +116,17 @@ export struct SettingsDetail {
 
   private isLicenseSection(): boolean {
     return this.section === 'licenses' || this.section === 'project-license';
+  }
+
+  private chooseCodeTheme(choice: string): void {
+    const host = this.getUIContext().getHostContext();
+    if (host === undefined) return;
+    try {
+      LocalState.writeCodeThemeSync(host as common.UIAbilityContext, choice);
+      this.codeTheme = choice;
+    } catch {
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.theme_save_failed') });
+    }
   }
 
   private async readLicense(): Promise<void> {
@@ -218,6 +231,13 @@ export struct SettingsDetail {
               selected: this.theme === choice,
               onSelect: (): void => this.onChooseTheme(choice)
             })
+          }, (choice: string) => choice)
+        }.attributeModifier(this.groupStyle)
+      } else if (this.section === 'code-theme') {
+        ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+          ForEach(CODE_THEME_VALUES, (choice: string) => {
+            SettingsChoiceRow({ title: codeThemeLabel(choice), selected: this.codeTheme === choice,
+              onSelect: (): void => this.chooseCodeTheme(choice) })
           }, (choice: string) => choice)
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'language') {

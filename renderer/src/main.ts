@@ -1,7 +1,8 @@
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import './styles.css';
-import { renderMarkdown } from './renderers/markdown';
+import { renderMarkdownDeferred, type CodeJob } from './renderers/markdown';
+import { cancelCodeHighlight, paintCodeHighlight } from './renderers/deferred-code';
 import { nextMermaidGeneration, paintMermaid, type PreviewTheme } from './renderers/mermaid';
 import { visibleImageKeys } from './image-window';
 import { renderPlain } from './renderers/plain';
@@ -11,11 +12,24 @@ import type { PreviewUpdate } from './globals';
 import { encodePreviewLinkRequest } from './preview-link-message';
 import { imageLabel, previewText, usePreviewText } from './preview-text';
 import katex from 'katex';
+import { syntaxColors } from '../../shared/syntax-colors.ts';
 
 type Kind = PreviewUpdate['kind'];
 let resultPort: MessagePort | undefined;
 let linkTarget: { kind: Kind; revision: number; documentId: number } | undefined;
 let lastResult: string | undefined;
+let codeTheme = 'github';
+let appearance = 'system';
+function applyCodeColors(): void {
+  const dark = appearance === 'dark' || (appearance === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const colors = syntaxColors(codeTheme, dark ? 'dark' : 'light');
+  const root = document.documentElement;
+  root.dataset.codeTheme = codeTheme;
+  for (const [role, color] of Object.entries({ keyword: colors.keyword, string: colors.string,
+    number: colors.number, comment: colors.comment, tag: colors.name, attr: colors.name, function: colors.title })) {
+    root.style.setProperty(`--hljs-${role}`, color);
+  }
+}
 let lastRendered: {
   kind: Kind; source: string; documentId?: number; textStamp: string; theme: PreviewTheme; tex?: TexDocument;
 } | undefined;
@@ -60,6 +74,7 @@ function paintDiagrams(theme: PreviewTheme): void {
 }
 
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (appearance === 'system') applyCodeColors();
   if (lastRendered?.theme === 'system') {
     refreshIsolatedSvg(host!);
     if (lastRendered.kind === 'markdown') paintDiagrams('system');
@@ -113,7 +128,7 @@ function setImage(key: string, dataUrl: string): void {
 function renderBody(kind: Kind, source: string): string {
   if (kind === 'svg') return `<section class="svg-canvas">${sanitizeSvg(source)}</section>`;
   if (kind === 'plain') return renderPlain(source);
-  return renderMarkdown(source);
+  return renderMarkdownDeferred(source).html;
 }
 
 function postTexOutline(update: PreviewUpdate, tex: TexDocument): void {
@@ -134,6 +149,9 @@ function render(update: PreviewUpdate): void {
     postTexOutline(update, renderTexDocument(update.source, false));
     return;
   }
+  codeTheme = ['off', 'github', 'atom', 'vs'].includes(update.codeTheme || '') ? update.codeTheme! : 'github';
+  appearance = update.theme;
+  applyCodeColors();
   notePreviewTarget(update);
   const textStamp = usePreviewText(update.text);
   document.documentElement.lang = previewText().lang;
@@ -152,10 +170,12 @@ function render(update: PreviewUpdate): void {
     return;
   }
   if (!DOMPurify.isSupported) {
+    cancelCodeHighlight();
     host!.textContent = previewText().unsafe;
     return;
   }
   if (!update.source.trim()) {
+    cancelCodeHighlight();
     nextMermaidGeneration();
     host!.replaceChildren();
     const empty = document.createElement('p');
@@ -173,11 +193,19 @@ function render(update: PreviewUpdate): void {
   }
   installReferenceHook();
   let tex: TexDocument | undefined;
+  let codeJobs: CodeJob[] = [];
   let html: string;
   try {
     tex = update.kind === 'tex-math' ? renderTexDocument(update.source, true) : undefined;
-    html = tex ? tex.html : renderBody(update.kind, update.source);
+    if (update.kind === 'markdown') {
+      const result = renderMarkdownDeferred(update.source);
+      html = result.html;
+      codeJobs = result.jobs;
+    } else {
+      html = tex ? tex.html : renderBody(update.kind, update.source);
+    }
   } catch {
+    cancelCodeHighlight();
     linkTarget = undefined;
     nextMermaidGeneration();
     lastRendered = undefined;
@@ -190,6 +218,7 @@ function render(update: PreviewUpdate): void {
     FORBID_ATTR: ['src', 'srcset', 'target', 'formaction'],
     SANITIZE_NAMED_PROPS: false
   });
+  paintCodeHighlight(host!, codeJobs);
   isolateSvg(host!, '.svg-canvas svg');
   wantedImages.clear();
   lastRendered = { kind: update.kind, source: update.source, documentId: update.documentId, textStamp,

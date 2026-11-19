@@ -2,11 +2,21 @@ import MarkdownIt from 'markdown-it';
 import { katex as katexPlugin } from '@mdit/plugin-katex';
 import { tasklist } from '@mdit/plugin-tasklist';
 import { imagePlaceholder, previewError, previewText } from '../preview-text.ts';
+import { highlightFencedCode } from './code-highlight.ts';
 import { beginMermaidDiagrams, mermaidPlaceholder } from './mermaid-block.ts';
 import { safeExternalUrl } from './external-link.ts';
 import { sanitizeSvg } from './svg.ts';
+import { canonicalCodeLanguage } from '../../../shared/code-languages.ts';
 
-const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
+export interface CodeJob { id: number; source: string; language: string }
+let deferredJobs: CodeJob[] | undefined;
+
+const md = new MarkdownIt({
+  html: false,
+  linkify: false,
+  typographer: false,
+  highlight: (source: string, language: string): string => deferredJobs ? '' : highlightFencedCode(source, language)
+});
 md.use(tasklist, { disabled: true, label: true });
 md.use(katexPlugin, {
   delimiters: 'all',
@@ -47,6 +57,11 @@ md.renderer.rules.fence = (tokens, idx, options, env, renderer) => {
   const info = tokens[idx].info.trim().split(/\s+/)[0]?.toLowerCase();
   if (info === 'svg') return `<section class="svg-canvas">${sanitizeSvg(tokens[idx].content)}</section>`;
   if (info === 'mermaid') return mermaidPlaceholder(tokens[idx].content);
+  if (deferredJobs && info && canonicalCodeLanguage(info)) {
+    const id = deferredJobs.length;
+    deferredJobs.push({ id, source: tokens[idx].content, language: info });
+    tokens[idx].attrSet('data-mn-code', String(id));
+  }
   return defaultFence(tokens, idx, options, env, renderer);
 };
 
@@ -56,5 +71,16 @@ export function renderMarkdown(source: string): string {
     return md.render(source);
   } catch {
     return previewError(previewText().markdownFailed);
+  }
+}
+
+/** Render immediately with escaped text; callers can apply colors asynchronously. */
+export function renderMarkdownDeferred(source: string): { html: string; jobs: CodeJob[] } {
+  const jobs: CodeJob[] = [];
+  deferredJobs = jobs;
+  try {
+    return { html: renderMarkdown(source), jobs };
+  } finally {
+    deferredJobs = undefined;
   }
 }
