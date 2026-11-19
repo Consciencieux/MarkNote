@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderMarkdown } from '../src/renderers/markdown.ts';
+import { renderMarkdown, renderMarkdownDeferred } from '../src/renderers/markdown.ts';
 
 test('keeps unavailable images as placeholders without a source address', () => {
   const html = renderMarkdown('![示意图](https://example.com/a.png)\n\n![同目录](./images/a.png)');
@@ -65,6 +65,17 @@ test('keeps a mermaid fence as a numbered placeholder', () => {
   assert.match(html, /<pre><code class="language-js">[\s\S]*hljs-keyword[\s\S]*const[\s\S]*1/);
 });
 
+test('deferred preview preserves escaped code and queues only supported ordinary fences', () => {
+  const result = renderMarkdownDeferred('```js\nconst a = "<x>";\n```\n\n```text\nhljs-keyword\n```\n\n```svg\n<svg></svg>\n```');
+  assert.equal(result.jobs.length, 1);
+  assert.equal(result.jobs[0].language, 'js');
+  assert.equal(result.jobs[0].source, 'const a = "<x>";\n');
+  assert.match(result.html, /data-mn-code="0"/);
+  assert.match(result.html, /&lt;x&gt;/);
+  assert.doesNotMatch(result.html, /hljs-keyword<\/span>/);
+  assert.match(result.html, /svg-canvas/);
+});
+
 test('highlights fenced code and keeps drawing, math, and plain fences unchanged', () => {
   const latex = renderMarkdown('```LaTeX\n\\\\section{A} % note\n```');
   assert.match(latex, /<pre><code class="language-LaTeX">[\s\S]*hljs-keyword[\s\S]*hljs-comment/);
@@ -96,10 +107,10 @@ test('highlights fenced code and keeps drawing, math, and plain fences unchanged
   assert.match(inline, /<code>const a = 1<\/code>/);
   assert.doesNotMatch(inline, /hljs-/);
 
-  const body = 'x'.repeat(32769);
+  const body = 'const a = 1;\n' + 'x'.repeat(32769);
   const oversized = renderMarkdown(`\`\`\`js\n${body}\n\`\`\``);
   assert.equal((oversized.match(/x/g) ?? []).length, 32769);
-  assert.doesNotMatch(oversized, /hljs-/);
+  assert.match(oversized, /hljs-keyword/);
 
   const drawing = renderMarkdown('```svg\n<svg xmlns="http://www.w3.org/2000/svg"></svg>\n```\n\n```math\n\\\\frac{a}{b}\n```');
   assert.match(drawing, /<section class="svg-canvas">/);

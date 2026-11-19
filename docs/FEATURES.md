@@ -20,11 +20,11 @@
 
 | 功能 | 当前行为与限制 | 主要代码 |
 | --- | --- | --- |
-| 编辑 | 使用 ArkUI `TextArea` 编辑源文本，支持光标和选区。切换到编辑页签不会主动弹出键盘；点击文本后才进入输入状态。不支持多光标、语法折叠或行级语法高亮 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
+| 编辑 | 使用离线 CodeMirror 编辑 Markdown、LaTeX、SVG 和纯文本；按格式提供语法着色，纯文本不着色。Markdown 围栏支持 JavaScript、TypeScript、Python、XML 和 LaTeX；其他语言保持普通代码。LaTeX 使用 stex 模式，支持范围以该模式为准 | [DocumentCodeEditor.ets](../entry/src/main/ets/pages/DocumentCodeEditor.ets)、[languages.js](../editor/src/languages.js) |
 | 快捷插入 | Markdown 编辑页提供标题、强调、链接、列表、待办、代码和公式等快捷操作；LaTeX 编辑页提供章节、小节、加粗、斜体、行内代码及公式快捷操作。工具栏位于顶部标题栏下方，空间不足时可横向滚动 | [FormatRegistry.ets](../entry/src/main/ets/document/FormatRegistry.ets)、[FormatBarView.ets](../entry/src/main/ets/pages/FormatBarView.ets) |
 | 查找与替换 | 文稿菜单中的查找栏固定在顶部；输入时按字面文本统计匹配数，选择结果后显示当前位置，可在结果间前后跳转并替换单处。搜索词为空时隐藏结果导航；不支持正则表达式和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 文稿大纲 | Markdown 提取代码围栏以外的 ATX 标题，暂不解析 Setext 标题；LaTeX 使用预览解析得到的章节标题和源文本位置。两种格式共用分层大纲，可逐项展开、收起，并跳转到编辑位置 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[tex.ts](../renderer/src/renderers/tex.ts)、[DocumentOutlineView.ets](../entry/src/main/ets/pages/DocumentOutlineView.ets) |
-| 撤销与重做 | 编辑历史保存在内存中，连续输入在 600 毫秒内合并；替换、工具栏操作及保存边界不与相邻输入合并。历史最多保留 200 步，并按 32 MiB 的逻辑 UTF-16 文本量淘汰较旧记录；至少保留当前状态和一次撤销，因此两份超大文本本身仍可超过该预算。该预算不等同于运行时堆内存；切换文稿时清空 | [EditHistory.ets](../entry/src/main/ets/document/EditHistory.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
+| 撤销与重做 | CodeMirror 管理当前文稿的编辑历史；普通输入、工具栏插入及替换均可撤销。编辑和分栏复用同一历史，切换文稿时重置 | [editor-session.ts](../editor/src/editor-session.ts)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。有底部导航避让区时，页签沿用组件对安全区的扩展，不再另加底边距。避让高度为 0 时（悬浮小窗是其中一种情况），页签栏与 `HdsTabs` 底边留出应用自己设定的 `sys.float.margin_left`，这不是华为规定的底部间距。宽度达到 `WIDTH_LG` 断点时可分栏显示，预览在左、编辑在右 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
 
 预览页面随应用离线打包。ArkUI 将格式、正文、主题、修订号和当前界面语言的预览提示传给网页；LaTeX 预览通过消息端口回传解析结果，网页不能调用文件或导航接口。内容安全策略禁止网络连接。Markdown 的网页链接由系统打开，不在预览页面中加载。
@@ -32,7 +32,7 @@
 | 格式 | 预览方式 | 限制 |
 | --- | --- | --- |
 | `.txt` | 显示原文，保留换行和缩进 | 不解释 Markdown |
-| `.md`、`.markdown` | 使用 markdown-it 渲染，支持表格、按语言着色的代码围栏、KaTeX 数学公式、SVG 代码围栏、Mermaid 图和只读待办复选框。文稿同目录及子目录中、系统允许读取的本地图片可以显示 | 不解析原始 HTML，不加载网络图片。预览中的待办不能修改文稿。http 和 https 链接点击后由系统打开，预览页面不加载网页；其他协议、带凭据的地址和相对路径只保留文字。绝对路径、逃出文稿目录的路径，以及未授权或打不开的图片保留占位文字，不影响打开文稿。图片按阅读位置加载，单张文件超过 32 MiB 时保留占位；支持 png、jpeg、gif、webp、bmp 和 svg。Mermaid 使用 11.12 画成 SVG，布局为 Dagre。指定 elk 或其他未注册布局时，该图显示预览错误。节点中的 HTML、点击回调和跳转链接不会保留。架构图图标需要联网，这里不加载。图内数学公式不保证排成 KaTeX。单图文本上限为 50000 个字符。代码围栏使用 highlight.js 11.12 的 latex、markdown、xml、json、javascript、typescript、python、bash、yaml、css、c、cpp、java。主要别名有 tex、md、html、js、ts、arkts、py、sh、shell、yml、c++、cxx、cc。ArkTS 按 TypeScript 规则着色，Shell 按 Bash 规则着色，不保证覆盖对应方言。没有语言标记、text、plaintext、未注册语言、超过 32768 个 UTF-16 码元，或着色失败时，显示完整原文，不自动识别语言，也不截断。svg 围栏仍画成图形，mermaid 仍画成图，math 仍用 KaTeX。独立 .tex 预览和编辑区不使用这套着色 |
+| `.md`、`.markdown` | 使用 markdown-it 渲染，支持表格、按语言着色的代码围栏、KaTeX 数学公式、SVG 代码围栏、Mermaid 图和只读待办复选框。文稿同目录及子目录中、系统允许读取的本地图片可以显示 | 不解析原始 HTML，不加载网络图片。预览中的待办不能修改文稿。http 和 https 链接点击后由系统打开，预览页面不加载网页；其他协议、带凭据的地址和相对路径只保留文字。绝对路径、逃出文稿目录的路径，以及未授权或打不开的图片保留占位文字，不影响打开文稿。图片按阅读位置加载，单张文件超过 32 MiB 时保留占位；支持 png、jpeg、gif、webp、bmp 和 svg。Mermaid 使用 11.12 画成 SVG，布局为 Dagre。指定 elk 或其他未注册布局时，该图显示预览错误。节点中的 HTML、点击回调和跳转链接不会保留。架构图图标需要联网，这里不加载。图内数学公式不保证排成 KaTeX。单图文本上限为 50000 个字符。代码围栏使用 highlight.js 11.12 的 latex、markdown、xml、json、javascript、typescript、python、bash、yaml、css、c、cpp、java。主要别名有 tex、md、html、js、ts、arkts、py、sh、shell、yml、c++、cxx、cc。ArkTS 按 TypeScript 规则着色，Shell 按 Bash 规则着色，不保证覆盖对应方言。代码围栏先显示转义后的原文，再由离线 Worker 按顺序着色；没有语言标记、text、plaintext、未注册语言，或 Worker 不可用、着色失败时，保留完整原文，不自动识别语言，也不截断。svg 围栏仍画成图形，mermaid 仍画成图，math 仍用 KaTeX。独立 .tex 预览不使用这套着色；编辑器使用独立语法引擎 |
 | `.svg` | 使用 DOMPurify 清理后显示静态 SVG | 不执行脚本和动画，不加载外部资源；部分内部片段引用可用 |
 | `.tex` | MyST 转换常见 LaTeX 文稿，KaTeX 渲染公式；无标记内容按正文显示，公式可使用数学定界符或受支持的独立公式命令 | 不执行 TeX 引擎或编译 PDF；宏包、命令和环境仅支持转换器已实现的部分，不支持的内容可能被省略；TikZ 尚未接入 |
 
@@ -40,7 +40,7 @@
 
 ## 设置与导航
 
-设置从首页或文稿页的更多菜单进入。外观提供跟随系统、浅色和深色三个选项，偏好保存在本机；设置页还提供使用帮助、问题与建议、隐私说明和关于。问题与建议通过系统邮件应用发送至 zhouyi1227@outlook.com；未安装邮件应用时可直接使用该地址。语言可跟随系统，也可指定简体中文、繁体中文、藏文、英文、日文、韩文、俄文、阿拉伯文或维吾尔文，选择后立即生效。跟随系统排在最前，其余语言按汉语拼音排列。跟随系统时，未提供的系统语言显示简体中文。阿拉伯文和维吾尔文从右向左排列；未单独指定语言时，排列方向跟随系统语言。
+设置从首页或文稿页的更多菜单进入。外观提供跟随系统、浅色和深色三个选项，偏好保存在本机；代码高亮提供关闭、GitHub、Atom One 和 Visual Studio 配色，编辑器及 Markdown 代码预览共享语法颜色，配色不改变代码框背景与布局。设置页还提供使用帮助、问题与建议、隐私说明和关于。问题与建议通过系统邮件应用发送至 zhouyi1227@outlook.com；未安装邮件应用时可直接使用该地址。语言可跟随系统，也可指定简体中文、繁体中文、藏文、英文、日文、韩文、俄文、阿拉伯文或维吾尔文，选择后立即生效。跟随系统排在最前，其余语言按汉语拼音排列。跟随系统时，未提供的系统语言显示简体中文。阿拉伯文和维吾尔文从右向左排列；未单独指定语言时，排列方向跟随系统语言。
 
 文稿列表与文稿以双栏显示时，可通过文稿标题栏放大文稿或恢复文稿列表；文稿菜单可关闭当前文稿。放大期间窗口宽度发生变化时，恢复由系统自动选择单栏或双栏；单栏时显示返回按钮。预览和编辑并排的分栏页签另按窗口宽度提供。
 

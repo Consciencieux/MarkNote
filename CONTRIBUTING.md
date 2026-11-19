@@ -50,6 +50,8 @@ npm test
 npm run build
 ```
 
+编辑器源码与预览共用第三方许可证生成流程。首次构建前还需要在 `editor/` 执行 `npm ci`；修改编辑器后执行 `npm run check`、`npm test` 和 `npm run build`。编辑器构建生成 `entry/src/main/resources/rawfile/editor/index.html`，并同样核验许可证材料。
+
 预览构建生成 `entry/src/main/resources/rawfile/preview/index.html` 和 `entry/src/main/resources/rawfile/licenses/` 中的许可证文本，供应用打包。这些生成文件纳入版本库；依赖变化时还需更新 `renderer/package-lock.json`。缺少有效许可证材料时构建会失败，应检查依赖及其授权材料，不要手工修改生成文件绕过检查。
 
 在 DevEco Studio 中同步 OHPM 并构建 `entry` 模块，或在仓库根目录使用 DevEco CLI：

@@ -10,6 +10,7 @@ import { normalizeAppLanguage } from '../i18n/AppLanguage';
 
 const RECENT_KEY: string = 'recent_files';
 const THEME_KEY: string = 'color_choice';
+const CODE_THEME_KEY: string = 'code_theme';
 /**
  * 用户选择，含 `default`。系统偏好语言接口负责真正切换资源；
  * 其读取结果未说明会保留 `default`，不能单独用来区分“跟随系统”和已解析出的语言。
@@ -20,6 +21,20 @@ const DRAFT: string = '/unsaved-draft.json';
 const TEMP: string = '/unsaved-draft.tmp';
 
 export class LocalState {
+  static readCodeThemeSync(context: common.UIAbilityContext): string {
+    try {
+      const store = preferences.getPreferencesSync(context, { name: 'marknote-settings' });
+      const value = store.getSync(CODE_THEME_KEY, 'github');
+      return value === 'off' || value === 'atom' || value === 'vs' ? value : 'github';
+    } catch { return 'github'; }
+  }
+
+  static writeCodeThemeSync(context: common.UIAbilityContext, choice: string): void {
+    const store = preferences.getPreferencesSync(context, { name: 'marknote-settings' });
+    store.putSync(CODE_THEME_KEY, choice);
+    store.flushSync();
+  }
+
   static async readTheme(context: common.UIAbilityContext): Promise<string> {
     const store = await preferences.getPreferences(context, 'marknote-settings');
     const value = await store.get(THEME_KEY, 'system') as string;

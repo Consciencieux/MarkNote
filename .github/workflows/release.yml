@@ -115,7 +115,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: renderer/package-lock.json
+          cache-dependency-path: |
+            renderer/package-lock.json
+            editor/package-lock.json
+
+      - name: Install editor dependencies
+        working-directory: editor
+        run: npm ci
 
       - name: Check, test and rebuild renderer
         working-directory: renderer
@@ -125,10 +131,18 @@ jobs:
           npm test
           npm run build
 
+      - name: Check, test and rebuild editor
+        working-directory: editor
+        run: |
+          npm run check
+          npm test
+          npm run build
+
       - name: Require generated resources to match the tag
         run: |
           paths=(
             entry/src/main/resources/rawfile/preview/index.html
+            entry/src/main/resources/rawfile/editor/index.html
             entry/src/main/resources/rawfile/licenses
           )
           changes="$(git status --porcelain --untracked-files=all -- "${paths[@]}")"

@@ -46,7 +46,7 @@ test('uses the same rules for an alias and its canonical language', () => {
   assert.equal(highlightFencedCode('echo "hi"', 'shell'), highlightFencedCode('echo "hi"', 'bash'));
 });
 
-test('leaves unknown, plain, and oversized fences for markdown-it to escape', () => {
+test('leaves unknown and plain fences for markdown-it to escape', () => {
   const source = 'const a = "b";';
   assert.equal(highlightFencedCode(source, ''), '');
   assert.equal(highlightFencedCode(source, '   '), '');
@@ -54,9 +54,18 @@ test('leaves unknown, plain, and oversized fences for markdown-it to escape', ()
   assert.equal(highlightFencedCode(source, 'plaintext'), '');
   assert.equal(highlightFencedCode(source, 'ruby'), '');
   assert.equal(highlightFencedCode(source, 'svg'), '');
-  const atLimit = `${source}${' '.repeat(32768 - source.length)}`;
-  assert.match(highlightFencedCode(atLimit, 'javascript'), /hljs-keyword/);
-  assert.equal(highlightFencedCode(`${atLimit} `, 'javascript'), '');
+  assert.equal(highlightFencedCode(source, '__proto__'), '');
+});
+
+test('highlights fences across the former length limit', () => {
+  const prefix = 'const answer = 42;\n// ';
+  for (const length of [32767, 32768, 32769, 65536]) {
+    const source = prefix + 'x'.repeat(length - prefix.length);
+    const html = highlightFencedCode(source, 'javascript');
+    assert.match(html, /hljs-keyword/);
+    assert.match(html, /hljs-comment/);
+    assert.equal((html.match(/x/g) ?? []).length, length - prefix.length);
+  }
 });
 
 test('escapes markup inside a fence instead of emitting a tag', () => {
