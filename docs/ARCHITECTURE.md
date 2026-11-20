@@ -21,7 +21,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 | `TextEncoding` | 在文件字节和编辑器文本之间转换，记录并恢复编码、BOM 与换行方式。 |
 | `LocalState` | 保存最近文稿、外观和语言偏好，并异步读写 `unsaved-draft.json`。 |
 | `TextSearch` | 处理字面文本查找；撤销和重做由 CodeMirror 管理。 |
-| `EditorActions` | 纯文本快捷编辑操作，处理行前缀、选区包裹和代码围栏。 |
+| `editor-actions` | 编辑器快捷操作直接生成局部事务，处理行前缀、选区包裹和代码围栏。 |
 
 文件格式优先按已知后缀识别，其次按系统声明的类型识别。保存前的外部修改检查使用文件字节的 SHA-256 指纹。
 
@@ -41,7 +41,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 Markdown 代码围栏先显示转义后的原文，再由离线打包的 Worker 顺序运行 highlight.js；更新文稿会终止旧 Worker。着色结果仅允许 `span` 和 `class`，经 DOMPurify 清理后写回对应代码节点。Worker 不可用或解析失败时保留原文。预览和编辑器共用 `shared/code-languages.ts` 的语言别名以及 `shared/syntax-colors.ts` 的前景色，具体语言引擎各自配置。
 
-`editor/` 将 CodeMirror 6 和语言支持打包为独立离线编辑器。`DocumentCodeEditor` 通过受控消息端口连接 `DocumentView`，不向网页暴露文件、导航或通用 ArkTS 接口。普通编辑和宽屏分栏复用同一实例，CodeMirror 管理正文、选区和撤销历史；文件操作仍由 `DocumentService` 负责。桥接层通过会话 ID、代次、操作序号和 UTF-16 偏移传递增量，先校验当前会话和原正文、写入文稿服务，再确认并推进桥接修订。桥接修订独立于文稿服务用于分析的修订；正文更新经 `DocumentService.edit` 推进后者。保存屏障等待输入法组合结束及变更确认；切换或离开前暂停编辑，取消切换后恢复。冲突时保留编辑器本地正文，校验原生会话未被其他操作修改后，用完整快照和新代次恢复。
+`editor/` 将 CodeMirror 6 和语言支持打包为独立离线编辑器。`DocumentCodeEditor` 通过受控消息端口连接 `DocumentView`，不向网页暴露文件、导航或通用 ArkTS 接口。普通编辑和宽屏分栏复用同一实例，CodeMirror 管理正文、选区和撤销历史；文件操作仍由 `DocumentService` 负责。桥接层通过会话 ID、代次、操作序号和 UTF-16 偏移传递增量，先校验当前会话和原正文、写入文稿服务，再确认并推进桥接修订。桥接修订独立于文稿服务用于分析的修订；正文更新经 `DocumentService.edit` 推进后者。保存屏障等待输入法组合结束，并确认当时已产生的变更；同步超时会取消等待并尝试重新连接，未确认编辑仍保留在编辑器中。切换或离开前暂停编辑，取消切换后恢复。冲突时保留编辑器本地正文，校验原生会话未被其他操作修改后，用完整快照和新代次恢复。
 
 ## 文件关联
 

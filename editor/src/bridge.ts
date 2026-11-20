@@ -1,6 +1,6 @@
 import type { EditorAck, EditorChangeMessage, EditorChangeRange, EditorConflict, EditorSelection } from '../../shared/editor-protocol.ts';
 
-type Waiter = { resolve: (revision: number) => void; reject: (error: Error) => void };
+type Waiter = { sequence: number; resolve: (revision: number) => void; reject: (error: Error) => void };
 
 /** Keeps incremental edits until the native document confirms their sequence. */
 export class EditorChangeQueue {
@@ -32,7 +32,9 @@ export class EditorChangeQueue {
       selection: { anchor: selection.anchor, head: selection.head }
     };
     this.pending.push(message);
-    if (!this.deliveryPaused) {
+    if (this.deliveryPaused) {
+      this.retransmit();
+    } else {
       try { this.send(message); } catch { this.deliveryPaused = true; }
     }
     return message;
@@ -45,11 +47,9 @@ export class EditorChangeQueue {
       message.revision !== this.initialRevision + message.sequence) return false;
     this.acknowledged = message.sequence;
     this.pending = this.pending.filter((item) => item.sequence > message.sequence);
-    if (this.pending.length === 0) {
-      const waiters = this.waiters;
-      this.waiters = [];
-      for (const waiter of waiters) waiter.resolve(message.revision);
-    }
+    const ready = this.waiters.filter((waiter) => waiter.sequence <= message.sequence);
+    this.waiters = this.waiters.filter((waiter) => waiter.sequence > message.sequence);
+    for (const waiter of ready) waiter.resolve(this.initialRevision + waiter.sequence);
     return true;
   }
 
@@ -71,9 +71,22 @@ export class EditorChangeQueue {
 
   pendingCount(): number { return this.pending.length; }
 
-  whenSynced(): Promise<number> {
+  whenSynced(signal?: AbortSignal): Promise<number> {
     if (this.blocked) return Promise.reject(new Error('editor sync conflict'));
-    if (this.pending.length === 0) return Promise.resolve(this.initialRevision + this.acknowledged);
-    return new Promise((resolve, reject) => this.waiters.push({ resolve, reject }));
+    if (signal?.aborted) return Promise.reject(new Error('editor sync cancelled'));
+    const sequence = this.nextSequence - 1;
+    if (sequence <= this.acknowledged) return Promise.resolve(this.initialRevision + sequence);
+    return new Promise((resolve, reject) => {
+      const cleanup = () => signal?.removeEventListener('abort', cancel);
+      const waiter: Waiter = { sequence,
+        resolve: (revision) => { cleanup(); resolve(revision); },
+        reject: (error) => { cleanup(); reject(error); } };
+      const cancel = () => {
+        this.waiters = this.waiters.filter((item) => item !== waiter);
+        waiter.reject(new Error('editor sync cancelled'));
+      };
+      this.waiters.push(waiter);
+      signal?.addEventListener('abort', cancel, { once: true });
+    });
   }
 }

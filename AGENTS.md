@@ -26,7 +26,7 @@
 
 ## 项目边界
 
-- 导航、编辑、查找、大纲、主题和文件菜单由 ArkUI 实现。ArkWeb 只渲染离线预览，不向网页注册 ArkTS 接口。
+- 导航、查找栏、大纲、主题和文件菜单由 ArkUI 实现。独立的离线 ArkWeb 编辑器使用 CodeMirror 管理文本输入和选区，通过受控消息端口与原生文稿服务同步；离线预览使用独立 ArkWeb 页面。网页不直接访问文件系统，也不注册任意 ArkTS 接口。
 - 不申请 `ohos.permission.INTERNET`，不从 CDN 加载脚本、字体或图片。
 - 用户文件通过系统选择器或文件管理器返回的 URI 访问。最近文稿使用持久化授权，不将用户文件复制到应用沙箱代替原文件。系统打开文件复用 `EntryAbility` 的 `viewData` / `FileOpen`，不新建 UIAbility，也不注册 `general.file`。
 - 包名以 `AppScope/app.json5` 为准；除非用户明确要求，不要更换。

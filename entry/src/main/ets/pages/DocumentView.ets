@@ -149,13 +149,7 @@ export struct DocumentView {
       menuBridge.dismiss((): void => this.confirmDelete());
     };
     menuBridge.find = (): void => {
-      menuBridge.dismiss((): void => {
-        this.searchVisible = true;
-        this.selectedTab = TAB_EDIT;
-        this.currentMatch = -1;
-        this.matchOrdinal = 0;
-        void this.flushAnalysis();
-      });
+      menuBridge.dismiss((): void => this.openFind());
     };
     menuBridge.closeDocument = (): void => menuBridge.dismiss((): void => this.requestLeave());
     // 首页在换篇、返回列表前都要先问这里能否离开。
@@ -172,6 +166,14 @@ export struct DocumentView {
         this.toast($r('app.string.draft_write_failed'));
       }
     });
+  }
+
+  private openFind(): void {
+    this.searchVisible = true;
+    this.selectedTab = TAB_EDIT;
+    this.currentMatch = -1;
+    this.matchOrdinal = 0;
+    void this.flushAnalysis();
   }
 
   /**
@@ -670,11 +672,11 @@ export struct DocumentView {
     this.analysis.schedule(this.analysisRequest());
   }
 
-  private async flushAnalysis(): Promise<void> {
+  private flushAnalysis(): void {
     const request = this.analysisRequest();
     if (this.outlineTabVisible() && this.formatId === 'markdown') request.needOutline = true;
     if (this.searchVisible) request.needCount = this.query.length > 0;
-    this.applyAnalysis(await this.analysis.flush(request));
+    this.applyAnalysis(this.analysis.flush(request));
   }
 
   private applyAnalysis(result: AnalysisResult): void {
@@ -954,6 +956,7 @@ export struct DocumentView {
               onRecover: (expected: string, source: string, anchor: number, head: number): boolean => {
                 return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head);
               },
+              onFind: (): void => { if (key === this.editorSessionKey) this.openFind(); },
               onState: (anchor: number, head: number, canUndo: boolean, canRedo: boolean): void => {
                 if (key !== this.editorSessionKey) return;
                 this.selectionStart = anchor;
@@ -961,7 +964,7 @@ export struct DocumentView {
                 this.undoAvailable = canUndo;
                 this.redoAvailable = canRedo;
               },
-              onConflict: (): void => { this.toast(this.uiFormat($r('app.string.save_failed'), '')); }
+              onConflict: (): void => { this.toast($r('app.string.editor_sync_failed')); }
             })
           }
         }, (key: number): string => key.toString())

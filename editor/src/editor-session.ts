@@ -1,7 +1,7 @@
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, type ViewUpdate } from '@codemirror/view';
 import { redo, undo, undoDepth, redoDepth, isolateHistory } from '@codemirror/commands';
-import { insertEditorAction } from '../../entry/src/main/ets/document/EditorActions.ts';
+import { insertEditorAction } from './editor-actions.ts';
 import type { EditorAck, EditorChangeRange, EditorConflict } from '../../shared/editor-protocol.ts';
 import { EditorChangeQueue } from './bridge.ts';
 
@@ -22,7 +22,7 @@ export class EditorSession {
   private blocked: boolean = false;
   private suspended: boolean = false;
   private suspendGeneration: number = 0;
-  private activeFlushes: number = 0;
+  private activeFlushes = new Map<string, AbortController>();
 
   constructor(view: EditorView, editable: Compartment, makeState: (message: InitMessage) => EditorState,
     setTheme?: (theme: string, appearance: string) => void) {
@@ -34,7 +34,20 @@ export class EditorSession {
 
   isBlocked(): boolean { return this.blocked || this.suspended; }
 
+  requestFind(): boolean {
+    if (!this.current || !this.port) return false;
+    try {
+      this.send({ type: 'find-request', sessionId: this.current.sessionId, epoch: this.current.epoch });
+      return true;
+    } catch { return false; }
+  }
+
   attach(port: MessagePort): void {
+    for (const controller of this.activeFlushes.values()) controller.abort();
+    if (this.suspended && !this.blocked) {
+      this.suspended = false;
+      this.view.dispatch({ effects: this.editable.reconfigure(EditorView.editable.of(true)) });
+    }
     this.port?.close();
     this.port = port;
     port.onmessage = (event: MessageEvent): void => this.receive(event.data);
@@ -69,7 +82,7 @@ export class EditorSession {
         this.send({ type: 'initialized', sessionId: init.sessionId, epoch: init.epoch });
         return;
       }
-      if (this.queue && (this.queue.pendingCount() > 0 || this.blocked || this.view.compositionStarted || this.activeFlushes > 0)) {
+      if (this.queue && (this.queue.pendingCount() > 0 || this.blocked || this.view.compositionStarted || this.activeFlushes.size > 0)) {
         this.send({ type: 'session-busy', sessionId: init.sessionId, epoch: init.epoch });
         return;
       }
@@ -110,27 +123,42 @@ export class EditorSession {
       this.trySend({ type: 'recovered', sessionId: this.current.sessionId, epoch: this.current.epoch });
       this.publishState();
     }
+    if (message.type === 'flush-cancel' && this.current && message.sessionId === this.current.sessionId &&
+      message.epoch === this.current.epoch && typeof message.requestId === 'string') {
+      this.activeFlushes.get(message.requestId)?.abort();
+    }
     if (message.type === 'flush' && this.queue && this.current && message.sessionId === this.current.sessionId &&
       message.epoch === this.current.epoch && typeof message.requestId === 'string') {
       const session = this.current;
       const requestId = message.requestId;
       const queue = this.queue;
       const suspendGeneration = this.suspendGeneration;
-      this.activeFlushes++;
+      if (this.activeFlushes.has(requestId)) return;
+      const controller = new AbortController();
+      this.activeFlushes.set(requestId, controller);
+      let suspendedByRequest = false;
+      controller.signal.addEventListener('abort', () => {
+        if (suspendedByRequest && this.suspended && !this.blocked) {
+          this.suspended = false;
+          this.view.dispatch({ effects: this.editable.reconfigure(EditorView.editable.of(true)) });
+        }
+      }, { once: true });
       // IME composition can commit another transaction after the save request.
       // Wait for that transaction before establishing the acknowledgement barrier.
-      void this.waitForComposition().then(() => {
+      void this.waitForComposition(controller.signal).then(() => {
+        if (controller.signal.aborted) throw new Error('editor sync cancelled');
         if (message.suspend === true) {
           if (suspendGeneration !== this.suspendGeneration) throw new Error('suspension cancelled');
           this.suspended = true;
+          suspendedByRequest = true;
           this.view.dispatch({ effects: this.editable.reconfigure(EditorView.editable.of(false)) });
         }
-        return queue.whenSynced();
+        return queue.whenSynced(controller.signal);
       }).then((revision) => {
-        if (this.current === session) this.trySend({ type: 'flushed', sessionId: session.sessionId, epoch: session.epoch, requestId, revision });
+        if (!controller.signal.aborted && this.current === session) this.trySend({ type: 'flushed', sessionId: session.sessionId, epoch: session.epoch, requestId, revision });
       }).catch(() => {
-        if (this.current === session) this.trySend({ type: 'flush-failed', sessionId: session.sessionId, epoch: session.epoch, requestId });
-      }).finally(() => { this.activeFlushes--; });
+        if (!controller.signal.aborted && this.current === session) this.trySend({ type: 'flush-failed', sessionId: session.sessionId, epoch: session.epoch, requestId });
+      }).finally(() => { this.activeFlushes.delete(requestId); });
     }
     if (message.type === 'command' && this.current && message.sessionId === this.current.sessionId &&
       message.epoch === this.current.epoch && !this.blocked) {
@@ -150,14 +178,26 @@ export class EditorSession {
     }
   }
 
-  private waitForComposition(): Promise<void> {
+  private waitForComposition(signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return Promise.reject(new Error('editor sync cancelled'));
     if (!this.view.compositionStarted) return Promise.resolve();
-    return new Promise((resolve) => {
-      this.view.contentDOM.addEventListener('compositionend', () => {
+    return new Promise((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = () => {
+        this.view.contentDOM.removeEventListener('compositionend', finish);
+        signal.removeEventListener('abort', cancel);
+        if (timer !== undefined) clearTimeout(timer);
+      };
+      const cancel = () => { cleanup(); reject(new Error('editor sync cancelled')); };
+      const finish = () => {
         // CodeMirror flushes pending DOM changes before measurement. In particular,
         // some WebViews defer the final composition mutation to the next frame.
-        setTimeout(() => this.view.requestMeasure({ read: () => resolve() }), 0);
-      }, { once: true });
+        timer = setTimeout(() => this.view.requestMeasure({ read: () => {
+          if (!signal.aborted) { cleanup(); resolve(); }
+        } }), 0);
+      };
+      this.view.contentDOM.addEventListener('compositionend', finish, { once: true });
+      signal.addEventListener('abort', cancel, { once: true });
     });
   }
 
@@ -189,16 +229,9 @@ export class EditorSession {
     } else if (message.action === 'insert') {
       if (typeof message.id !== 'string' || typeof message.before !== 'string' || typeof message.after !== 'string') return;
       const current = this.view.state;
-      const edit = insertEditorAction(current.doc.toString(), current.selection.main.anchor, current.selection.main.head,
+      const edit = insertEditorAction(current.doc, current.selection.main.anchor, current.selection.main.head,
         message.id, message.before, message.after);
-      // The action API returns full text. Find the smallest changed interval for one history transaction.
-      const old = current.doc.toString();
-      let from = 0;
-      while (from < old.length && from < edit.text.length && old[from] === edit.text[from]) from++;
-      let oldEnd = old.length;
-      let newEnd = edit.text.length;
-      while (oldEnd > from && newEnd > from && old[oldEnd - 1] === edit.text[newEnd - 1]) { oldEnd--; newEnd--; }
-      this.view.dispatch({ changes: { from, to: oldEnd, insert: edit.text.slice(from, newEnd) },
+      this.view.dispatch({ changes: edit.changes,
         selection: { anchor: edit.caret }, annotations: isolateHistory.of('full') });
       this.view.focus();
     } else return;

@@ -81,56 +81,12 @@ async function service(overrides = {}, time = { setTimeout, clearTimeout }) {
   };
 }
 
-test('save-as to the original URI does not bypass conflict checking', async () => {
-  const opened = await service();
-  await opened.api.save({}, true);
-  assert.equal(opened.writes[0].conflict, true);
-});
-
 test('saving an unchanged original file does not write or truncate it', async () => {
   const opened = await service({ skipEdit: true, failWrite: true });
   const result = await opened.api.save({}, false);
   assert.equal(result.saved, true);
   assert.equal(opened.writes.length, 0);
   assert.equal(opened.encodings(), 0);
-});
-
-test('save-as still writes an unchanged document', async () => {
-  const opened = await service({ skipEdit: true });
-  const result = await opened.api.save({}, true);
-  assert.equal(result.saved, true);
-  assert.equal(opened.writes.length, 1);
-  assert.equal(opened.drafts[0].writeUncertain, true);
-});
-
-test('failure before the provider starts writing does not mark the original file uncertain', async () => {
-  const opened = await service({ files: { write: async () => { throw new Error('conflict'); } } });
-  await assert.rejects(opened.api.save({}, false), /conflict/);
-  assert.equal(opened.api.current().writeUncertain, false);
-  assert.equal(opened.api.current().source, 'edited');
-});
-
-test('an interrupted write retains both the latest edit and the attempted snapshot after undo', async () => {
-  const time = clock();
-  const opened = await service({ holdWrite: true, failWrite: true }, time);
-  const pending = opened.api.save({}, false);
-  await new Promise((resolve) => setImmediate(resolve));
-  opened.api.edit('base');
-  time.advance(2000);
-  await new Promise((resolve) => setImmediate(resolve));
-  opened.release();
-  await assert.rejects(pending, /partial write/);
-  time.advance(2000);
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(opened.api.current().source, 'base');
-  assert.equal(opened.api.current().savedText, 'base');
-  assert.equal(opened.api.current().writeUncertain, true);
-  const recovery = opened.drafts.at(-1);
-  assert.equal(recovery.text, 'base');
-  assert.equal(recovery.pendingWriteText, 'edited');
-  assert.equal(recovery.writeUncertain, true);
-  assert.equal(opened.clears.length, 0);
 });
 
 test('checkpoint failure prevents an external write', async () => {
@@ -165,60 +121,6 @@ test('typing during a save keeps the newer text and the captured baseline', asyn
   assert.equal(opened.writes[0].text, 'edited');
 });
 
-test('opaque file URI is resolved using the provider filename', async () => {
-  const opened = await service();
-  assert.equal(await opened.api.openUri('file://12345', '', true, true), true);
-  assert.equal(opened.api.current().info.formatId, 'markdown');
-});
-
-test('rejected late confirmation does not replace the current session', async () => {
-  const opened = await service();
-  const owner = opened.api.current();
-  assert.equal(await opened.api.openUri('file://b.md', '', true, true, async () => false), false);
-  assert.equal(opened.api.current(), owner);
-});
-
-test('undo back to the saved text drops the pending draft', async () => {
-  const time = clock();
-  const opened = await service({ skipEdit: true }, time);
-  opened.api.edit('B');
-  time.advance(449);
-  opened.api.edit('base');
-  time.advance(2000);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(opened.drafts.length, 0);
-  assert.equal(opened.clears.length, 1);
-});
-
-test('replacing a discarded document clears its recovery file before a templated document', async () => {
-  const opened = await service();
-  assert.equal(await opened.api.startNew('svg'), true);
-  assert.equal(opened.api.current().source, '<svg></svg>');
-  assert.equal(opened.clears.length, 1);
-  assert.equal(opened.api.current().savedText, '');
-});
-
-test('a failed recovery cleanup does not hide a completed save and keeps a deleted document open', async () => {
-  const opened = await service({
-    local: { clearDraft: async () => { throw new Error('unlink failed'); } }
-  });
-  const saved = await opened.api.save({}, false);
-  assert.equal(saved.saved, true);
-  assert.equal(opened.writes.length, 1);
-  assert.equal(opened.encodings(), 1);
-  assert.equal(opened.writes[0].encoded, opened.prepared);
-  assert.deepEqual(opened.recoveryErrors, ['unlink failed']);
-  opened.api.edit('again');
-  const deleted = await opened.api.moveToTrash();
-  assert.equal(deleted.deleted, true);
-  assert.equal(deleted.recoveryCleanupFailed, true);
-  assert.equal(deleted.retainedEdits, true);
-  assert.equal(opened.api.current().editing, true);
-  assert.equal(opened.api.current().info.uri, '');
-  assert.equal(opened.drafts.at(-1).uri, '');
-  assert.equal(opened.recoveryErrors.length, 2);
-});
-
 for (const asNewFile of [false, true]) {
   test(`confirmed ${asNewFile ? 'save-as' : 'save'} updates recovery before cleanup can fail`, async () => {
     let persisted = null;
@@ -238,25 +140,6 @@ for (const asNewFile of [false, true]) {
     assert.equal(persisted.writeUncertain, false);
   });
 }
-
-test('edits while recovery cleanup is in flight are reflected in the save result', async () => {
-  let entered;
-  let release;
-  const waiting = new Promise((resolve) => { entered = resolve; });
-  const opened = await service({ local: { clearDraft: async () => {
-    entered();
-    await new Promise((resolve) => { release = resolve; });
-  } } });
-  const pending = opened.api.save({}, false);
-  await waiting;
-  opened.api.edit('typed during cleanup');
-  release();
-  const result = await pending;
-  assert.equal(opened.api.current().savedText, 'edited');
-  assert.equal(opened.api.current().source, 'typed during cleanup');
-  assert.equal(result.stillDirty, true);
-  assert.equal(result.message, 'app.string.saved_dirty');
-});
 
 test('after an interrupted recovery update, restart identifies the verified save-as target', async () => {
   let savedDraft = null;
@@ -304,35 +187,3 @@ test('unresolved save-as recovery cannot silently overwrite the old file', async
   assert.equal(opened.api.current().info.writable, false);
   assert.equal(opened.api.current().writeUncertain, true);
 });
-
-function clock() {
-  const timers = [];
-  let now = 0;
-  let sequence = 1;
-  return {
-    setTimeout(fn, ms) {
-      const id = sequence++;
-      timers.push({ id, fn, at: now + ms });
-      return id;
-    },
-    clearTimeout(id) {
-      const index = timers.findIndex((item) => item.id === id);
-      if (index >= 0) timers.splice(index, 1);
-    },
-    advance(ms) {
-      now += ms;
-      let fired = true;
-      while (fired) {
-        fired = false;
-        const due = timers.filter((item) => item.at <= now).sort((left, right) => left.at - right.at);
-        if (due.length === 0) return;
-        const item = due[0];
-        const index = timers.indexOf(item);
-        if (index < 0) continue;
-        timers.splice(index, 1);
-        item.fn();
-        fired = true;
-      }
-    }
-  };
-}

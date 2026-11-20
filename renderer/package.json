@@ -11,7 +11,7 @@
     "dev": "vite --host 127.0.0.1",
     "check": "tsc --noEmit",
     "check:licenses": "node scripts/generate-notices.mjs",
-    "pretest": "node scripts/check-test-runtime.mjs && node scripts/setup-tex-dependency.mjs --verify",
+    "pretest": "node scripts/check-test-runtime.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {

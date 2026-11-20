@@ -99,7 +99,7 @@ devecocli build --product default --modules entry --build-mode debug
 
 ## 代码与界面约定
 
-项目使用 ArkUI 实现导航、编辑和文件操作，使用 ArkWeb 渲染离线预览。页面、文件访问和网络使用的约束见 [AGENTS.md](AGENTS.md)；新增或修改界面时，请按其中的要求查阅华为官方文档并优先使用系统组件和资源。
+项目使用 ArkUI 实现导航和文件操作，使用独立的离线 ArkWeb 页面进行源码编辑和预览。页面、文件访问和网络使用的约束见 [AGENTS.md](AGENTS.md)；新增或修改界面时，请按其中的要求查阅华为官方文档并优先使用系统组件和资源。
 
 ## 测试
 

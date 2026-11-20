@@ -22,6 +22,26 @@ test('queues successive edits and only resolves save barrier after cumulative ac
   assert.equal(queue.pendingCount(), 0);
 });
 
+test('a save barrier waits only for edits submitted before the barrier', async () => {
+  const queue = new EditorChangeQueue('doc', 1, 0, () => {});
+  queue.submit(change('a'), { anchor: 1, head: 1 });
+  const barrier = queue.whenSynced();
+  queue.submit(change('b'), { anchor: 1, head: 1 });
+  queue.acknowledge(ack(1, 1));
+  assert.equal(await Promise.race([barrier, Promise.resolve('waiting')]), 1);
+  assert.equal(queue.pendingCount(), 1);
+});
+
+test('cancelling a save barrier retains unconfirmed edits', async () => {
+  const queue = new EditorChangeQueue('doc', 1, 0, () => {});
+  queue.submit(change('a'), { anchor: 1, head: 1 });
+  const controller = new AbortController();
+  const barrier = queue.whenSynced(controller.signal);
+  controller.abort();
+  await assert.rejects(barrier, /cancelled/);
+  assert.equal(queue.pendingCount(), 1);
+});
+
 test('ignores stale and impossible acknowledgements and supports retransmission', () => {
   const sent = [];
   const queue = new EditorChangeQueue('doc', 1, 0, (message) => sent.push(message));
@@ -46,7 +66,7 @@ test('conflict rejects the save barrier and retains unconfirmed edits', async ()
   assert.throws(() => queue.submit(change('b'), { anchor: 1, head: 1 }), /conflict/);
 });
 
-test('buffers new edits after transport failure and retransmits them in order', () => {
+test('new input retries buffered edits in order after transport recovers', () => {
   const sent = [];
   let connected = false;
   const queue = new EditorChangeQueue('doc', 1, 0, (message) => {
@@ -56,7 +76,5 @@ test('buffers new edits after transport failure and retransmits them in order', 
   queue.submit(change('a'), { anchor: 1, head: 1 });
   connected = true;
   queue.submit(change('b'), { anchor: 1, head: 1 });
-  assert.deepEqual(sent, []);
-  queue.retransmit();
   assert.deepEqual(sent, [1, 2]);
 });

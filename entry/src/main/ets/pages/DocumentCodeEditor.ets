@@ -63,6 +63,7 @@ export struct DocumentCodeEditor {
   onChange: (expected: string, source: string, anchor: number, head: number) => boolean =
     (_expected: string, _source: string, _anchor: number, _head: number): boolean => false;
   onConflict: () => void = (): void => {};
+  onFind: () => void = (): void => {};
   onRecover: (expected: string, source: string, anchor: number, head: number) => boolean =
     (_expected: string, _source: string, _anchor: number, _head: number): boolean => false;
   onState: (anchor: number, head: number, canUndo: boolean, canRedo: boolean) => void =
@@ -115,7 +116,8 @@ export struct DocumentCodeEditor {
   }
 
   private send(message: string): void {
-    if (this.ports.length > 1) this.ports[1].postMessageEvent(message);
+    if (this.ports.length <= 1) throw new Error('editor port unavailable');
+    this.ports[1].postMessageEvent(message);
   }
 
   private updateTheme(): void {
@@ -131,13 +133,20 @@ export struct DocumentCodeEditor {
   }
 
   private connect(): void {
+    const previous = this.ports;
     try {
       this.ports = this.web.createWebMessagePorts();
-      this.ports[1].onMessageEvent((message: webview.WebMessage): void => {
+      const port = this.ports[1];
+      port.onMessageEvent((message: webview.WebMessage): void => {
+        if (this.ports.length <= 1 || this.ports[1] !== port) return;
         if (typeof message === 'string') this.receive(message);
       });
       this.web.postMessage('__marknote_editor_port__', [this.ports[0]], '*');
+      if (previous.length > 1) {
+        try { previous[1].close(); } catch { /* Port was already released. */ }
+      }
     } catch {
+      this.ports = previous;
       this.onConflict();
     }
   }
@@ -154,6 +163,7 @@ export struct DocumentCodeEditor {
       return;
     }
     if (message.sessionId !== this.sessionId || message.epoch !== this.activeEpoch) return;
+    if (message.type === 'find-request') { this.onFind(); return; }
     if (message.type === 'initialized') { this.ready = true; return; }
     if (message.type === 'recovered') { this.recovering = false; return; }
     if (message.type === 'editor-state') {
@@ -199,16 +209,32 @@ export struct DocumentCodeEditor {
     if ((message.type === 'flushed' || message.type === 'flush-failed') && message.requestId) {
       const resolve = this.waiting.get(message.requestId);
       this.waiting.delete(message.requestId);
-      if (resolve) resolve(message.type === 'flushed' && this.bridge !== null && message.revision === this.bridge.revision());
+      if (resolve) {
+        const valid = message.type === 'flushed' && this.bridge !== null && typeof message.revision === 'number' &&
+          Number.isSafeInteger(message.revision) && message.revision >= 0 && message.revision <= this.bridge.revision();
+        if (!valid) this.onConflict();
+        resolve(valid);
+      }
     }
   }
 
   private flush(suspend: boolean): Promise<boolean> {
-    if (!this.ready) return Promise.resolve(false);
+    if (!this.ready) {
+      this.connect();
+      this.onConflict();
+      return Promise.resolve(false);
+    }
     const requestId = `${++this.requestNumber}`;
     return new Promise<boolean>((resolve: (value: boolean) => void): void => {
       const timer = setTimeout((): void => {
         this.waiting.delete(requestId);
+        try {
+          this.send(JSON.stringify({ type: 'flush-cancel', sessionId: this.sessionId, epoch: this.activeEpoch,
+            requestId: requestId }));
+        } catch { /* Reconnection also cancels requests on the old port. */ }
+        this.ready = false;
+        this.connect();
+        this.onConflict();
         resolve(false);
       }, 5000);
       this.waiting.set(requestId, (value: boolean): void => { clearTimeout(timer); resolve(value); });
@@ -219,6 +245,9 @@ export struct DocumentCodeEditor {
         const pending = this.waiting.get(requestId);
         this.waiting.delete(requestId);
         if (pending) pending(false);
+        this.ready = false;
+        this.connect();
+        this.onConflict();
       }
     });
   }

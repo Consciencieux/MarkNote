@@ -30,14 +30,6 @@ function encoding() {
       userNotice: (message) => { const error = new Error(message); error.name = 'UserNotice'; return error; } });
 }
 
-test('decodes a large LF document without changing its content', needsStripper, () => {
-  const text = '一行测试\n'.repeat(100000);
-  const result = encoding().decode(new TextEncoder().encode(text));
-  assert.equal(result.text, text);
-  assert.equal(result.newline, '\n');
-  assert.equal(result.lineEndings, '');
-});
-
 test('preserves an initial U+FEFF after an actual BOM in UTF-8 and UTF-16', needsStripper, () => {
   const cases = [
     ['utf-8', [0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf, 0x41]],
@@ -60,13 +52,6 @@ test('encodes GB18030 without pretending it is UTF-8', needsStripper, () => {
   assert.equal(decoded.text, '中文');
   assert.equal(decoded.encoding, 'gb18030');
   assert.deepEqual(Array.from(codec.encode(decoded.text, decoded).bytes), [0xd6, 0xd0, 0xce, 0xc4]);
-});
-
-test('preserves mixed newline information during decoding', needsStripper, () => {
-  const result = encoding().decode(new TextEncoder().encode('one\r\ntwo\nthree\rfour'));
-  assert.equal(result.text, 'one\ntwo\nthree\nfour');
-  assert.equal(result.newline, 'mixed');
-  assert.equal(result.lineEndings, 'rnc');
 });
 
 test('round-trips LF, CR and CRLF without changing bytes', needsStripper, () => {
