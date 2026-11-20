@@ -5,7 +5,7 @@ import { systemShare } from '@kit.ShareKit';
 import { DocumentInfo } from '../model/Document';
 import { TextEncoding } from './TextEncoding';
 import { AppText } from '../i18n/AppText';
-import { userNotice } from './UserNotice';
+import { writeAll } from '../storage/FileBytes';
 
 /** Share a snapshot of the editor through the system panel, without modifying the original file. */
 export class DocumentShare {
@@ -16,20 +16,15 @@ export class DocumentShare {
     const filename = safeName.length === 0 || safeName === '.' || safeName === '..' ?
       AppText.text($r('app.string.file_share_fallback')) : safeName;
     const directory = `${context.cacheDir}/marknote-share/${Date.now()}-${DocumentShare.sequence++}`;
-    fileIo.mkdirSync(directory, true);
+    await fileIo.mkdir(directory, true);
     const path = `${directory}/${filename}`;
     // A UTF-8 snapshot also supports new, read-only and unsaved documents.
     const bytes = TextEncoding.encode(source, new DocumentInfo()).bytes;
-    const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
+    const file = await fileIo.open(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
     try {
-      let offset = 0;
-      while (offset < bytes.length) {
-        const written = fileIo.writeSync(file.fd, bytes.slice(offset).buffer);
-        if (written <= 0) throw userNotice(AppText.text($r('app.string.share_write_failed')));
-        offset += written;
-      }
+      await writeAll(file.fd, bytes, AppText.text($r('app.string.share_write_failed')));
     } finally {
-      fileIo.closeSync(file);
+      await fileIo.close(file);
     }
 
     let type: string = uniformTypeDescriptor.UniformDataType.FILE;

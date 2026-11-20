@@ -4,11 +4,13 @@ import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { fileManagerService } from '@kit.FileManagerServiceKit';
 import { DocumentInfo } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
-import { TextEncoding } from '../document/TextEncoding';
+import { TextEncoding, EncodedText } from '../document/TextEncoding';
 import { AppText } from '../i18n/AppText';
 import { userNotice } from '../document/UserNotice';
+import { writeAll } from './FileBytes';
 
 const MAX_BYTES: number = 8 * 1024 * 1024;
+const CHUNK_BYTES: number = 64 * 1024;
 const READ_WRITE: number = fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE;
 
 export class FileContents {
@@ -25,14 +27,14 @@ export class FileAccess {
 /** SHA-256 of empty input. Frames MD does not accept a zero-length update, so it is a constant. */
 const EMPTY_DIGEST: string = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
-function fingerprintOf(bytes: Uint8Array): string {
+async function fingerprintOf(bytes: Uint8Array): Promise<string> {
   // 空文件也必须有指纹：冲突检查用「指纹为空」表示缺少指纹，
-  // 而 MD 的 updateSync 对零长度数据会报 crypto operation error，所以直接返回空输入的摘要。
+  // 而 MD 的 update 对零长度数据会报 crypto operation error，所以直接返回空输入的摘要。
   if (bytes.length === 0) return EMPTY_DIGEST;
   const md = cryptoFramework.createMd('SHA256');
   const blob: cryptoFramework.DataBlob = { data: bytes };
-  md.updateSync(blob);
-  const digest = md.digestSync();
+  await md.update(blob);
+  const digest = await md.digest();
   const data = digest.data;
   let hex = '';
   for (let index = 0; index < data.length; index++) {
@@ -46,10 +48,10 @@ function policy(uri: string, mode: number): fileShare.PolicyInfo {
   return { uri: uri, operationMode: mode };
 }
 
-function canOpen(uri: string, mode: number): boolean {
+async function canOpen(uri: string, mode: number): Promise<boolean> {
   try {
-    const file = fileIo.openSync(uri, mode);
-    fileIo.closeSync(file);
+    const file = await fileIo.open(uri, mode);
+    await fileIo.close(file);
     return true;
   } catch {
     return false;
@@ -110,7 +112,8 @@ export class DocumentFiles {
   static async moveToTrash(info: DocumentInfo): Promise<void> {
     if (info.uri.length === 0) throw userNotice(AppText.text($r('app.string.not_saved_file')));
     if (!info.writable) throw userNotice(AppText.text($r('app.string.no_delete_permission')));
-    if (info.fingerprint.length === 0 || fingerprintOf(DocumentFiles.readBytes(info.uri)) !== info.fingerprint) {
+    if (info.fingerprint.length === 0 ||
+      await fingerprintOf(await DocumentFiles.readBytes(info.uri)) !== info.fingerprint) {
       throw userNotice(AppText.text($r('app.string.delete_conflict')));
     }
     // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/filemanagerservice-arkts-filemanagerservice
@@ -127,8 +130,8 @@ export class DocumentFiles {
     // Must run before canOpen. A restart leaves the persisted grant inactive.
     const persistedWrite = await persisted(uri, READ_WRITE);
     const persistedRead = persistedWrite || await persisted(uri, fileShare.OperationMode.READ_MODE);
-    const writable = writeRequested && canOpen(uri, fileIo.OpenMode.READ_WRITE);
-    const readable = writable || canOpen(uri, fileIo.OpenMode.READ_ONLY);
+    const writable = writeRequested && await canOpen(uri, fileIo.OpenMode.READ_WRITE);
+    const readable = writable || await canOpen(uri, fileIo.OpenMode.READ_ONLY);
     if (!readable) throw userNotice(AppText.text($r('app.string.auth_expired')));
     const mode = writable ? READ_WRITE : fileShare.OperationMode.READ_MODE;
     let persistent = writable ? persistedWrite : persistedRead;
@@ -167,37 +170,38 @@ export class DocumentFiles {
     return uris.length === 0 ? '' : uris[0];
   }
 
-  static readBytes(uri: string): Uint8Array {
-    const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+  static async readBytes(uri: string): Promise<Uint8Array> {
+    const file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
     try {
-      const size = Number(fileIo.statSync(file.fd).size);
+      const size = Number((await fileIo.stat(file.fd)).size);
       if (size > MAX_BYTES) throw userNotice(AppText.text($r('app.string.too_large')));
       const original = new Uint8Array(size);
       let readPosition = 0;
       while (readPosition < size) {
-        const chunk = new ArrayBuffer(Math.min(64 * 1024, size - readPosition));
-        const length = fileIo.readSync(file.fd, chunk);
-        if (length <= 0) throw userNotice(AppText.text($r('app.string.read_incomplete')));
-        original.set(new Uint8Array(chunk, 0, length), readPosition);
-        readPosition += length;
+        const length = Math.min(CHUNK_BYTES, size - readPosition);
+        const chunk = new ArrayBuffer(length);
+        const got = await fileIo.read(file.fd, chunk);
+        if (got <= 0) throw userNotice(AppText.text($r('app.string.read_incomplete')));
+        original.set(new Uint8Array(chunk, 0, got), readPosition);
+        readPosition += got;
       }
       return original;
     } finally {
-      fileIo.closeSync(file);
+      await fileIo.close(file);
     }
   }
 
-  static read(uri: string): FileContents {
+  static async read(uri: string): Promise<FileContents> {
     let name = '';
-    const named = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+    const named = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
     try {
       name = named.name;
     } catch {
       name = '';
     } finally {
-      fileIo.closeSync(named);
+      await fileIo.close(named);
     }
-    const original = DocumentFiles.readBytes(uri);
+    const original = await DocumentFiles.readBytes(uri);
     const decoded = TextEncoding.decode(original);
     const result = new FileContents();
     result.text = decoded.text;
@@ -208,26 +212,14 @@ export class DocumentFiles {
     result.info.lineEndings = decoded.lineEndings;
     result.info.hasBom = decoded.hasBom;
     result.info.encoding = decoded.encoding;
-    result.info.fingerprint = fingerprintOf(original);
+    result.info.fingerprint = await fingerprintOf(original);
     return result;
   }
 
-  /**
-   * Outside providers cannot guarantee atomic replacement. Compare the byte fingerprint
-   * taken at open or the last successful save, then verify the bytes written back.
-   */
-  static write(info: DocumentInfo, text: string, checkConflict: boolean): void {
+  /** Encode once and reject a save that cannot be stored, before any file is opened. */
+  static encodedForWrite(info: DocumentInfo, text: string): EncodedText {
     if (info.uri.length === 0) throw userNotice(AppText.text($r('app.string.no_writable_file')));
     if (!info.writable) throw userNotice(AppText.text($r('app.string.no_write_use_save_as')));
-    if (checkConflict) {
-      if (info.fingerprint.length === 0) {
-        throw userNotice(AppText.text($r('app.string.missing_fingerprint')));
-      }
-      const current = DocumentFiles.readBytes(info.uri);
-      if (fingerprintOf(current) !== info.fingerprint) {
-        throw userNotice(AppText.text($r('app.string.external_change')));
-      }
-    }
     if (info.newline === 'mixed') {
       const parts = text.split('\n');
       if (parts.length !== info.lineEndings.length + 1) {
@@ -235,34 +227,68 @@ export class DocumentFiles {
       }
     }
     const encoded = TextEncoding.encode(text, info);
-    if (encoded.bytes.length > MAX_BYTES) {
-      throw userNotice(AppText.text($r('app.string.save_too_large')));
-    }
-    info.newline = encoded.newline;
-    info.lineEndings = encoded.lineEndings;
-    const bytes = encoded.bytes;
-    const file = fileIo.openSync(info.uri, fileIo.OpenMode.READ_WRITE);
-    try {
-      let offset = 0;
-      while (offset < bytes.length) {
-        const remaining = bytes.slice(offset);
-        const written = fileIo.writeSync(file.fd, remaining.buffer);
-        if (written <= 0) throw userNotice(AppText.text($r('app.string.write_interrupted')));
-        offset += written;
+    if (encoded.bytes.length > MAX_BYTES) throw userNotice(AppText.text($r('app.string.save_too_large')));
+    return encoded;
+  }
+
+  /** Reject a save that cannot be encoded or would exceed the size limit, before any file is opened. */
+  static validateForWrite(info: DocumentInfo, text: string): void {
+    DocumentFiles.encodedForWrite(info, text);
+  }
+
+  /**
+   * Outside providers cannot guarantee atomic replacement. Compare the byte fingerprint
+   * taken at open or the last successful save, then verify the bytes written back.
+   */
+  static async write(info: DocumentInfo, text: string, checkConflict: boolean,
+    prepared: EncodedText | null = null, onWriteStart: (() => void) | null = null): Promise<FileContents> {
+    const encoded = prepared === null ? DocumentFiles.encodedForWrite(info, text) : prepared;
+    if (checkConflict) {
+      if (info.fingerprint.length === 0) {
+        throw userNotice(AppText.text($r('app.string.missing_fingerprint')));
       }
-      fileIo.truncateSync(file.fd, bytes.length);
-      fileIo.fsyncSync(file.fd);
+      const current = await DocumentFiles.readBytes(info.uri);
+      if (await fingerprintOf(current) !== info.fingerprint) {
+        throw userNotice(AppText.text($r('app.string.external_change')));
+      }
+    }
+    const bytes = encoded.bytes;
+    const expected = await fingerprintOf(bytes);
+    const file = await fileIo.open(info.uri, fileIo.OpenMode.READ_WRITE);
+    try {
+      if (onWriteStart !== null) onWriteStart();
+      await writeAll(file.fd, bytes, AppText.text($r('app.string.write_interrupted')));
+      await fileIo.truncate(file.fd, bytes.length);
+      await fileIo.fsync(file.fd);
     } finally {
-      fileIo.closeSync(file);
+      await fileIo.close(file);
     }
-    const verified = DocumentFiles.readBytes(info.uri);
-    if (fingerprintOf(verified) !== fingerprintOf(bytes)) {
-      throw userNotice(AppText.text($r('app.string.verify_failed')));
-    }
+    const verified = await DocumentFiles.readBytes(info.uri);
+    const actual = await fingerprintOf(verified);
+    if (actual !== expected) throw userNotice(AppText.text($r('app.string.verify_failed')));
     const decoded = TextEncoding.decode(verified);
     if (decoded.text !== text) throw userNotice(AppText.text($r('app.string.verify_failed')));
-    info.fingerprint = fingerprintOf(verified);
-    info.hasBom = decoded.hasBom;
-    info.encoding = decoded.encoding;
+    let name = '';
+    const named = await fileIo.open(info.uri, fileIo.OpenMode.READ_ONLY);
+    try {
+      name = named.name;
+    } catch {
+      name = '';
+    } finally {
+      await fileIo.close(named);
+    }
+    const result = new FileContents();
+    result.text = decoded.text;
+    result.info.uri = info.uri;
+    result.info.name = name.length > 0 ? name : info.name;
+    result.info.newline = encoded.newline;
+    result.info.lineEndings = encoded.lineEndings;
+    result.info.hasBom = decoded.hasBom;
+    result.info.encoding = decoded.encoding;
+    result.info.fingerprint = actual;
+    result.info.formatId = info.formatId;
+    result.info.writable = info.writable;
+    result.info.persistent = info.persistent;
+    return result;
   }
 }

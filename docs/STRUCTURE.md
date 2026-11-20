@@ -45,15 +45,15 @@ marknote/
 | 修改内容 | 主要位置 |
 | --- | --- |
 | 首页列表和新建菜单 | `pages/HomeView.ets`、`pages/Index.ets` |
-| 文稿编辑、查找和保存 | `pages/DocumentView.ets` |
-| 文稿预览和大纲界面 | `pages/DocumentPreviewView.ets`、`pages/DocumentOutlineView.ets` |
+| 文稿编辑、查找和保存 | `pages/DocumentView.ets`、`pages/DocumentFindBar.ets` |
+| 文稿预览和大纲界面 | `pages/DocumentPreviewView.ets`、`pages/PreviewDispatch.ts`、`pages/DocumentOutlineView.ets` |
 | 编辑工具栏 | `pages/FormatBarView.ets`、`document/FormatRegistry.ets`、`document/EditorActions.ts` |
 | 标题栏与滚动 | `pages/HdsMaterialStyles.ets`、`pages/PageScrollPolicy.ets`、`pages/DocumentScrollLayer.ets` |
 | 搜索框、分段按钮与编辑工具栏材质 | `pages/ImmersiveMaterials.ets` |
-| 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets`、`pages/LicenseText.ts` |
+| 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets`、`pages/SettingsReadingFrame.ets`、`pages/LicenseText.ts` |
 | 界面语言 | `i18n/AppText.ets`、`i18n/AppLanguage.ets`，以及 `entry/src/main/resources/` 下 `base`（简体中文）、`zh_Hant`、`bo`、`en_US`、`ja`、`ko`、`ru`、`ar`、`ug` 的 `element/string.json` |
 | 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
-| 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/LocalState.ets` |
+| 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/DraftCoordinator.ets`、`document/StartupRecovery.ts`、`document/DocumentAnalysis.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/FileBytes.ets`、`storage/LocalState.ets` |
 | Markdown 本地图片 | `document/LocalImages.ets`、`pages/DocumentPreviewView.ets`，以及仓库根目录下的 `renderer/src/renderers/markdown.ts` |
 | Markdown 网页链接 | `pages/DocumentPreviewView.ets`、`pages/DocumentView.ets`，以及仓库根目录下的 `renderer/src/renderers/external-link.ts`、`renderer/src/preview-link-message.ts` |
 | 文稿分享 | `document/DocumentShare.ets`、`pages/DocumentMenus.ets` |

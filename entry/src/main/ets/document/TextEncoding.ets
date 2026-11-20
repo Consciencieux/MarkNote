@@ -19,7 +19,8 @@ export class EncodedText {
 
 function decodeAs(encoding: string, bytes: Uint8Array): string | null {
   try {
-    const decoder = util.TextDecoder.create(encoding, { fatal: true, ignoreBOM: true });
+    // The file marker is removed explicitly below; preserve any U+FEFF in the payload.
+    const decoder = util.TextDecoder.create(encoding, { fatal: true, ignoreBOM: false });
     const value = decoder.decodeToString(bytes);
     return value === undefined ? null : value;
   } catch {
@@ -136,14 +137,6 @@ function bomPrefix(encoding: string): Uint8Array {
   return new Uint8Array(0);
 }
 
-function startsWithBytes(bytes: Uint8Array, prefix: Uint8Array): boolean {
-  if (prefix.length === 0 || bytes.length < prefix.length) return false;
-  for (let index = 0; index < prefix.length; index++) {
-    if (bytes[index] !== prefix[index]) return false;
-  }
-  return true;
-}
-
 export class TextEncoding {
   static decode(bytes: Uint8Array): DecodedText {
     if (bytes.length === 0) return new DecodedText();
@@ -187,7 +180,7 @@ export class TextEncoding {
     const applied = serialize(text, info.newline, info.lineEndings, encoding);
     if (info.hasBom) {
       const prefix = bomPrefix(encoding);
-      if (prefix.length > 0 && !startsWithBytes(applied.bytes, prefix)) {
+      if (prefix.length > 0) {
         const bytes = new Uint8Array(prefix.length + applied.bytes.length);
         bytes.set(prefix, 0);
         bytes.set(applied.bytes, prefix.length);

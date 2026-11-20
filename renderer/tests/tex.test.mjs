@@ -2,6 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderTexDocument } from '../src/renderers/tex.ts';
 
+test('outline-only returns headings without html', () => {
+  const source = '中文\n\\section{第一节}\n\\subsection*{附录}';
+  const outline = renderTexDocument(source, false);
+  const rendered = renderTexDocument(source, true);
+  assert.equal(outline.html, '');
+  assert.deepEqual(outline.headings, rendered.headings);
+  assert.equal(outline.headings[0].offset, source.indexOf('\\section'));
+  const bare = renderTexDocument(String.raw`\frac{a}{b}`, false);
+  assert.equal(bare.html, '');
+  assert.deepEqual(bare.headings, []);
+});
+
 test('renders text, inline code, math and listings and returns source locations', () => {
   const source = '\\title{Example}\n\\begin{document}\n\\maketitle\n\\section{First}\nText \\texttt{a\\_b} $x^2$.\n\\begin{lstlisting}[language=python]\nprint(1)\n\\end{lstlisting}\n\\end{document}';
   const result = renderTexDocument(source);

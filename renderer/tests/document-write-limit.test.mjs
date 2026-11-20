@@ -1,74 +1,58 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import * as nodeModule from 'node:module';
-import vm from 'node:vm';
+import { createDocumentFileHarness, loadDocumentFiles } from './helpers/document-files.mjs';
 
-// Exercise the real write path while replacing the device-only file APIs with an in-memory file.
-function createFile(initial) {
-  let bytes = new TextEncoder().encode(initial);
-  let cursor = 0;
-  const fileIo = {
-    OpenMode: { READ_ONLY: 0, READ_WRITE: 1 },
-    openSync: () => { cursor = 0; return { fd: 1 }; },
-    open: async () => ({ fd: 1 }), stat: async () => ({ mtime: 123456 }), close: async () => {},
-    closeSync: () => {}, statSync: () => ({ size: bytes.length }),
-    readSync: (_fd, buffer) => {
-      const length = Math.min(buffer.byteLength, bytes.length - cursor);
-      new Uint8Array(buffer).set(bytes.subarray(cursor, cursor + length));
-      cursor += length;
-      return length;
-    },
-    writeSync: (_fd, buffer) => {
-      const incoming = new Uint8Array(buffer);
-      const result = new Uint8Array(Math.max(bytes.length, cursor + incoming.length));
-      result.set(bytes); result.set(incoming, cursor); bytes = result; cursor += incoming.length;
-      return incoming.length;
-    },
-    truncateSync: (_fd, size) => { bytes = bytes.slice(0, size); }, fsyncSync: () => {}
-  };
-  const cryptoFramework = { createMd: () => {
-    const hash = createHash('sha256');
-    return { updateSync: ({ data }) => hash.update(data), digestSync: () => ({ data: hash.digest() }) };
-  } };
-  const TextEncoding = {
-    encode: text => ({ bytes: new TextEncoder().encode(text), newline: '\n', lineEndings: '' }),
-    decode: value => ({ text: new TextDecoder().decode(value), encoding: 'utf-8', hasBom: false })
-  };
-  const filename = new URL('../../entry/src/main/ets/storage/DocumentFiles.ets', import.meta.url);
-  const source = readFileSync(filename, 'utf8').replace(/^import .*;\s*$/gm, '').replace(/^export /gm, '');
-  const context = { fileIo, TextEncoding, cryptoFramework,
-    fileShare: { OperationMode: { READ_MODE: 1, WRITE_MODE: 2 },
-      checkPersistentPermission: async () => [false] }, Uint8Array, ArrayBuffer, Error,
-    $r: (name) => name,
-    userNotice: (message) => { const error = new Error(message); error.name = 'UserNotice'; return error; },
-    AppText: { text: (name) => name === 'app.string.save_too_large' || name === 'app.string.too_large' ?
-      'Documents cannot exceed 8 MiB' : String(name) } };
-  return { files: vm.runInNewContext(`${nodeModule.stripTypeScriptTypes(source)}\nDocumentFiles`, context),
-    content: () => Buffer.from(bytes).toString(), size: () => bytes.length };
+function filesFor(initial, options = {}) {
+  const harness = createDocumentFileHarness(initial, options);
+  return { harness, files: loadDocumentFiles(harness, options.extras) };
 }
 
-const needsStripper = { skip: typeof nodeModule.stripTypeScriptTypes !== 'function' };
-test('rejects oversized encoded content before altering an existing file', needsStripper, () => {
+function info(content, extra = {}) {
+  return {
+    uri: 'file://example.txt', writable: true, newline: '\n', lineEndings: '', encoding: 'utf-8',
+    hasBom: false, formatId: 'plain', name: 'example.txt', persistent: true,
+    fingerprint: createHash('sha256').update(content).digest('hex'), ...extra
+  };
+}
+
+test('rejects oversized encoded content before altering an existing file', async () => {
   const original = 'original';
-  const file = createFile(original);
-  const info = { uri: 'file://example.txt', writable: true, newline: '\n', lineEndings: '',
-    fingerprint: createHash('sha256').update(original).digest('hex') };
-  assert.throws(() => file.files.write(info, 'x'.repeat(8 * 1024 * 1024 + 1), true), /8 MiB/);
-  assert.equal(file.content(), original);
+  const { harness, files } = filesFor(original);
+  await assert.rejects(files.write(info(original), 'x'.repeat(8 * 1024 * 1024 + 1), true), /8 MiB/);
+  assert.equal(harness.content(), original);
+  assert.equal(harness.calls.includes('write'), false);
 });
 
-test('uses accessible file modification time even when no persistent grant exists', needsStripper, async () => {
-  const file = createFile('sample');
-  assert.equal(await file.files.recentModifiedAt('file://example.txt'), 123456);
+test('uses accessible file modification time even when no persistent grant exists', async () => {
+  const { files } = filesFor('sample');
+  assert.equal(await files.recentModifiedAt('file://example.txt'), 123456);
 });
 
-test('allows exactly 8 MiB and rejects larger UTF-8 output for save as', needsStripper, () => {
-  const file = createFile('original');
-  const info = { uri: 'file://copy.txt', writable: true, newline: '\n', lineEndings: '', fingerprint: '' };
-  file.files.write(info, 'x'.repeat(8 * 1024 * 1024), false);
-  assert.equal(file.size(), 8 * 1024 * 1024);
-  assert.throws(() => file.files.write(info, 'x'.repeat(8 * 1024 * 1024 - 1) + '中', false), /8 MiB/);
-  assert.equal(file.size(), 8 * 1024 * 1024);
+test('allows exactly 8 MiB and rejects larger UTF-8 output for save as', async () => {
+  const { harness, files } = filesFor('original');
+  await files.write(info('original', { fingerprint: '' }), 'x'.repeat(8 * 1024 * 1024), false);
+  assert.equal(harness.size(), 8 * 1024 * 1024);
+  await assert.rejects(files.write(info('original', { fingerprint: '' }), 'x'.repeat(8 * 1024 * 1024 - 1) + '中', false), /8 MiB/);
+  assert.equal(harness.size(), 8 * 1024 * 1024);
+});
+
+test('reads and writes short chunks until the file is complete', async () => {
+  const { files, harness } = filesFor('abcdef', { chunk: 2 });
+  const opened = await files.read('file://example.txt');
+  assert.equal(opened.text, 'abcdef');
+  await files.write(info('abcdef', { fingerprint: opened.info.fingerprint }), 'xyz', false);
+  assert.equal(harness.content(), 'xyz');
+});
+
+test('a zero-length write fails and still closes the file', async () => {
+  const { files, harness } = filesFor('original', { stallWrite: true });
+  await assert.rejects(files.write(info('original', { fingerprint: '' }), 'next', false), /write_interrupted/);
+  assert.equal(harness.calls.filter((name) => name === 'close').length > 0, true);
+});
+
+test('an empty file keeps the empty SHA-256 fingerprint', async () => {
+  const { files } = filesFor('');
+  const opened = await files.read('file://example.txt');
+  assert.equal(opened.info.fingerprint, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
 });

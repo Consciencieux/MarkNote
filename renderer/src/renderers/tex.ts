@@ -9,9 +9,37 @@ interface Node {
   type: string;
   value?: unknown;
   depth?: number;
+  enumerated?: boolean;
   enumerator?: string;
   children?: Node[];
   position?: { start?: { offset?: number } };
+}
+
+/** Match myst-to-html heading numbers when the preview HTML pass is skipped. */
+function numberHeadings(root: Node): void {
+  const headings: Node[] = [];
+  const depths = new Set<number>();
+  function collect(node: Node): void {
+    if (node.type === 'heading') {
+      headings.push(node);
+      if (node.enumerated !== false && typeof node.depth === 'number') depths.add(node.depth);
+    }
+    node.children?.forEach(collect);
+  }
+  collect(root);
+  let counts: Array<number | null> = [1, 2, 3, 4, 5, 6].map((depth) => depths.has(depth) ? 0 : null);
+  for (const heading of headings) {
+    if (heading.enumerator || heading.enumerated === false || typeof heading.depth !== 'number') continue;
+    const index = heading.depth - 1;
+    counts = counts.map((count, position) => {
+      if (count === null || position < index) return count;
+      if (position === index) return count + 1;
+      return 0;
+    });
+    const visible = counts.filter((count) => count !== null) as number[];
+    while (visible.length > 0 && visible[visible.length - 1] === 0) visible.pop();
+    heading.enumerator = visible.join('.');
+  }
 }
 
 function textOf(node: Node): string {
@@ -20,7 +48,7 @@ function textOf(node: Node): string {
 }
 
 /** Convert once; outline positions come from the same MyST tree used for the preview. */
-export function renderTexDocument(source: string): TexDocument {
+export function renderTexDocument(source: string, renderHtml: boolean = true): TexDocument {
   const file = new VFile();
   const parser = new TexParser(source, file);
   // Unmarked content is text. Keep the legacy math path only when the parser identifies
@@ -30,7 +58,7 @@ export function renderTexDocument(source: string): TexDocument {
     (node.type === 'macro' || node.type === 'environment') && node._renderInfo?.inMathMode === true;
   const bareFormula = raw.some(mathNode) && raw.every(node => node.type === 'string' || node.type === 'whitespace' ||
     node.type === 'parbreak' || mathNode(node));
-  if (bareFormula) return { html: renderTexMath(source), headings: [], diagnostics: [] };
+  if (bareFormula) return { html: renderHtml ? renderTexMath(source) : '', headings: [], diagnostics: [] };
   const headings: TexHeading[] = [];
   function visit(node: Node): void {
     if (node.type === 'heading') {
@@ -45,12 +73,13 @@ export function renderTexDocument(source: string): TexDocument {
   }
   const title = parser.data.maketitle && parser.data.frontmatter?.title;
   let titleHtml = '';
-  if (typeof title === 'string' || Array.isArray(title)) {
+  if (renderHtml && (typeof title === 'string' || Array.isArray(title))) {
     const titleNodes = typeof title === 'string' ? [{ type: 'text', value: title }] : title;
     const tree = { type: 'root', children: [{ type: 'heading', depth: 1, children: titleNodes }] };
     titleHtml = mystToHtml(tree as Parameters<typeof mystToHtml>[0]);
   }
-  const html = titleHtml + mystToHtml(parser.ast as Parameters<typeof mystToHtml>[0], {
+  if (!renderHtml) numberHeadings(parser.ast as Node);
+  const body = renderHtml ? mystToHtml(parser.ast as Parameters<typeof mystToHtml>[0], {
       hast: { handlers: {
         heading(state, heading) {
           const node = heading as typeof heading & { enumerator?: string; identifier?: string };
@@ -62,7 +91,7 @@ export function renderTexDocument(source: string): TexDocument {
           return state.applyData(heading, element);
         }
       } }
-    });
+    }) : '';
   visit(parser.ast as Node);
-  return { html, headings, diagnostics: file.messages.map(message => message.message) };
+  return { html: renderHtml ? titleHtml + body : '', headings, diagnostics: file.messages.map(message => message.message) };
 }

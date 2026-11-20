@@ -6,15 +6,20 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 `EntryAbility` 接收桌面启动和系统文件打开请求。文件请求经 `LaunchRequests` 交给页面；页面尚未就绪时，请求会暂存。冷启动先恢复异常退出留下的草稿，再按队列处理打开请求。草稿仍有未保存修改时，先按离开文稿的规则确认，再打开外部文件。
 
-`DocumentService` 管理当前文稿会话，并协调新建、打开、保存和草稿恢复；原生大纲提取只处理 Markdown。相关模块的职责如下：
+`StartupRecovery` 合并并协调启动恢复请求；读取失败时保留原文件并允许后续操作重试。确认副本内容损坏时，用户可选择将原文件移到应用私有数据中的独立位置，再继续新建或打开；隔离失败则继续保护原文件。删除原文件后若恢复副本清理失败，保留当前会话并将它与已删除的 URI 分离。
+
+`DocumentService` 管理当前文稿会话，并协调新建、打开、保存和草稿恢复。保存并校验目标后，先将确认后的目标及基线写入恢复副本，再清理副本；写入恢复副本失败时安排重试。重启时若另存目标仍未确认，则先核对目标内容；无法核对时不允许直接覆盖旧文件。换成另一篇文稿或新建前，先清掉当前会话的恢复文件。正文回到已保存内容时也会清掉恢复文件。`Index` 把打开请求排成一个队列：已打开文稿时先显示文稿页并确认离开，读完文件后若正文已变再确认一次，然后才采用新会话。原生大纲提取只处理 Markdown。相关模块的职责如下：
 
 | 模块 | 职责 |
 | --- | --- |
 | `FormatRegistry` | 定义文件扩展名、系统类型、默认文件名、大纲支持和编辑快捷操作。 |
-| `DocumentFiles` | 调用系统文件选择器，处理 URI 授权、文件读取、写入和外部修改检查。 |
-| `DocumentShare` | 将当前编辑内容写入临时分享文件，并调用系统分享面板。 |
+| `DocumentFiles` | 调用系统文件选择器，用异步文件接口处理 URI 授权、读取、写入、写后校验和外部修改检查。分块写完由 `FileBytes.writeAll` 完成；编码和 SHA-256 仍在调用线程计算。 |
+| `DocumentShare` | 将当前编辑内容异步写入临时分享文件，并调用系统分享面板。 |
+| `DraftCoordinator` | 串行安排同一份草稿的写入、强制检查点和清理。自动草稿同时只保留一笔在途和一笔最新快照；写入失败会短暂重试。之后若有新编辑、清理或换篇，这次失败的快照不再重试。停笔 450 ms 提交，最长等待 2 s 后提交调度；落盘完成时间取决于存储。 |
+| `StartupRecovery` | 在首次恢复成功前协调读取和重试，阻止新会话覆盖尚未处理的恢复副本。 |
+| `DocumentAnalysis` | 正文变化立即进入会话。Markdown 大纲和查找计数按需合并，过期的会话或修订不采用。 |
 | `TextEncoding` | 在文件字节和编辑器文本之间转换，记录并恢复编码、BOM 与换行方式。 |
-| `LocalState` | 保存最近文稿、草稿、外观和语言偏好。 |
+| `LocalState` | 保存最近文稿、外观和语言偏好，并异步读写 `unsaved-draft.json`。 |
 | `TextSearch` | 处理字面文本查找；撤销和重做由 CodeMirror 管理。 |
 | `EditorActions` | 纯文本快捷编辑操作，处理行前缀、选区包裹和代码围栏。 |
 
@@ -26,17 +31,17 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 `HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，预览和大纲各自保留滚动控制器；编辑与分栏复用一个编辑器及其滚动控制器。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
 
-`DocumentView` 持有文稿编辑和保存状态，并协调页签；`DocumentPreviewView` 管理各自的 Web 控制器和预览更新，`DocumentOutlineView` 管理大纲展示与展开状态。
+`DocumentView` 持有文稿编辑、查找和保存界面状态，并按页签是否可见决定预览工作方式；查找栏 `DocumentFindBar` 只绘制查询和替换控件。保存和删除后的文稿数据由 `DocumentService` 更新。`DocumentPreviewView` 管理各自的 Web 控制器，`PreviewDispatch` 保证每个实例最多一笔在途发送和一笔最新请求。`DocumentOutlineView` 管理大纲展示与展开状态。
 
 首页和文稿页的标题栏菜单使用系统菜单组件；`DocumentMenus` 和 `DocumentBridge` 负责跨页面的菜单动作与离开确认。
 
 ## 离线预览
 
-`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号，以及当前界面语言的预览提示。应用按原生滚动容器的可视范围向网页查询附近的 Markdown 图片地址，再用文稿 URI 取得所在目录 URI，尝试逐张读取相对路径。读到的图片以 data URL 传回页面，离开阅读区域后释放；打不开的图片保持占位。网页不注册文件或导航接口，也不加载网络图片。Markdown 的 mermaid 代码围栏在页面清理之后画成 SVG，布局使用 Dagre，不加载外部图标。用户 SVG 和 Mermaid 的清理结果以 SVG 图片上下文显示，隔离样式与片段 ID；KaTeX 自身的布局 SVG 不走这一转换。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过已有的 `WebMessagePort` 回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲。Markdown 预览中的 http、https 链接不带可导航的 `href`；用户点击后，网页经同一端口发送 `open-link`，ArkTS 再校验协议、主机、凭据、长度以及当前文稿和修订，然后调用 `openLink` 交给系统打开。预览页面不导航、不加载这些地址。预览资源和网络限制见[功能目录](FEATURES.md)。
+`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号、工作模式，以及当前界面语言的预览提示。工作模式为关闭时不发送；LaTeX 大纲模式只解析并回传标题，不生成页面。分栏只让可见的那一个预览实例排版。应用按原生滚动容器的可视范围向网页查询附近的 Markdown 图片地址，再用文稿 URI 取得所在目录 URI，尝试逐张读取相对路径。读到的图片以 data URL 传回页面，离开阅读区域后释放；打不开的图片保持占位。网页不注册文件或导航接口，也不加载网络图片。Markdown 的 mermaid 代码围栏在页面清理之后画成 SVG，布局使用 Dagre，不加载外部图标。用户 SVG 和 Mermaid 的清理结果以 SVG 图片上下文显示，隔离样式与片段 ID；KaTeX 自身的布局 SVG 不走这一转换。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过已有的 `WebMessagePort` 回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲。Markdown 预览中的 http、https 链接不带可导航的 `href`；用户点击后，网页经同一端口发送 `open-link`，ArkTS 再校验协议、主机、凭据、长度以及当前文稿和修订，然后调用 `openLink` 交给系统打开。预览页面不导航、不加载这些地址。预览资源和网络限制见[功能目录](FEATURES.md)。
 
 Markdown 代码围栏先显示转义后的原文，再由离线打包的 Worker 顺序运行 highlight.js；更新文稿会终止旧 Worker。着色结果仅允许 `span` 和 `class`，经 DOMPurify 清理后写回对应代码节点。Worker 不可用或解析失败时保留原文。预览和编辑器共用 `shared/code-languages.ts` 的语言别名以及 `shared/syntax-colors.ts` 的前景色，具体语言引擎各自配置。
 
-`editor/` 将 CodeMirror 6 和语言支持打包为独立离线编辑器。`DocumentCodeEditor` 通过受控消息端口连接 `DocumentView`，不向网页暴露文件、导航或通用 ArkTS 接口。普通编辑和宽屏分栏复用同一实例，CodeMirror 管理正文、选区和撤销历史；文件操作仍由 `DocumentService` 负责。桥接层通过会话 ID、代次、操作序号和 UTF-16 偏移传递增量，并在确认后推进修订。保存屏障等待输入法组合结束及变更确认；切换或离开前暂停编辑，取消切换后恢复。冲突时保留编辑器本地正文，校验原生会话未被其他操作修改后，用完整快照和新代次恢复。
+`editor/` 将 CodeMirror 6 和语言支持打包为独立离线编辑器。`DocumentCodeEditor` 通过受控消息端口连接 `DocumentView`，不向网页暴露文件、导航或通用 ArkTS 接口。普通编辑和宽屏分栏复用同一实例，CodeMirror 管理正文、选区和撤销历史；文件操作仍由 `DocumentService` 负责。桥接层通过会话 ID、代次、操作序号和 UTF-16 偏移传递增量，先校验当前会话和原正文、写入文稿服务，再确认并推进桥接修订。桥接修订独立于文稿服务用于分析的修订；正文更新经 `DocumentService.edit` 推进后者。保存屏障等待输入法组合结束及变更确认；切换或离开前暂停编辑，取消切换后恢复。冲突时保留编辑器本地正文，校验原生会话未被其他操作修改后，用完整快照和新代次恢复。
 
 ## 文件关联
 

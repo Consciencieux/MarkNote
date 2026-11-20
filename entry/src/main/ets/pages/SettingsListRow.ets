@@ -73,6 +73,20 @@ export struct SettingsListRow {
   }
 }
 
+/** 设置里可点击的导航行。带右侧状态或单选标记的行仍由页面直接组合。 */
+@Component
+export struct SettingsActionRow {
+  @Prop title: ResourceStr = '';
+  onSelect: () => void = (): void => {};
+
+  build() {
+    ListItem({ style: ListItemStyle.CARD }) {
+      SettingsListRow({ title: this.title, showArrow: true })
+    }
+    .onClick(() => this.onSelect())
+  }
+}
+
 /**
  * The official ListSingleSelection example uses a 1px system divider with 12vp insets.
  * https://gitcode.com/HarmonyOS_Samples/HarmonyOSComponentUXExamples/blob/dev/products/phone/src/main/ets/components/select/checkbox/components/ListSingleSelection.ets

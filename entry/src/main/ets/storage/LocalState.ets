@@ -5,7 +5,7 @@ import { preferences } from '@kit.ArkData';
 import { RecentDocument, RecoveryData } from '../model/Document';
 import { RecentEntry, removeRecentDocument, toggleFavoriteDocument, updateRecentDocument } from '../document/RecentOrder';
 import { AppText } from '../i18n/AppText';
-import { userNotice } from '../document/UserNotice';
+import { writeAll } from './FileBytes';
 import { normalizeAppLanguage } from '../i18n/AppLanguage';
 
 const RECENT_KEY: string = 'recent_files';
@@ -19,6 +19,10 @@ const LANGUAGE_KEY: string = 'app_language';
 const SORT_KEY: string = 'recent_sort';
 const DRAFT: string = '/unsaved-draft.json';
 const TEMP: string = '/unsaved-draft.tmp';
+
+interface CodedError {
+  code?: number;
+}
 
 export class LocalState {
   static readCodeThemeSync(context: common.UIAbilityContext): string {
@@ -136,12 +140,20 @@ export class LocalState {
     return updated as RecentDocument[];
   }
 
-  static readDraft(context: common.UIAbilityContext): RecoveryData | null {
+  static async readDraft(context: common.UIAbilityContext): Promise<RecoveryData | null> {
+    let text: string;
     try {
-      const text = fileIo.readTextSync(context.filesDir + DRAFT);
-      const parsed = JSON.parse(text) as RecoveryData;
-      if (typeof parsed.text !== 'string' || typeof parsed.savedText !== 'string' ||
-          typeof parsed.name !== 'string' || typeof parsed.uri !== 'string') return null;
+      text = await fileIo.readText(context.filesDir + DRAFT);
+    } catch (error) {
+      const coded = error as CodedError;
+      if (coded && coded.code === 13900002) return null;
+      throw error instanceof Error ? error : new Error('draft read failed');
+    }
+    let parsed: RecoveryData;
+    try {
+      parsed = JSON.parse(text) as RecoveryData;
+      if (!parsed || typeof parsed.text !== 'string' || typeof parsed.savedText !== 'string' ||
+          typeof parsed.name !== 'string' || typeof parsed.uri !== 'string') throw new Error('invalid draft');
       if (typeof parsed.encoding !== 'string' || parsed.encoding.length === 0) parsed.encoding = 'utf-8';
       if (typeof parsed.lineEndings !== 'string') parsed.lineEndings = '';
       if (parsed.newline !== '\n' && parsed.newline !== '\r' && parsed.newline !== '\r\n' &&
@@ -153,34 +165,55 @@ export class LocalState {
       parsed.hasBom = parsed.hasBom === true;
       parsed.writable = parsed.writable === true;
       parsed.persistent = parsed.persistent === true;
-      if (parsed.text === parsed.savedText) return null;
+      parsed.writeUncertain = parsed.writeUncertain === true;
+      if (typeof parsed.pendingWriteText !== 'string') parsed.pendingWriteText = '';
+      if (typeof parsed.pendingWriteUri !== 'string') parsed.pendingWriteUri = '';
+      if (parsed.text === parsed.savedText && !parsed.writeUncertain) return null;
       return parsed;
     } catch {
-      return null;
+      const error = new Error('invalid draft');
+      error.name = 'InvalidDraftError';
+      throw error;
     }
   }
 
-  static writeDraft(context: common.UIAbilityContext, draft: RecoveryData): void {
+  static isInvalidDraft(error: Object): boolean {
+    return error instanceof Error && error.name === 'InvalidDraftError';
+  }
+
+  /** Keep the unreadable bytes in a separate file before allowing a new recovery slot. */
+  static async quarantineDraft(context: common.UIAbilityContext): Promise<string> {
+    let index = 0;
+    let destination = context.filesDir + '/unsaved-draft-corrupt-' + index + '.json';
+    while (await fileIo.access(destination)) {
+      index++;
+      destination = context.filesDir + '/unsaved-draft-corrupt-' + index + '.json';
+    }
+    await fileIo.rename(context.filesDir + DRAFT, destination);
+    return destination;
+  }
+
+  static async writeDraft(context: common.UIAbilityContext, draft: RecoveryData): Promise<void> {
     const temporary = context.filesDir + TEMP;
     const target = context.filesDir + DRAFT;
-    const file = fileIo.openSync(temporary, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
+    const file = await fileIo.open(temporary, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
     try {
-      fileIo.truncateSync(file.fd, 0);
+      await fileIo.truncate(file.fd, 0);
       const data = new util.TextEncoder().encodeInto(JSON.stringify(draft));
-      let offset = 0;
-      while (offset < data.length) {
-        const written = fileIo.writeSync(file.fd, data.slice(offset).buffer);
-        if (written <= 0) throw userNotice(AppText.text($r('app.string.draft_interrupted')));
-        offset += written;
-      }
-      fileIo.fsyncSync(file.fd);
+      await writeAll(file.fd, data, AppText.text($r('app.string.draft_interrupted')));
+      await fileIo.fsync(file.fd);
     } finally {
-      fileIo.closeSync(file);
+      await fileIo.close(file);
     }
-    fileIo.renameSync(temporary, target);
+    await fileIo.rename(temporary, target);
   }
 
-  static clearDraft(context: common.UIAbilityContext): void {
-    try { fileIo.unlinkSync(context.filesDir + DRAFT); } catch { /* No draft yet. */ }
+  static async clearDraft(context: common.UIAbilityContext): Promise<void> {
+    try {
+      await fileIo.unlink(context.filesDir + DRAFT);
+    } catch (error) {
+      const coded = error as CodedError;
+      if (coded.code !== 13900002) throw error instanceof Error ? error : new Error('draft clear failed');
+    }
   }
 }

@@ -77,6 +77,9 @@ struct HomeMenuView {
           .onClick(() => menuBridge.openSettings())
       }
     }
+    // HarmonyOS 菜单设计指南规定泛手机菜单宽度为 224vp。
+    // https://developer.huawei.com/consumer/cn/doc/design-guides/menu-0000001957001877/
+    .width(224)
     .subMenuExpandingMode(SubMenuExpandingMode.EMBEDDED_EXPAND)
   }
 }

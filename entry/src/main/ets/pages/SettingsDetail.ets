@@ -1,8 +1,8 @@
 import { common } from '@kit.AbilityKit';
-import { LengthMetrics } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import { PageScrollPolicy } from './PageScrollPolicy';
-import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
+import { SettingsActionRow, SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
+import { SettingsReadingFrame } from './SettingsReadingFrame';
 import { CODE_THEME_VALUES, LANGUAGE_VALUES, THEME_VALUES, codeThemeLabel, languageLabel, themeLabel } from './SettingsView';
 import { LocalState } from '../storage/LocalState';
 import { cachedLicenseText, loadLicenseText, splitLicenseText } from './LicenseText';
@@ -169,68 +169,39 @@ export struct SettingsDetail {
     }
   }
 
-  @Builder
-  private LinkRow(title: ResourceStr, action: () => void) {
-    ListItem({ style: ListItemStyle.CARD }) {
-      SettingsListRow({ title: title, showArrow: true })
-    }
-    .onClick(action)
-  }
-
   /**
    * 每一段许可证单独占一个 ListItem，避免整篇原文挂在同一项里。
-   * 栅格按华为《响应式布局》示例：12 列下按断点居中占 12/10/8 列，基础边距 24vp。
-   * https://developer.huawei.com/consumer/cn/doc/doccenter-multi-device/bpta-multi-device-responsive-layout
+   * 版心与帮助、隐私相同，见 SettingsReadingFrame。
    */
   @Builder
   private LicenseBlock(body: ResourceStr) {
     ListItem() {
-      GridRow({ columns: 12, breakpoints: { reference: BreakpointsReference.ComponentSize } }) {
-        GridCol({
-          span: { xs: 12, sm: 12, md: 10, lg: 8 },
-          offset: { xs: 0, sm: 0, md: 1, lg: 2 }
-        }) {
-          Text(body)
-            .attributeModifier(bodyText)
-            .copyOption(CopyOptions.LocalDevice)
-            .width('100%')
-        }
+      SettingsReadingFrame() {
+        Text(body)
+          .attributeModifier(bodyText)
+          .copyOption(CopyOptions.LocalDevice)
+          .width('100%')
       }
-      .width('100%')
-      .padding({
-        start: LengthMetrics.vp(24),
-        end: LengthMetrics.vp(24)
-      })
     }
   }
 
   @Builder
   private FramedColumn() {
-    GridRow({ columns: 12, breakpoints: { reference: BreakpointsReference.ComponentSize } }) {
-      GridCol({
-        span: { xs: 12, sm: 12, md: 10, lg: 8 },
-        offset: { xs: 0, sm: 0, md: 1, lg: 2 }
-      }) {
-        Column() {
-          if (this.section === 'help') {
-            this.HelpSection($r('app.string.help_open_title'), $r('app.string.help_open_body'))
-            this.HelpSection($r('app.string.help_edit_title'), $r('app.string.help_edit_body'))
-            this.HelpSection($r('app.string.help_format_title'), $r('app.string.help_format_body'))
-            this.HelpSection($r('app.string.help_draft_title'), $r('app.string.help_draft_body'))
-            this.HelpSection($r('app.string.help_feedback_title'), $r('app.string.help_feedback_body'))
-          } else {
-            this.Paragraph($r('app.string.privacy_body'))
-          }
+    SettingsReadingFrame() {
+      Column() {
+        if (this.section === 'help') {
+          this.HelpSection($r('app.string.help_open_title'), $r('app.string.help_open_body'))
+          this.HelpSection($r('app.string.help_edit_title'), $r('app.string.help_edit_body'))
+          this.HelpSection($r('app.string.help_format_title'), $r('app.string.help_format_body'))
+          this.HelpSection($r('app.string.help_draft_title'), $r('app.string.help_draft_body'))
+          this.HelpSection($r('app.string.help_feedback_title'), $r('app.string.help_feedback_body'))
+        } else {
+          this.Paragraph($r('app.string.privacy_body'))
         }
-        .alignItems(HorizontalAlign.Start)
-        .width('100%')
       }
+      .alignItems(HorizontalAlign.Start)
+      .width('100%')
     }
-    .width('100%')
-    .padding({
-      start: LengthMetrics.vp(24),
-      end: LengthMetrics.vp(24)
-    })
   }
 
   /** 长正文不放进设置行。字号和颜色走共用的正文样式。 */
@@ -281,16 +252,28 @@ export struct SettingsDetail {
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'license-list') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-          this.LinkRow($r('app.string.settings_project_license'), () => this.onOpen('project-license'))
-          this.LinkRow($r('app.string.settings_third_party'), () => this.onOpen('licenses'))
+          SettingsActionRow({
+            title: $r('app.string.settings_project_license'),
+            onSelect: (): void => this.onOpen('project-license')
+          })
+          SettingsActionRow({
+            title: $r('app.string.settings_third_party'),
+            onSelect: (): void => this.onOpen('licenses')
+          })
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'about') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           this.InfoRow($r('app.string.about_name'), $r('app.string.EntryAbility_label'))
           this.InfoRow($r('app.string.about_version'),
             this.version.length > 0 ? this.version : $r('app.string.about_version_unavailable'))
-          this.LinkRow($r('app.string.about_github'), () => this.onOpenProject())
-          this.LinkRow($r('app.string.settings_licenses'), () => this.onOpen('license-list'))
+          SettingsActionRow({
+            title: $r('app.string.about_github'),
+            onSelect: (): void => this.onOpenProject()
+          })
+          SettingsActionRow({
+            title: $r('app.string.settings_licenses'),
+            onSelect: (): void => this.onOpen('license-list')
+          })
         }.attributeModifier(this.groupStyle)
       } else if (this.isLicenseSection()) {
         if (this.licenseLoading) {

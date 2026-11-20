@@ -62,6 +62,17 @@ export class RecoveryData {
   formatId: string = '';
   writable: boolean = false;
   persistent: boolean = false;
+  /** A provider write began but has not been verified. */
+  writeUncertain: boolean = false;
+  pendingWriteText: string = '';
+  pendingWriteUri: string = '';
+}
+
+/** Process-only handle for one recovery write. The disk record stays RecoveryData. */
+export class DraftSnapshot {
+  sessionId: number = 0;
+  revision: number = 0;
+  data: RecoveryData = new RecoveryData();
 }
 
 export class Heading {

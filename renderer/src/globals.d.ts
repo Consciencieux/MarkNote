@@ -6,6 +6,8 @@ export interface PreviewUpdate {
   codeTheme?: 'off' | 'github' | 'atom' | 'vs';
   revision?: number;
   documentId?: number;
+  /** outline asks LaTeX for headings only. Absent or render keeps the full preview. */
+  mode?: 'outline' | 'render';
   /** Localized preview copy. Absent fields keep the base Chinese text. */
   text?: {
     lang?: string;

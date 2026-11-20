@@ -3,15 +3,17 @@ import { url } from '@kit.ArkTS';
 import { FrameCallback, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
-  HdsNavigationIconOptions, HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
+  HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
   TitleBarContentOptions, HdsNavigationTitleBarOptions, HdsTabs, hdsMaterial
 } from '@kit.UIDesignKit';
-import { DocumentInfo, Heading, RecoveryData } from '../model/Document';
+import { DocumentInfo, Heading } from '../model/Document';
 import { DocumentService, DocumentSession } from '../document/DocumentService';
 import { DocumentShare } from '../document/DocumentShare';
 import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
+import { AnalysisRequest, AnalysisResult, DocumentAnalysis } from '../document/DocumentAnalysis';
 import { FormatBarView } from './FormatBarView';
+import { DocumentFindBar } from './DocumentFindBar';
 import { DocumentOutlineView } from './DocumentOutlineView';
 import { DocumentPreviewView } from './DocumentPreviewView';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
@@ -22,11 +24,7 @@ import { documentBridge } from './DocumentBridge';
 import { AppText } from '../i18n/AppText';
 import { isRightToLeftLanguage, resourceLanguage } from '../i18n/AppLanguage';
 import { shownDetail } from '../document/UserNotice';
-import { scrollingTitleBar } from './HdsMaterialStyles';
-import { searchFieldMaterial } from './ImmersiveMaterials';
-import { toolbarIcon } from './TextRoles';
-import { LocalState } from '../storage/LocalState';
-import { DocumentFiles } from '../storage/DocumentFiles';
+import { scrollingTitleBar, navigationMenuIcon } from './HdsMaterialStyles';
 
 /**
  * Tab positions on the document page. Preview comes first so a document opens in reading
@@ -89,8 +87,16 @@ export struct DocumentView {
   @State private formatId: string = '';
   @State private headings: Heading[] = [];
   @State private parseRevision: number = 0;
+  @State private documentSessionId: number = 0;
+  @State private headingRevision: number = -1;
+  @State private pageVisible: boolean = false;
+  @State private previewShown: boolean = true;
+  @State private outlineShown: boolean = false;
+  @State private splitShown: boolean = false;
   @State private saving: boolean = false;
   @State private deleting: boolean = false;
+  private leaveConfirming: boolean = false;
+  private closing: boolean = false;
   @State private searchVisible: boolean = false;
   @State private query: string = '';
   @State private replacement: string = '';
@@ -98,7 +104,6 @@ export struct DocumentView {
   @State private matchCount: number = 0;
   @State private matchOrdinal: number = 0;
   @State private findBarHeight: number = 112;
-  @State private searchControlsWidth: number = 80;
   /** Drives the enabled state of the title bar undo and redo icons. */
   @State private undoAvailable: boolean = false;
   @State private redoAvailable: boolean = false;
@@ -110,9 +115,10 @@ export struct DocumentView {
   private headingJump: number = 0;
   private selectionStart: number = 0;
   private selectionEnd: number = 0;
-  private recoveryTimer: number = -1;
-  private recoveryDeadline: number = -1;
   private sessionOwner: DocumentSession | null = null;
+  private analysis: DocumentAnalysis = new DocumentAnalysis((result: AnalysisResult): void => {
+    this.applyAnalysis(result);
+  });
   /**
    * 底部导航避让高度为 0 时，页签栏与 HdsTabs 底边留出一段应用自己的距离。
    * 这段用 sys.float.margin_left，不是华为规定的底边距；有导航避让区时不再加。
@@ -124,8 +130,6 @@ export struct DocumentView {
     if (data.type !== window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) return;
     this.navigationInsetAbsent = data.area.bottomRect.height === 0;
   };
-  // 官方沉浸光感指南将 THIN 列为搜索框适用样式；不支持时保留系统输入框样式。
-  private searchMaterial = searchFieldMaterial();
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     // 文稿页自己的菜单项：另存为和查找只对当前文稿有意义。
@@ -150,7 +154,7 @@ export struct DocumentView {
         this.selectedTab = TAB_EDIT;
         this.currentMatch = -1;
         this.matchOrdinal = 0;
-        this.matchCount = TextSearch.count(this.source, this.query);
+        void this.flushAnalysis();
       });
     };
     menuBridge.closeDocument = (): void => menuBridge.dismiss((): void => this.requestLeave());
@@ -162,6 +166,12 @@ export struct DocumentView {
     this.watchNavigationIndicator();
     // 这里只标记文稿数据载入完毕；实际可见由 HdsNavDestination.onShown 标记。
     documentBridge.markAttached();
+    DocumentService.bindRecoveryError((sessionId: number, _error: Error): void => {
+      const owner = this.sessionOwner;
+      if (owner !== null && owner.id === sessionId && owner === DocumentService.current()) {
+        this.toast($r('app.string.draft_write_failed'));
+      }
+    });
   }
 
   /**
@@ -193,15 +203,20 @@ export struct DocumentView {
 
   /** 窄屏收起分栏时回到预览，和之前媒体查询监听里的行为一致。 */
   private onWideChange(): void {
-    if (!this.wide && this.selectedTab === this.splitTab()) this.selectedTab = TAB_PREVIEW;
+    if (!this.wide && this.selectedTab === this.splitTab()) {
+      this.selectedTab = TAB_PREVIEW;
+      this.splitShown = false;
+      this.previewShown = true;
+    }
   }
 
   /** 载入当前会话。首次进入和首页换篇（revision 变）都走这里。 */
   private loadSession(): void {
-    this.cancelRecoveryTimers();
+    this.analysis.cancel();
     this.headingJump++;
     this.pendingHeadingOffset = -1;
     this.syncFromService();
+    DocumentService.activateSession(DocumentService.current());
     // The history belongs to one document. Keeping it across a switch would let undo write
     // the previous document's text into this one.
     this.undoAvailable = false;
@@ -212,18 +227,20 @@ export struct DocumentView {
     this.selectionStart = 0;
     this.selectionEnd = 0;
     this.selectedTab = TAB_PREVIEW;
+    this.previewShown = true;
+    this.outlineShown = false;
+    this.splitShown = false;
     // 新文档从预览开始，编辑区不应带着上一篇的光标或编辑态。
     this.stopEditing();
     this.searchVisible = false;
-    // 干净文稿会顺手清掉残留草稿；崩溃恢复来的文稿仍是脏的，继续留在磁盘上。
-    this.flushRecovery();
     this.editorSessionKey++;
   }
 
   aboutToDisappear(): void {
     this.stopNavigationIndicator();
-    this.flushRecovery();
-    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
+    this.analysis.cancel();
+    DocumentService.unbindRecoveryError();
+    void DocumentService.flushRecovery();
     menuBridge.saveAs = (): void => {};
     menuBridge.share = (): void => {};
     menuBridge.toggleFavorite = (): void => {};
@@ -237,10 +254,12 @@ export struct DocumentView {
     documentBridge.requestLeave = (): void => {};
   }
 
-  /** 先处理未保存的改动，再关闭会话并请首页弹栈；取消时留在原处。 */
+  /** 先处理未保存的改动，再关闭会话并请首页弹栈；取消或草稿清不掉时留在原处。 */
   private requestLeave(): void {
-    void this.closeToLibrary().then((left: boolean) => {
+    void this.closeToLibrary().then((left: boolean): void => {
       if (left) this.onLeave();
+    }).catch((): void => {
+      this.toast($r('app.string.draft_write_failed'));
     });
   }
 
@@ -302,42 +321,29 @@ export struct DocumentView {
     return AppText.format(resource, first, second);
   }
 
-  private menuIcon(label: ResourceStr, symbol: Resource, id: string, action: () => void,
-    enabled: boolean = true): HdsNavigationMenuItemOptions {
-    const content: HdsNavigationIconOptions = {
-      label: label,
-      icon: symbol,
-      isEnabled: enabled,
-      action: action,
-      componentId: id
-    };
-    const item: HdsNavigationMenuItemOptions = { content: content };
-    return item;
-  }
-
   private documentTitle(): HdsNavigationTitleBarOptions {
     // 读取 language，语言切换后重新构建标题栏里的查找栏。查找栏的计数是取好的字符串。
     if (this.language.length === 0) {
       return scrollingTitleBar({ title: { mainTitle: this.title } });
     }
     const heading: HdsNavigationTitle = { mainTitle: this.title };
-    const more = this.menuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
+    const more = navigationMenuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-doc-more',
       (): void => this.openDocumentMenu());
     const actions: HdsNavigationMenuItemOptions[] = this.inEditTab() ? [
-      this.menuIcon($r('app.string.menu_undo'), $r('sys.symbol.undo'), 'marknote-undo',
+      navigationMenuIcon($r('app.string.menu_undo'), $r('sys.symbol.undo'), 'marknote-undo',
         (): void => this.undo(), this.undoAvailable),
-      this.menuIcon($r('app.string.menu_redo'), $r('sys.symbol.redo'), 'marknote-redo',
+      navigationMenuIcon($r('app.string.menu_redo'), $r('sys.symbol.redo'), 'marknote-redo',
         (): void => this.redo(), this.redoAvailable),
       more,
-      this.menuIcon($r('app.string.menu_save'), $r('sys.symbol.checkmark'), 'marknote-save',
+      navigationMenuIcon($r('app.string.menu_save'), $r('sys.symbol.checkmark'), 'marknote-save',
         (): void => { void this.saveFile(false); })
     ] : [
-      this.menuIcon($r('app.string.menu_share'), $r('sys.symbol.share'), 'marknote-share',
+      navigationMenuIcon($r('app.string.menu_share'), $r('sys.symbol.share'), 'marknote-share',
         (): void => { void this.shareDocument(); }),
-      this.menuIcon(this.favorite ? $r('app.string.menu_unfavorite') : $r('app.string.menu_favorite'),
+      navigationMenuIcon(this.favorite ? $r('app.string.menu_unfavorite') : $r('app.string.menu_favorite'),
         this.favorite ? $r('sys.symbol.star_fill') : $r('sys.symbol.star'), 'marknote-favorite',
         (): void => this.toggleFavorite()),
-      this.menuIcon($r('app.string.menu_delete'), $r('sys.symbol.trash'), 'marknote-delete',
+      navigationMenuIcon($r('app.string.menu_delete'), $r('sys.symbol.trash'), 'marknote-delete',
         (): void => this.confirmDelete(), this.info.uri.length > 0 && !this.deleting),
       more
     ];
@@ -361,7 +367,7 @@ export struct DocumentView {
     if (this.searchVisible && this.selectedTab === TAB_EDIT) {
       // 搜索栏固定在导航标题下方，由 HDS 管理布局和组件安全区。
       // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
-      content.bottomBuilder = { builder: (): void => this.FindBar(), height: this.findBarHeight };
+      content.bottomBuilder = { builder: (): void => this.TopFindBar(), height: this.findBarHeight };
     } else if (this.formatBarWanted()) {
       // 官方导航自定义区域：标题栏负责底部区域布局和安全区。
       // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-customized-area
@@ -388,7 +394,8 @@ export struct DocumentView {
     const confirmedSource = this.source;
     this.getUIContext().showAlertDialog({
       title: this.uiText($r('app.string.delete_title')),
-      message: this.uiText(this.isDirty() ? $r('app.string.delete_dirty') : $r('app.string.delete_clean')),
+      message: this.uiText(this.isDirty() || DocumentService.current().writeUncertain ?
+        $r('app.string.delete_dirty') : $r('app.string.delete_clean')),
       buttons: [
         { value: this.uiText($r('app.string.dialog_cancel')), action: (): void => {} },
         { value: this.uiText($r('app.string.menu_delete')), action: (): void => { void this.deleteDocument(uri, confirmedSource); } }
@@ -399,38 +406,33 @@ export struct DocumentView {
   private async deleteDocument(uri: string, confirmedSource: string): Promise<void> {
     const session = DocumentService.current();
     if (this.deleting || this.saving || !session.editing || session.info.uri !== uri) return;
-    if (!await this.editor.flush() || DocumentService.current() !== session || !session.editing) return;
+    if (!await this.editor.flush(true) || DocumentService.current() !== session || !session.editing) {
+      this.editor.command({ action: 'resume' });
+      return;
+    }
     if (this.source !== confirmedSource) {
+      this.editor.command({ action: 'resume' });
       this.confirmDelete();
       return;
     }
-    const sourceBefore = this.source;
     this.deleting = true;
     try {
-      await DocumentFiles.moveToTrash(session.info);
+      const result = await DocumentService.moveToTrash();
+      if (!result.deleted || DocumentService.current() !== session) return;
       this.onDeleted(uri);
-      if (DocumentService.current() === session && session.editing && session.info.uri === uri) {
-        if (!await this.editor.flush() || this.source !== sourceBefore) {
-          // An edit arriving while the file manager was working becomes an unsaved document.
-          session.info.uri = '';
-          session.info.writable = false;
-          session.info.persistent = false;
-          session.info.fingerprint = '';
-          session.savedText = ''; // A new unsaved document has an empty saved baseline.
-          this.savedText = session.savedText;
-          this.scheduleRecovery();
-          this.toast($r('app.string.delete_trashed_dirty'));
-        } else {
-          this.clearRecovery();
-          DocumentService.close();
-          this.onLeave();
-          this.toast($r('app.string.delete_trashed'));
-        }
+      if (result.retainedEdits) {
+        this.syncFromService();
+        this.toast(result.recoveryCleanupFailed ? $r('app.string.draft_clear_failed') :
+          $r('app.string.delete_trashed_dirty'));
+      } else {
+        this.onLeave();
+        this.toast($r('app.string.delete_trashed'));
       }
     } catch (error) {
       this.toast(this.uiFormat($r('app.string.delete_failed'), shownDetail(error)));
     } finally {
       this.deleting = false;
+      this.editor.command({ action: 'resume' });
     }
   }
 
@@ -457,15 +459,26 @@ export struct DocumentView {
    * 草稿副本只用于崩溃兜底，不再作为「未保存」的常驻入口。
    */
   private async saveBeforeLeaving(): Promise<boolean> {
-    if (this.deleting || this.saving) return false;
-    if (DocumentService.current().editing && !await this.editor.flush(true)) {
-      this.editor.command({ action: 'resume' });
-      return false;
+    if (this.deleting || this.saving || this.leaveConfirming) return false;
+    const owner = DocumentService.current();
+    if (!owner.editing || this.sessionOwner !== owner) return false;
+    this.leaveConfirming = true;
+    let accepted = false;
+    try {
+      if (!await this.editor.flush(true) || DocumentService.current() !== owner ||
+        this.sessionOwner !== owner || !owner.editing) return false;
+      const revision = owner.revision;
+      if (!this.isDirty() && !owner.writeUncertain) accepted = true;
+      else accepted = await this.askSaveOrDiscard(owner);
+      accepted = accepted && DocumentService.current() === owner && this.sessionOwner === owner &&
+        owner.editing && owner.revision === revision;
+      return accepted;
+    } finally {
+      this.leaveConfirming = false;
+      if ((!accepted || DocumentService.current() !== owner || !owner.editing) && this.sessionOwner === owner) {
+        this.editor.command({ action: 'resume' });
+      }
     }
-    if (!DocumentService.current().editing || !this.isDirty()) return true;
-    const accepted = await this.askSaveOrDiscard();
-    if (!accepted) this.editor.command({ action: 'resume' });
-    return accepted;
   }
 
   /**
@@ -476,7 +489,7 @@ export struct DocumentView {
    * 没有取消按钮。onWillDismiss 拦截侧滑、返回键和点击遮罩，关闭后留在文稿。
    * 侧滑和返回键的 reason 是 PRESS_BACK（ts-methods-alert-dialog-box，DismissReason）。
    */
-  private askSaveOrDiscard(): Promise<boolean> {
+  private askSaveOrDiscard(owner: DocumentSession): Promise<boolean> {
     const saveLabel = this.uiText(this.info.uri.length > 0 && !this.info.writable ?
       $r('app.string.menu_save_as') : $r('app.string.menu_save'));
     return new Promise<boolean>((resolve: (leave: boolean) => void) => {
@@ -484,11 +497,12 @@ export struct DocumentView {
       const finish = (leave: boolean): void => {
         if (settled) return;
         settled = true;
-        resolve(leave);
+        resolve(leave && DocumentService.current() === owner && this.sessionOwner === owner && owner.editing);
       };
       this.getUIContext().showAlertDialog({
-        message: this.uiText(this.info.uri.length > 0 && !this.info.writable ?
-          $r('app.string.save_prompt_readonly') : $r('app.string.save_prompt')),
+        message: this.uiText(DocumentService.current().writeUncertain ? $r('app.string.save_prompt_uncertain') :
+          (this.info.uri.length > 0 && !this.info.writable ?
+            $r('app.string.save_prompt_readonly') : $r('app.string.save_prompt'))),
         autoCancel: true,
         buttonDirection: DialogButtonDirection.HORIZONTAL,
         buttons: [
@@ -502,6 +516,10 @@ export struct DocumentView {
             style: DialogButtonStyle.DEFAULT,
             primary: true,
             action: (): void => {
+              if (DocumentService.current() !== owner || this.sessionOwner !== owner || !owner.editing) {
+                finish(false);
+                return;
+              }
               this.saveFile(this.info.uri.length > 0 && !this.info.writable)
                 .then((saved: boolean) => finish(saved))
                 .catch(() => finish(false));
@@ -524,25 +542,29 @@ export struct DocumentView {
     const wasSplit = this.wide && this.selectedTab === this.splitTab();
     const wasOutline = this.currentFormat().outline && this.selectedTab === TAB_OUTLINE;
     const session = DocumentService.current();
+    const sameText = this.sessionOwner === session && this.source === session.source;
     this.sessionOwner = session;
     this.info = session.info;
     this.title = session.info.name;
     this.formatId = session.info.formatId;
     this.source = session.source;
     this.savedText = session.savedText;
+    this.parseRevision = session.revision;
+    this.documentSessionId = session.id;
+    if (!sameText) {
+      this.headings = [];
+      this.headingRevision = -1;
+    }
     if (wasSplit) this.selectedTab = this.splitTab();
     else if (wasOutline && !this.currentFormat().outline) this.selectedTab = TAB_PREVIEW;
-    this.updateHeadings();
   }
 
-  /** Refresh native Markdown headings and invalidate older LaTeX parse results. */
-  private updateHeadings(): void {
-    this.parseRevision++;
-    this.headings = DocumentService.nativeHeadingsFor(this.info, this.source);
-  }
-
-  private acceptTexOutline(revision: number, headings: Heading[]): void {
-    if (this.formatId === 'tex-math' && revision === this.parseRevision) this.headings = headings;
+  private acceptTexOutline(documentId: number, revision: number, headings: Heading[]): void {
+    const session = DocumentService.current();
+    if (this.formatId === 'tex-math' && documentId === session.id && revision === session.revision) {
+      this.headings = headings;
+      this.headingRevision = revision;
+    }
   }
 
   private async saveFile(asNewFile: boolean): Promise<boolean> {
@@ -563,14 +585,10 @@ export struct DocumentView {
       const plainSaved = result.message === this.uiText($r('app.string.saved'));
       this.toast(this.info.persistent ? result.message :
         plainSaved ? recentLimit : `${result.message}\n${recentLimit}`);
-      if (!this.isDirty()) this.clearRecovery();
-      else this.scheduleRecovery();
-      // 最近文稿列表在首页，保存成功只通知过去。
       if (this.info.persistent) this.onSaved(this.info.uri, this.title);
       return !result.stillDirty;
     } catch (error) {
       if (DocumentService.current() !== owner || !owner.editing) return false;
-      this.scheduleRecovery();
       if (!asNewFile && this.info.uri.length > 0) {
         this.offerSaveCopy(this.uiFormat($r('app.string.save_failed_copy'), shownDetail(error)));
       } else {
@@ -593,79 +611,115 @@ export struct DocumentView {
     });
   }
 
-  private cancelRecoveryTimers(): void {
-    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
-    if (this.recoveryDeadline >= 0) clearTimeout(this.recoveryDeadline);
-    this.recoveryTimer = -1;
-    this.recoveryDeadline = -1;
-  }
-
-  private clearRecovery(): void {
-    this.cancelRecoveryTimers();
-    if (this.context && this.sessionOwner === DocumentService.current()) LocalState.clearDraft(this.context);
-  }
-
-  private scheduleRecovery(): void {
-    if (this.sessionOwner !== DocumentService.current()) return;
-    if (this.recoveryTimer >= 0) clearTimeout(this.recoveryTimer);
-    this.recoveryTimer = setTimeout(() => this.flushRecovery(), 450);
-    if (this.recoveryDeadline < 0) {
-      this.recoveryDeadline = setTimeout(() => this.flushRecovery(), 2000);
-    }
-  }
-
-  private flushRecovery(): void {
-    this.cancelRecoveryTimers();
-    const session = DocumentService.current();
-    if (!this.context || session !== this.sessionOwner || !session.editing) return;
-    if (session.source === session.savedText) {
-      this.clearRecovery();
-      return;
-    }
-    const draft = new RecoveryData();
-    draft.name = session.info.name;
-    draft.uri = session.info.uri;
-    draft.text = session.source;
-    draft.savedText = session.savedText;
-    draft.newline = session.info.newline;
-    draft.lineEndings = session.info.lineEndings;
-    draft.encoding = session.info.encoding;
-    draft.hasBom = session.info.hasBom;
-    draft.fingerprint = session.info.fingerprint;
-    draft.formatId = session.info.formatId;
-    draft.writable = session.info.writable;
-    draft.persistent = session.info.persistent;
-    try {
-      LocalState.writeDraft(this.context, draft);
-    } catch {
-      this.toast($r('app.string.draft_write_failed'));
-    }
-  }
-
   /**
-   * 离开文稿：先按规则处理未保存的改动，再清掉草稿副本。
-   * 返回 false 表示用户取消了离开，调用方不应弹栈。
+   * 确认离开，再清理草稿。清理失败就留在文稿并提示。
+   * 清理期间正文又变了，只再确认一次；之后仍清不掉或又有新编辑，就停止关闭。
    */
   private async closeToLibrary(): Promise<boolean> {
-    if (!await this.saveBeforeLeaving()) return false;
-    this.clearRecovery();
-    // close() 同时把会话的编辑态置为 false，页面不再维护第二份。
-    DocumentService.close();
-    return true;
+    if (this.closing) return false;
+    const owner = DocumentService.current();
+    this.closing = true;
+    let confirmAgain = true;
+    let closed = false;
+    try {
+      if (!await this.saveBeforeLeaving() || DocumentService.current() !== owner || !owner.editing) return false;
+      while (DocumentService.current() === owner && owner.editing) {
+        const source = owner.source;
+        let cleared = false;
+        try {
+          cleared = await DocumentService.clearRecovery(owner, 'discarded');
+        } catch (_error) {
+          this.toast($r('app.string.draft_write_failed'));
+          return false;
+        }
+        if (DocumentService.current() !== owner || !owner.editing) return false;
+        const interrupted = !cleared || owner.source !== source;
+        if (!interrupted) {
+          DocumentService.close();
+          closed = true;
+          return true;
+        }
+        if (!confirmAgain) {
+          this.toast($r('app.string.draft_write_failed'));
+          return false;
+        }
+        confirmAgain = false;
+        if (!await this.saveBeforeLeaving()) return false;
+      }
+      return false;
+    } finally {
+      this.closing = false;
+      if (!closed && DocumentService.current() === owner) this.editor.command({ action: 'resume' });
+    }
   }
 
-  /** Accept only changes from the current document session. */
-  private updateSource(text: string, anchor: number, head: number): void {
-    if (this.sessionOwner !== DocumentService.current() || !DocumentService.current().editing) return;
-    DocumentService.edit(text);
+  private analysisRequest(): AnalysisRequest {
+    const session = DocumentService.current();
+    const request = new AnalysisRequest();
+    request.sessionId = session.id;
+    request.revision = session.revision;
+    request.source = this.source;
+    request.formatId = this.formatId;
+    request.query = this.searchVisible ? this.query : '';
+    request.needOutline = this.formatId === 'markdown' && this.outlineTabVisible();
+    request.needCount = this.searchVisible && this.query.length > 0;
+    return request;
+  }
+
+  private submitAnalysis(): void {
+    this.analysis.schedule(this.analysisRequest());
+  }
+
+  private async flushAnalysis(): Promise<void> {
+    const request = this.analysisRequest();
+    if (this.outlineTabVisible() && this.formatId === 'markdown') request.needOutline = true;
+    if (this.searchVisible) request.needCount = this.query.length > 0;
+    this.applyAnalysis(await this.analysis.flush(request));
+  }
+
+  private applyAnalysis(result: AnalysisResult): void {
+    const session = DocumentService.current();
+    const query = this.searchVisible ? this.query : '';
+    if (result.sessionId !== session.id || result.revision !== session.revision || result.query !== query) return;
+    if (result.headings !== null) {
+      this.headings = result.headings;
+      this.headingRevision = result.revision;
+    }
+    if (result.matchCount !== null) this.matchCount = result.matchCount;
+    else if (!this.searchVisible || this.query.length === 0) this.matchCount = 0;
+  }
+
+  private outlineTabVisible(): boolean {
+    return this.currentFormat().outline && this.selectedTab === TAB_OUTLINE;
+  }
+
+  private mainWorkMode(): string {
+    if (!this.pageVisible || this.splitWorkMode() === 'render') return 'off';
+    if (this.selectedTab === TAB_PREVIEW && this.previewShown) return 'render';
+    if (this.outlineTabVisible() && this.outlineShown && this.formatId === 'tex-math') return 'outline';
+    return 'off';
+  }
+
+  private splitWorkMode(): string {
+    if (this.pageVisible && this.wide && this.selectedTab === this.splitTab() && this.splitShown) return 'render';
+    return 'off';
+  }
+
+  /** Apply the editor's confirmed text to the active document service. */
+  private updateSource(expected: string, text: string, anchor: number, head: number): boolean {
+    if (this.sessionOwner !== DocumentService.current() || !DocumentService.current().editing ||
+      DocumentService.current().source !== expected) return false;
+    const changed = DocumentService.edit(text);
     this.source = text;
     this.selectionStart = anchor;
     this.selectionEnd = head;
     this.currentMatch = -1;
     this.matchOrdinal = 0;
-    this.matchCount = this.searchVisible ? TextSearch.count(text, this.query) : 0;
-    this.updateHeadings();
-    this.scheduleRecovery();
+    if (changed) {
+      this.parseRevision = DocumentService.current().revision;
+      this.submitAnalysis();
+    }
+    return true;
   }
 
   private undo(): void { this.editor.command({ action: 'undo' }); }
@@ -683,8 +737,11 @@ export struct DocumentView {
     }
     this.currentMatch = hit.start;
     this.matchOrdinal = TextSearch.count(this.source, this.query, hit.start) + 1;
+    const query = this.query;
+    const revision = this.revision;
     this.getUIContext().postFrameCallback(new AfterFrame((): void => {
-      if (this.currentMatch === hit.start && this.selectedTab === TAB_EDIT) {
+      if (this.searchVisible && this.query === query && this.revision === revision &&
+        this.currentMatch === hit.start && this.selectedTab === TAB_EDIT) {
         this.editor.command({ action: 'select', anchor: hit.start, head: hit.start + hit.length });
       }
     }));
@@ -707,6 +764,8 @@ export struct DocumentView {
   }
 
   private focusHeading(heading: Heading): void {
+    if (this.headingRevision !== DocumentService.current().revision) return;
+    if (heading.offset < 0 || heading.offset > this.source.length) return;
     this.pendingHeadingOffset = heading.offset;
     this.selectedTab = TAB_EDIT;
   }
@@ -715,105 +774,31 @@ export struct DocumentView {
     if (this.pendingHeadingOffset < 0) return;
     const offset = this.pendingHeadingOffset;
     this.pendingHeadingOffset = -1;
+    if (this.headingRevision !== DocumentService.current().revision || offset > this.source.length) return;
     this.editor.command({ action: 'select', anchor: offset, head: offset });
   }
 
-  /** 搜索框与结果导航共享系统材质；替换操作的右边缘与搜索区域对齐。 */
   @Builder
-  private FindBar() {
-    Column() {
-      Row() {
-        Stack({ alignContent: Alignment.End }) {
-          Search({ value: this.query, placeholder: $r('app.string.find_placeholder') })
-            .onSubmit(() => this.findNext())
-            .onChange((value: string) => {
-              this.query = value;
-              this.currentMatch = -1;
-              this.matchOrdinal = 0;
-              this.matchCount = TextSearch.count(this.source, value);
-            })
-            .width('100%')
-            // 清除按钮由 Search 提供；仅有文字时为它预留位置。
-            .cancelButton({ style: this.query.length > 0 ? CancelButtonStyle.CONSTANT : CancelButtonStyle.INVISIBLE })
-            .padding({ end: LengthMetrics.vp(this.query.length > 0 ? this.searchControlsWidth + 40 : 0) })
-            .systemMaterial(this.searchMaterial)
-          if (this.query.length > 0) {
-            Row() {
-              Text(this.matchOrdinal > 0 ? `${this.matchOrdinal}/${this.matchCount}` :
-                this.uiFormat($r('app.string.match_total'), String(this.matchCount)))
-                .fontColor($r('sys.color.font_secondary'))
-                .accessibilityText(this.matchOrdinal > 0 ?
-                  this.uiFormat($r('app.string.match_position'), String(this.matchOrdinal), String(this.matchCount)) :
-                  this.uiFormat($r('app.string.match_total'), String(this.matchCount)))
-              Button() {
-                SymbolGlyph($r('sys.symbol.chevron_up'))
-                  .attributeModifier(toolbarIcon)
-              }
-              .buttonStyle(ButtonStyleMode.TEXTUAL)
-              .width(40)
-              .height(40)
-              .accessibilityText($r('app.string.find_previous'))
-              .enabled(this.matchCount > 0)
-              .onClick(() => this.findNext(false))
-              Button() {
-                SymbolGlyph($r('sys.symbol.chevron_down'))
-                  .attributeModifier(toolbarIcon)
-              }
-              .buttonStyle(ButtonStyleMode.TEXTUAL)
-              .width(40)
-              .height(40)
-              .accessibilityText($r('app.string.find_next'))
-              .enabled(this.matchCount > 0)
-              .onClick(() => this.findNext())
-            }
-            .margin({ end: LengthMetrics.vp(40) })
-            .onAreaChange((_oldArea: Area, newArea: Area) => {
-              const width = parseFloat(String(newArea.width)) || 0;
-              if (width > 0 && width !== this.searchControlsWidth) this.searchControlsWidth = width;
-            })
-          }
-        }
-        .layoutWeight(1)
-        .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
-        Button() {
-          SymbolGlyph($r('sys.symbol.xmark'))
-            .attributeModifier(toolbarIcon)
-        }
-        .buttonStyle(ButtonStyleMode.TEXTUAL)
-        // 华为通用应用 UX 体验标准：交互热区不得小于 40vp × 40vp。
-        .width(40)
-        .height(40)
-        .accessibilityText($r('app.string.find_close'))
-        .onClick(() => this.searchVisible = false)
+  private TopFindBar() {
+    DocumentFindBar({
+      query: this.query,
+      replacement: this.replacement,
+      matchCount: this.matchCount,
+      matchOrdinal: this.matchOrdinal,
+      onQueryChange: (value: string): void => {
+        this.query = value;
+        this.currentMatch = -1;
+        this.matchOrdinal = 0;
+        this.submitAnalysis();
+      },
+      onReplacementChange: (value: string): void => { this.replacement = value; },
+      onNext: (): void => this.findNext(),
+      onPrevious: (): void => this.findNext(false),
+      onReplace: (): void => this.replaceMatch(),
+      onClose: (): void => { this.searchVisible = false; },
+      onHeightChange: (height: number): void => {
+        if (height > 0 && height !== this.findBarHeight) this.findBarHeight = height;
       }
-      .width('100%')
-      Row() {
-        Row() {
-          TextInput({ text: this.replacement, placeholder: $r('app.string.replace_placeholder') })
-            .onChange((value: string) => { this.replacement = value; })
-            .layoutWeight(1)
-            .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
-            .systemMaterial(this.searchMaterial)
-          Button($r('app.string.replace_action'))
-            .onClick(() => this.replaceMatch())
-        }
-        .layoutWeight(1)
-        .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
-        Blank().width(40)
-      }
-      .width('100%')
-      .margin({ top: $r('sys.float.padding_level4') })
-    }
-    .padding({
-      start: LengthMetrics.resource($r('sys.float.margin_left')),
-      end: LengthMetrics.resource($r('sys.float.margin_right')),
-      top: LengthMetrics.resource($r('sys.float.padding_level4')),
-      bottom: LengthMetrics.resource($r('sys.float.padding_level4'))
-    })
-    .width('100%')
-    .onAreaChange((_oldArea: Area, newArea: Area) => {
-      const height = parseFloat(String(newArea.height)) || 0;
-      if (height > 0 && height !== this.findBarHeight) this.findBarHeight = height;
     })
   }
 
@@ -852,7 +837,9 @@ export struct DocumentView {
         DocumentPreviewView({
           scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
           kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
-          onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings),
+          documentId: this.documentSessionId, workMode: this.splitWorkMode(),
+          onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
+            this.acceptTexOutline(documentId, revision, headings),
           onOpenExternalLink: (link: string): void => this.openExternalLink(link)
         })
       }
@@ -887,10 +874,14 @@ export struct DocumentView {
           DocumentPreviewView({
             scroller: this.previewScroller, theme: this.theme, source: this.source,
             kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
-            onOutline: (revision: number, headings: Heading[]): void => this.acceptTexOutline(revision, headings),
+            documentId: this.documentSessionId, workMode: this.mainWorkMode(),
+            onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
+              this.acceptTexOutline(documentId, revision, headings),
             onOpenExternalLink: (link: string): void => this.openExternalLink(link)
           })
         }
+          .onWillShow((): void => { this.previewShown = true; })
+          .onWillHide((): void => { this.previewShown = false; })
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.eye'), $r('app.string.tab_preview')))
         TabContent() { Column() { Blank() } }
@@ -905,11 +896,18 @@ export struct DocumentView {
               onSelect: (heading: Heading): void => this.focusHeading(heading)
             })
           }
+            .onWillShow((): void => {
+              this.outlineShown = true;
+              void this.flushAnalysis();
+            })
+            .onWillHide((): void => { this.outlineShown = false; })
             .attributeModifier(this.tabContentPolicy)
             .tabBar(this.bottomTab($r('sys.symbol.list_bullet'), $r('app.string.tab_outline')))
         }
         if (this.wide) {
           TabContent() { this.SplitPage() }
+            .onWillShow((): void => { this.splitShown = true; })
+            .onWillHide((): void => { this.splitShown = false; })
             .attributeModifier(this.tabContentPolicy)
             .tabBar(this.bottomTab($r('sys.symbol.rectangle_split_2x1'), $r('app.string.tab_split')))
         }
@@ -920,6 +918,7 @@ export struct DocumentView {
         // 离开编辑页签就退出编辑态：键盘跟着收起，焦点不再挂在隐藏的 TextArea 上，
         // 回来时也不会把光标和键盘一起带回来。
         if (index !== TAB_EDIT && index !== this.splitTab()) this.stopEditing();
+        if (this.outlineTabVisible()) void this.flushAnalysis();
           })
       .barMode(BarMode.Fixed)
       // 按华为《沉浸光感》(ui-design-hds-component-material) 推荐值启用系统自适应材质。
@@ -949,14 +948,11 @@ export struct DocumentView {
               textDirection: this.language === 'default' ? 'auto' :
                 (isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr'),
               controller: this.editor,
-              onChange: (source: string, anchor: number, head: number): void => {
-                if (key === this.editorSessionKey) this.updateSource(source, anchor, head);
+              onChange: (expected: string, source: string, anchor: number, head: number): boolean => {
+                return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head);
               },
               onRecover: (expected: string, source: string, anchor: number, head: number): boolean => {
-                if (key !== this.editorSessionKey || this.sessionOwner !== DocumentService.current() ||
-                  DocumentService.current().source !== expected) return false;
-                this.updateSource(source, anchor, head);
-                return true;
+                return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head);
               },
               onState: (anchor: number, head: number, canUndo: boolean, canRedo: boolean): void => {
                 if (key !== this.editorSessionKey) return;
@@ -1002,8 +998,14 @@ export struct DocumentView {
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable(this.activeScrollers())
     .backgroundColor($r('sys.color.ohos_id_color_background'))
-    .onShown((): void => documentBridge.markShown())
-    .onHidden((): void => documentBridge.markHidden())
+    .onShown((): void => {
+      this.pageVisible = true;
+      documentBridge.markShown();
+    })
+    .onHidden((): void => {
+      this.pageVisible = false;
+      documentBridge.markHidden();
+    })
     // Keep the same destination layout contract as SettingsPage. HDS ignoreLayoutSafeArea
     // expands layout into the system avoid areas; it is not a paint-only transparency switch.
     // Scroll content extends through clipContent(SAFE_AREA) + PageTabsPolicy + PageTabContentPolicy.
