@@ -1,5 +1,7 @@
 import { HdsTabsAttribute } from '@kit.UIDesignKit';
 
+export const pageContentTop = $r('sys.float.padding_level8');
+
 /**
  * Shared by native Scroll and List; controllers remain local to each page/tab.
  * SAFE_AREA lets scrolling content paint through the initial spacing and into the HDS titlebar.
@@ -7,20 +9,24 @@ import { HdsTabsAttribute } from '@kit.UIDesignKit';
  * ts-container-scrollable-common (clipContent / edgeEffect / autoAdjustScrollBarMargin),
  * faqs-arkui-271 (cross-file AttributeModifier reuse).
  */
-class PageScrollPolicy implements AttributeModifier<ScrollAttribute | ListAttribute> {
+export class PageScrollPolicy implements AttributeModifier<ScrollAttribute | ListAttribute> {
   private readonly hasSectionHeader: boolean;
+  private readonly bottomInset: number;
 
-  constructor(hasSectionHeader: boolean = false) {
+  constructor(hasSectionHeader: boolean = false, bottomInset: number = 0) {
+    this.bottomInset = bottomInset;
     this.hasSectionHeader = hasSectionHeader;
   }
 
   applyNormalAttribute(instance: ScrollAttribute | ListAttribute): void {
     instance
       // MarkNote uses the settings list's initial spacing. SubHeader supplies its own.
-      .safeAreaPadding({ top: this.hasSectionHeader ? $r('sys.float.padding_level0') : $r('sys.float.padding_level8') })
+      .safeAreaPadding({
+        top: this.hasSectionHeader ? $r('sys.float.padding_level0') : pageContentTop,
+        bottom: this.bottomInset
+      })
       .clipContent(ContentClipMode.SAFE_AREA)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .scrollBar(BarState.Auto)
       // API 26: keep the indicator out of padding and component safe areas without measuring them.
       .autoAdjustScrollBarMargin(true);
   }

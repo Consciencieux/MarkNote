@@ -1,6 +1,6 @@
 import { common, OpenLinkOptions } from '@kit.AbilityKit';
 import { url } from '@kit.ArkTS';
-import { FrameCallback, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
+import { FrameCallback, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -16,7 +16,7 @@ import { FormatBarView } from './FormatBarView';
 import { DocumentFindBar } from './DocumentFindBar';
 import { DocumentOutlineView } from './DocumentOutlineView';
 import { DocumentPreviewView } from './DocumentPreviewView';
-import { DocumentScrollLayer } from './DocumentScrollLayer';
+import { DocumentScrollLayer, documentTabClearance } from './DocumentScrollLayer';
 import { DocumentCodeEditor, DocumentCodeEditorController } from './DocumentCodeEditor';
 import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { menuBridge } from './DocumentMenus';
@@ -61,6 +61,10 @@ export struct DocumentView {
   @StorageLink('marknote_language') language: string = 'default';
   @StorageLink('marknote_code_theme') codeTheme: string = 'github';
   @State private wide: boolean = false;
+  @State private workspaceTop: number = 0;
+  @State private editorTop: number = 0;
+  @State private editorParentOffset: number = 0;
+  @State private splitEditorWidth: number = 0;
   @Prop canExpand: boolean = false;
   @Prop expanded: boolean = false;
   @Prop favorite: boolean = false;
@@ -851,6 +855,9 @@ export struct DocumentView {
       Column() { Blank() }
         .layoutWeight(1)
         .height('100%')
+        .onAreaChange((_old: Area, pane: Area): void => {
+          this.splitEditorWidth = Number(pane.width);
+        })
     }
     // RowSplit fixes divider positions after initialization; Row weights adapt to window resizing.
     // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-container-rowsplit
@@ -935,20 +942,26 @@ export struct DocumentView {
         },
         barBottomMargin: this.navigationInsetAbsent ? $r('sys.float.margin_left') : 0
       })
+      // HDS paints its floating bar above both panes. Empty tab content passes touches to the editor.
+      .zIndex(1)
+      .hitTestBehavior(HitTestMode.Transparent)
       .attributeModifier(this.tabsPolicy)
       .width('100%')
       .height('100%')
       // One Web instance remains mounted while editing and split tabs change.
-      // Leave the floating tab bar uncovered so it retains its native interactions.
       Column() {
         ForEach([this.editorSessionKey], (key: number) => {
-          DocumentScrollLayer({ scroller: this.editScroller, boundedEditor: true }) {
+          DocumentScrollLayer({ scroller: this.editScroller, boundedEditor: true,
+            onViewportChange: (offset: number): void => { this.editorParentOffset = offset; } }) {
             DocumentCodeEditor({
               sessionId: `document-${key}`, source: this.source, formatId: this.formatId,
               webTheme: this.theme, appearance: this.theme, theme: this.codeTheme,
               language: resourceLanguage(this.language),
               textDirection: this.language === 'default' ? 'auto' :
                 (isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr'),
+              topInset: Math.max(0, this.workspaceTop - this.editorTop),
+              parentOffset: this.editorParentOffset,
+              bottomInset: documentTabClearance(this.navigationInsetAbsent),
               controller: this.editor,
               onChange: (expected: string, source: string, anchor: number, head: number): boolean => {
                 return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head);
@@ -969,13 +982,20 @@ export struct DocumentView {
           }
         }, (key: number): string => key.toString())
       }
-      .width(this.wide && this.selectedTab === this.splitTab() ? '50%' : '100%')
-      .height('calc(100% - 56vp)')
+      .width(this.wide && this.selectedTab === this.splitTab() ? this.splitEditorWidth : '100%')
+      // ArkUI 安全区域（ts-universal-attributes-expand-safe-area）：matchParent 同时扩展位置和高度。
+      // 首行的避让放进可滚动正文，滚动后文字才能进入标题栏下方。
+      .height(LayoutPolicy.matchParent)
+      .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP])
+      .onAreaChange((_oldArea: Area, area: Area): void => {
+        this.editorTop = Number(area.globalPosition.y);
+      })
       .visibility(this.inEditTab() ? Visibility.Visible : Visibility.Hidden)
     }
     .width('100%')
     .height('100%')
     .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      this.workspaceTop = Number(newArea.globalPosition.y);
       const wide = Number(newArea.width) >= 840;
       if (wide !== this.wide) {
         this.wide = wide;

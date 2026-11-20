@@ -21,14 +21,15 @@
 
 ## 界面适配待确认
 
-- [ ] **底部避让**：无系统导航指示区时，页签使用应用选取的底部距离；阅读区和编辑器分别计算可用空间。检查文末文字及悬浮页签是否可见、可点击，再按实际遮挡调整。[文稿页面](entry/src/main/ets/pages/DocumentView.ets)、[滚动层](entry/src/main/ets/pages/DocumentScrollLayer.ets)
-- [ ] **文末键盘避让**：在长文稿末尾唤起键盘并继续输入，检查光标与最后一行的位置；当前仅确认键盘弹出时编辑视口会缩小。
+- [x] **编辑与分栏的上下模糊**：两栏的滚动内容均可进入系统标题栏和悬浮页签下方，源码与预览共用横向边距。
+- [ ] **底部避让**：在无系统导航指示区的窗口核对额外底边距、末行和悬浮页签的点击区域。[文稿页面](entry/src/main/ets/pages/DocumentView.ets)、[滚动层](entry/src/main/ets/pages/DocumentScrollLayer.ets)
+- [ ] **文末键盘避让**：已在折叠屏模拟器检查末行点按和键盘展开；继续核对长文稿末尾连续输入及换行时的光标跟随。
 - [ ] **窄窗口查找栏**：查找计数和前后跳转按钮已移出搜索框。在窄窗口及大字体下核对首次展开、计数出现和切换替换栏时的高度，确保按钮可用、正文顶部可见。[查找栏](entry/src/main/ets/pages/DocumentFindBar.ets)
 - [ ] **首页分段按钮**：窄侧栏、大字体和长译文组合下检查“全部／收藏”是否完整可读且可点击。当前两侧有 40vp 占位，中间最大宽度为 150vp。[首页](entry/src/main/ets/pages/Index.ets)
-- [ ] **顶部留白**：公共滚动策略对普通页面使用 `padding_level8`，带分组标题的页面使用 `padding_level0`。结合官方滚动指南及各页面的首项位置核对这项应用选择。[公共滚动策略](entry/src/main/ets/pages/PageScrollPolicy.ets)
+- [x] **顶部留白**：普通页面共用应用选取的首项间距，带分组标题的列表由 SubHeader 留出间距。已修正分栏返回页首及使用帮助首节的间距。[公共滚动策略](entry/src/main/ets/pages/PageScrollPolicy.ets)
 - [ ] **设置行和分组标题**：核对系统列表行能否承载导航和单选交互。“主题”位于代码高亮二级页的选项卡片上方，标题与选项各用一个列表组。保留这个位置，核对分组语义、对齐及无障碍朗读。[设置行](entry/src/main/ets/pages/SettingsListRow.ets)、[设置详情](entry/src/main/ets/pages/SettingsDetail.ets)
 - [ ] **图标与底部距离的资源用途**：部分符号尺寸使用 `Title_M`，无导航指示区时底部距离使用 `margin_left`。核对组件适用资源及实际显示，底部遮挡与上述避让事项一并处理。[文字与图标样式](entry/src/main/ets/pages/TextRoles.ets)
-- [ ] **阅读与 Web 视觉配置**：帮助等页面使用应用选定的栅格与 24vp 侧距，预览和编辑器由各自 CSS 控制排版。核对基础字号、颜色和版心的实际一致性，保留文稿排版与灰色代码框。[阅读版心](entry/src/main/ets/pages/SettingsReadingFrame.ets)、[预览样式](renderer/src/styles.css)、[编辑器样式](editor/src/production.css)
+- [ ] **阅读与 Web 视觉配置**：编辑、预览与大纲已共用系统横向边距，帮助等页面使用应用选定的栅格与 24vp 侧距。核对编辑、预览及其他阅读页面的基础字号、颜色和版心，保留文稿排版与灰色代码框。[阅读版心](entry/src/main/ets/pages/SettingsReadingFrame.ets)、[预览样式](renderer/src/styles.css)、[编辑器样式](editor/src/production.css)
 - [ ] **大纲行结构**：当前通过条件空行缩进并分别处理展开和跳转。核对系统树形组件能否满足两种独立操作与无障碍需求，再决定是否调整。[大纲](entry/src/main/ets/pages/DocumentOutlineView.ets)
 - [ ] **菜单宽度**：首页顶层菜单对所有窗口固定 224vp，其他菜单使用组件默认宽度。检查手机、大字体、平板和小窗口下的内容显示，并核对适用的官方设计范围。[菜单](entry/src/main/ets/pages/DocumentMenus.ets)
 - [ ] **材质兼容范围**：菜单在整个 `SMOOTH` 档位回退默认背板，格式 Chip 为避免裁切关闭阴影。核对可复现的设备、系统和触发条件，再决定是否收窄例外。[菜单材质](entry/src/main/ets/pages/MenuMaterialOptions.ets)、[沉浸材质](entry/src/main/ets/pages/ImmersiveMaterials.ets)

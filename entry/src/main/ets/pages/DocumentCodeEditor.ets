@@ -1,4 +1,7 @@
 import { webview } from '@kit.ArkWeb';
+import { LengthMetrics } from '@kit.ArkUI';
+import { pageContentTop } from './PageScrollPolicy';
+import { AppText } from '../i18n/AppText';
 import { EditorBridge } from '../document/EditorBridge';
 import type { EditorSelection } from '../../../../../shared/editor-protocol';
 
@@ -60,6 +63,9 @@ export struct DocumentCodeEditor {
   @StorageLink('marknote_font_scale') fontScale: number = 1;
   @Prop @Watch('updateLocale') language: string = 'zh-CN';
   @Prop @Watch('updateLocale') textDirection: string = 'ltr';
+  @Prop @Watch('updateViewport') topInset: number = 0;
+  @Prop @Watch('updateViewport') parentOffset: number = 0;
+  @Prop @Watch('updateViewport') bottomInset: number = 0;
   controller: DocumentCodeEditorController = new DocumentCodeEditorController();
   onChange: (expected: string, source: string, anchor: number, head: number) => boolean =
     (_expected: string, _source: string, _anchor: number, _head: number): boolean => false;
@@ -127,10 +133,22 @@ export struct DocumentCodeEditor {
       theme: this.theme, appearance: this.appearance }));
   }
 
+  private updateViewport(): void {
+    if (this.ready) {
+      const startGap = LengthMetrics.resource(pageContentTop).value;
+      this.send(JSON.stringify({ type: 'viewport', sessionId: this.sessionId, epoch: this.activeEpoch,
+        top: this.topInset, bottom: this.bottomInset,
+        trackTop: Math.max(0, this.topInset + this.parentOffset),
+        trackBottom: Math.max(0, this.bottomInset + startGap - this.parentOffset),
+        start: LengthMetrics.resource($r('sys.float.margin_left')).value,
+        end: LengthMetrics.resource($r('sys.float.margin_right')).value }));
+    }
+  }
+
   private updateLocale(): void {
     if (!this.ready) return;
     this.send(JSON.stringify({ type: 'configure-locale', sessionId: this.sessionId, epoch: this.activeEpoch,
-      language: this.language, direction: this.textDirection }));
+      language: this.language, direction: this.textDirection, label: AppText.text($r('app.string.tab_edit')) }));
   }
 
   private connect(): void {
@@ -165,7 +183,12 @@ export struct DocumentCodeEditor {
     }
     if (message.sessionId !== this.sessionId || message.epoch !== this.activeEpoch) return;
     if (message.type === 'find-request') { this.onFind(); return; }
-    if (message.type === 'initialized') { this.ready = true; return; }
+    if (message.type === 'initialized') {
+      this.ready = true;
+      this.updateLocale();
+      this.updateViewport();
+      return;
+    }
     if (message.type === 'recovered') { this.recovering = false; return; }
     if (message.type === 'editor-state') {
       if (typeof message.anchor !== 'number' || typeof message.head !== 'number' ||
@@ -261,6 +284,7 @@ export struct DocumentCodeEditor {
         (this.webTheme === 'dark' ? WebDarkMode.On : WebDarkMode.Off))
       .backgroundColor($r('sys.color.ohos_id_color_background'))
       .textZoomRatio(Math.round(this.fontScale * 100))
+      .verticalScrollBarAccess(false)
       .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST })
       .onPageEnd(() => this.connect())
       .width('100%').height('100%')
