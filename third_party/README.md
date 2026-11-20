@@ -6,7 +6,7 @@
 
 ## 许可证材料与应用内声明
 
-预览构建脚本从已安装的生产依赖收集许可证与 NOTICE。对于发布包缺少许可证原文或需要补充声明的依赖，[upstream-licenses](upstream-licenses/) 保存核实过的上游原文、版本对应关系及来源；脚本验证版本和文件散列后使用这些材料。依赖的许可证类型未经允许、材料缺失或校验失败时，构建会中止。
+预览构建调用 `tools/generate-notices.mjs`，从预览和编辑器已安装的生产依赖收集许可证与 NOTICE。对于发布包缺少许可证原文或需要补充声明的依赖，[upstream-licenses](upstream-licenses/) 保存核实过的上游原文、版本对应关系及来源；脚本验证版本和文件散列后使用这些材料。依赖的许可证类型未经允许、材料缺失或校验失败时，构建会中止。
 
 按[构建与贡献](../CONTRIBUTING.md)中的步骤构建后，脚本统一生成 `entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt`，供应用的“设置 → 开源许可证 → 第三方开源许可证”显示。本项目的 GPL-3.0 许可证单独由根目录 `LICENSE` 复制到应用资源中。两个应用资源均是生成文件，不应手工维护。
 

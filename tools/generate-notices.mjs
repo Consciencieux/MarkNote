@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 
 // Produce the notices shipped inside the HAP from *installed production packages*.
 // Unknown / missing licenses abort the build instead of silently omitting a grant.
-const root = resolve(import.meta.dirname, '..');
+const root = join(resolve(import.meta.dirname, '..'), 'renderer');
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const editorRoot = join(root, '..', 'editor');
 const packages = new Map();

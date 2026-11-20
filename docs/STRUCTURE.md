@@ -20,12 +20,12 @@ marknote/
 │   ├── package.json、package-lock.json  npm 依赖声明与锁定版本
 │   ├── src/renderers/                各文稿格式的渲染器
 │   ├── src/styles.css                预览样式
-│   ├── scripts/                      安装依赖修复、打包资源及生成许可证声明
-│   └── tests/                        文稿保存、恢复和编码回归检查
+│   ├── scripts/                      安装依赖修复与打包资源
+│   └── tests/                        启动恢复和编辑同步回归检查
 ├── editor/                           CodeMirror 离线编辑器源码、测试和构建脚本
 ├── shared/                           预览与编辑器共用的语言标识、配色与编辑消息类型
 ├── docs/                             功能、架构、隐私及发布文档
-├── tools/                            资源键、占位符及依赖元数据检查
+├── tools/                            资源检查与许可证声明生成
 ├── examples/                         Markdown、SVG 和 TeX 示例文稿
 ├── third_party/                      第三方依赖说明与补充许可证原文
 │   └── upstream-licenses/            按依赖版本核验的上游许可证及声明
