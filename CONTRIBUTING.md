@@ -42,6 +42,7 @@ npm ci
 
 安装过程会从固定的 GitHub 提交获取、校验并编译 `tex-to-myst` 的两处修复。首次安装需要访问 npm 镜像和 GitHub；依赖与修复缓存齐全时可以离线安装。修复来源和移除条件见[第三方组件与许可证](third_party/README.md)。
 
+首次构建前还需在 `editor/` 执行 `npm ci`，供预览构建汇总两套离线资源的许可证。
 修改预览或依赖后，在 `renderer/` 执行：
 
 ```sh
@@ -50,7 +51,7 @@ npm test
 npm run build
 ```
 
-编辑器源码与预览共用第三方许可证生成流程。首次构建前还需要在 `editor/` 执行 `npm ci`；修改编辑器后执行 `npm run check`、`npm test` 和 `npm run build`。编辑器构建生成 `entry/src/main/resources/rawfile/editor/index.html`，并同样核验许可证材料。
+修改编辑器后，在 `editor/` 执行 `npm run check`、`npm test` 和 `npm run build`，生成 `entry/src/main/resources/rawfile/editor/index.html`。编辑器依赖变化时，还需重新执行预览构建以核验并更新完整许可证声明。
 
 预览构建生成 `entry/src/main/resources/rawfile/preview/index.html` 和 `entry/src/main/resources/rawfile/licenses/` 中的许可证文本，供应用打包。这些生成文件纳入版本库；依赖变化时还需更新 `renderer/package-lock.json`。缺少有效许可证材料时构建会失败，应检查依赖及其授权材料，不要手工修改生成文件绕过检查。
 
@@ -99,7 +100,7 @@ devecocli build --product default --modules entry --build-mode debug
 
 ## 代码与界面约定
 
-项目使用 ArkUI 实现导航、编辑和文件操作，使用 ArkWeb 渲染离线预览。页面、文件访问和网络使用的约束见 [AGENTS.md](AGENTS.md)；新增或修改界面时，请按其中的要求查阅华为官方文档并优先使用系统组件和资源。
+项目使用 ArkUI 实现导航和文件操作，使用独立的离线 ArkWeb 页面进行源码编辑和预览。页面、文件访问和网络使用的约束见 [AGENTS.md](AGENTS.md)；新增或修改界面时，请按其中的要求查阅华为官方文档并优先使用系统组件和资源。
 
 ## 测试
 

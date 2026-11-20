@@ -1,7 +1,6 @@
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { searchKeymap } from '@codemirror/search';
 import { languageFor } from './languages.js';
 import { syntaxTheme } from './syntax-theme.js';
 import { EditorSession } from './editor-session.ts';
@@ -17,7 +16,8 @@ let currentAppearance = 'system';
 const media = window.matchMedia('(prefers-color-scheme: dark)');
 const resolvedAppearance = (appearance: string) => appearance === 'system' ? (media.matches ? 'dark' : 'light') : appearance;
 const extensions = (format: string, theme: string, appearance: string = 'light') => [
-  history(), keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+  history(), keymap.of([{ key: 'Mod-f', run: () => session?.requestFind() ?? false },
+    ...defaultKeymap, ...historyKeymap]),
   EditorView.lineWrapping, languageFor(format), colors.of(syntaxTheme(theme, appearance)),
   editable.of(EditorView.editable.of(true)),
   EditorView.updateListener.of((update) => session?.record(update)),
