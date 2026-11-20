@@ -33,6 +33,7 @@ export struct DocumentPreviewView {
    * https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
    */
   @StorageLink('marknote_language') @Watch('scheduleUpdate') language: string = 'default';
+  @StorageLink('marknote_font_scale') fontScale: number = 1;
   @StorageLink('marknote_code_theme') @Watch('scheduleUpdate') codeTheme: string = 'github';
   onOutline: (documentId: number, revision: number, headings: Heading[]) => void =
     (_documentId: number, _revision: number, _headings: Heading[]): void => {};
@@ -224,6 +225,7 @@ export struct DocumentPreviewView {
       // 兜底底色跟随页面底色（同一个系统 token），不写死黑白两色；
       // 预览正文的底色由 renderer 的样式表按主题决定。
       .backgroundColor($r('sys.color.ohos_id_color_background'))
+      .textZoomRatio(Math.round(this.fontScale * 100))
       .onPageEnd(() => {
         this.ready = true;
         this.connectResultPort();

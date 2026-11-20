@@ -1,4 +1,4 @@
-import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
 import { KeyboardAvoidMode, window } from '@kit.ArkUI';
 import { LaunchRequests } from '../document/LaunchRequests';
 import { applyAppLanguage } from '../i18n/AppLanguage';
@@ -9,6 +9,7 @@ import { LocalState } from '../storage/LocalState';
 // File opens share this singleton ability. The page consumes the request after it exists.
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    AppStorage.setOrCreate('marknote_font_scale', this.context.config.fontSizeScale ?? 1);
     AppText.bind(this.context);
     // 页面创建前先按已保存的选择加载资源，避免首帧还是上一种语言。
     try {
@@ -16,6 +17,12 @@ export default class EntryAbility extends UIAbility {
     } catch { /* 设置失败时继续使用系统当前的应用语言。 */ }
     LaunchRequests.deliver(want);
     void launchParam;
+  }
+
+  onConfigurationUpdate(config: Configuration): void {
+    if (config.fontSizeScale !== undefined && config.fontSizeScale > 0) {
+      AppStorage.setOrCreate('marknote_font_scale', config.fontSizeScale);
+    }
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
