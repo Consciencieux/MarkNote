@@ -21,6 +21,7 @@ import { chooseDocumentEncoding, DocumentMenuContent, HomeMenuContent, menuBridg
 import { documentBridge } from './DocumentBridge';
 import { UnknownEncodingError } from '../storage/DocumentStream';
 import { DocumentFiles } from '../storage/DocumentFiles';
+import { DocumentShare, SharedFile } from '../document/DocumentShare';
 import { LocalState } from '../storage/LocalState';
 import { AppText } from '../i18n/AppText';
 import { shownDetail } from '../document/UserNotice';
@@ -43,6 +44,8 @@ struct Index {
   @State private documentOpen: boolean = false;
   /** 首页分段按钮：0 是全部，1 是收藏。 */
   @State private librarySegment: number = 0;
+  @State private selecting: boolean = false;
+  @State private selectedUris: string[] = [];
   // Keep both segments centered with one line. ArkUI fits long translations within the available lane.
   private readonly librarySegmentLabel = new TextModifier()
     .maxLines(1)
@@ -113,6 +116,10 @@ struct Index {
   }
 
   onBackPress(): boolean {
+    if (this.selecting && this.routes.size() === 0) {
+      this.clearSelection();
+      return true;
+    }
     if (this.routes.size() > 0) {
       const names = this.routes.getAllPathName();
       const top = names.length > 0 ? names[names.length - 1] : '';
@@ -319,6 +326,7 @@ struct Index {
             selectedIndex: this.librarySegment,
             $selectedIndex: (index: number): void => {
               if (this.librarySegment === index) return;
+              this.clearSelection();
               this.librarySegment = index;
               this.libraryScroller.scrollTo({ xOffset: 0, yOffset: 0 });
             },
@@ -348,6 +356,21 @@ struct Index {
   }
 
   private homeTitle(): HdsNavigationTitleBarOptions {
+    if (this.selecting) {
+      const selected: TitleBarContentOptions = {
+        title: {
+          mainTitle: this.language.length >= 0 ?
+            AppText.format($r('app.string.home_selected'), String(this.selectedUris.length)) : ''
+        }
+      };
+      selected.menu = {
+        value: [
+          navigationMenuIcon($r('app.string.dialog_cancel'), $r('sys.symbol.xmark'), 'marknote-select-cancel',
+            (): void => this.clearSelection())
+        ]
+      };
+      return scrollingTitleBar(selected);
+    }
     // 《设置自定义区域》要求自定义节点不要挡住标题文字和菜单。
     const content: TitleBarContentOptions = {
       title: { mainTitle: '' },
@@ -659,6 +682,183 @@ struct Index {
     }).catch((): void => this.toast($r('app.string.favorite_save_failed')));
   }
 
+  private listedRecents(): RecentDocument[] {
+    return sortRecentDocuments(this.recents.filter((item: RecentDocument): boolean =>
+      this.librarySegment === 1 ? item.favorite === true : item.recent !== false), this.sortOrder) as RecentDocument[];
+  }
+
+  private clearSelection(): void {
+    this.selecting = false;
+    this.selectedUris = [];
+  }
+
+  private beginSelection(item: RecentDocument): void {
+    this.selecting = true;
+    this.selectedUris = [item.uri];
+  }
+
+  private toggleSelected(item: RecentDocument): void {
+    const next: string[] = [];
+    let found = false;
+    for (let index = 0; index < this.selectedUris.length; index++) {
+      if (this.selectedUris[index] === item.uri) found = true;
+      else next.push(this.selectedUris[index]);
+    }
+    if (!found) next.push(item.uri);
+    this.selectedUris = next;
+  }
+
+  private selectedItems(): RecentDocument[] {
+    const visible = this.listedRecents();
+    const picked: RecentDocument[] = [];
+    for (let index = 0; index < this.selectedUris.length; index++) {
+      const uri = this.selectedUris[index];
+      for (let itemIndex = 0; itemIndex < visible.length; itemIndex++) {
+        if (visible[itemIndex].uri === uri) picked.push(visible[itemIndex]);
+      }
+    }
+    return picked;
+  }
+
+  private selectionAllFavorite(): boolean {
+    const items = this.selectedItems();
+    if (items.length === 0) return false;
+    for (let index = 0; index < items.length; index++) {
+      if (items[index].favorite !== true) return false;
+    }
+    return true;
+  }
+
+  private async shareRecents(items: RecentDocument[]): Promise<void> {
+    if (!this.context || items.length === 0) return;
+    const files: SharedFile[] = [];
+    for (let index = 0; index < items.length; index++) {
+      const file = new SharedFile();
+      file.uri = items[index].uri;
+      file.name = items[index].name;
+      files.push(file);
+    }
+    try {
+      await DocumentShare.showFiles(this.context, files, this.selecting ? 'marknote-home-share' : 'marknote-home-more');
+    } catch (error) {
+      this.toast(shownDetail(error));
+    }
+  }
+
+  private async copyRecent(item: RecentDocument): Promise<void> {
+    if (!this.context) return;
+    try {
+      const target = await DocumentFiles.chooseSave(this.context, item.name);
+      if (target.length === 0 || this.disposed) return;
+      if (target === item.uri) {
+        this.toast($r('app.string.copy_same_file'));
+        return;
+      }
+      await DocumentFiles.writeCopy(item.uri, target);
+      const access = await DocumentFiles.prepare(target, true);
+      if (access.persistent) this.rememberRecent(target, item.name, true);
+      this.toast(access.persistent ? $r('app.string.copy_saved') : $r('app.string.save_not_persistent'));
+    } catch (error) {
+      this.toast(AppText.format($r('app.string.copy_failed'), shownDetail(error)));
+    }
+  }
+
+  private confirmRemoveRecent(items: RecentDocument[]): void {
+    if (items.length === 0) return;
+    const message = items.length === 1 ?
+      AppText.format($r('app.string.remove_recent_message'), items[0].name) :
+      AppText.format($r('app.string.home_remove_many'), String(items.length));
+    this.getUIContext().showAlertDialog({
+      title: AppText.text($r('app.string.home_remove_record')),
+      message: message,
+      buttons: [
+        { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
+        {
+          value: AppText.text($r('app.string.dialog_remove')),
+          action: (): void => { void this.removeRecents(items); }
+        }
+      ]
+    });
+  }
+
+  private async removeRecents(items: RecentDocument[]): Promise<void> {
+    for (let index = 0; index < items.length; index++) {
+      await this.forgetRecent(items[index].uri);
+    }
+    this.clearSelection();
+  }
+
+  private confirmDeleteRecent(items: RecentDocument[]): void {
+    if (items.length === 0) return;
+    let dirty = false;
+    const session = DocumentService.current();
+    for (let index = 0; index < items.length; index++) {
+      if (this.documentOpen && session.editing && session.info.uri === items[index].uri &&
+        (session.source !== session.savedText || session.writeUncertain)) dirty = true;
+    }
+    const message = dirty ? AppText.text($r('app.string.delete_dirty')) :
+      items.length === 1 ? AppText.text($r('app.string.delete_clean')) :
+        AppText.format($r('app.string.home_delete_many'), String(items.length));
+    this.getUIContext().showAlertDialog({
+      title: AppText.text($r('app.string.delete_title')),
+      message: message,
+      buttons: [
+        { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
+        {
+          value: AppText.text($r('app.string.menu_delete')),
+          action: (): void => { void this.deleteRecents(items); }
+        }
+      ]
+    });
+  }
+
+  private async deleteRecents(items: RecentDocument[]): Promise<void> {
+    let failed = false;
+    let plain = 0;
+    for (let index = 0; index < items.length; index++) {
+      try {
+        const outcome = await this.deleteRecent(items[index]);
+        if (outcome === 'failed') failed = true;
+        else if (outcome === 'plain') plain++;
+      } catch (error) {
+        failed = true;
+        this.toast(AppText.format($r('app.string.delete_failed'), shownDetail(error)));
+      }
+    }
+    if (plain > 0) this.toast($r('app.string.delete_trashed'));
+    if (!failed) this.clearSelection();
+  }
+
+  private async deleteRecent(item: RecentDocument): Promise<string> {
+    const session = DocumentService.current();
+    if (this.documentOpen && session.editing && session.info.uri === item.uri) {
+      if (session.fileOperation !== 'idle') return 'failed';
+      const result = await DocumentService.moveToTrash();
+      if (!result.deleted || DocumentService.current() !== session) return 'failed';
+      await this.forgetRecent(item.uri, true);
+      if (result.retainedEdits) {
+        this.revision++;
+        this.toast(result.recoveryCleanupFailed ? $r('app.string.draft_clear_failed') :
+          $r('app.string.delete_trashed_dirty'));
+        return 'special';
+      }
+      this.documentExpanded = false;
+      this.documentOpen = false;
+      const names = this.routes.getAllPathName();
+      if (names.length > 0 && names[names.length - 1] === 'document') this.routes.pop();
+      return 'plain';
+    }
+    await DocumentFiles.deleteStored(item.uri);
+    await this.forgetRecent(item.uri, true);
+    return 'plain';
+  }
+
+  private favoriteRecents(items: RecentDocument[], favorite: boolean): void {
+    for (let index = 0; index < items.length; index++) {
+      if ((items[index].favorite === true) !== favorite) this.toggleFavorite(items[index].uri, items[index].name);
+    }
+  }
+
   private async refreshRecentTimes(items: RecentDocument[]): Promise<void> {
     const refreshed: RecentDocument[] = [];
     for (const item of items) {
@@ -689,26 +889,28 @@ struct Index {
   private LibraryPage() {
     HomeView({
       favoritesOnly: this.librarySegment === 1,
-      recents: sortRecentDocuments(this.recents.filter((item: RecentDocument): boolean =>
-        this.librarySegment === 1 ? item.favorite === true : item.recent !== false), this.sortOrder) as RecentDocument[],
+      recents: this.listedRecents(),
       scroller: this.libraryScroller,
+      selecting: this.selecting,
+      selectedUris: this.selectedUris,
+      selectionAllFavorite: this.selectionAllFavorite(),
       onNew: (id: string): void => { this.confirmSwitch(() => this.startNew(id)); },
       onOpen: (): void => this.confirmSwitch(() => this.pickOpen()),
       onRecent: (item: RecentDocument): void => this.openRecent(item),
-      onRemoveRecent: (item: RecentDocument): void => {
-        if (this.librarySegment === 1) {
-          this.toggleFavorite(item.uri, item.name);
-          return;
-        }
-        this.getUIContext().showAlertDialog({
-          title: AppText.text($r('app.string.home_remove_record')),
-          message: AppText.format($r('app.string.remove_recent_message'), item.name),
-          buttons: [
-            { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
-            { value: AppText.text($r('app.string.dialog_remove')), action: (): void => { void this.forgetRecent(item.uri); } }
-          ]
-        });
-      }
+      onShare: (item: RecentDocument): void => { void this.shareRecents([item]); },
+      onCopy: (item: RecentDocument): void => { void this.copyRecent(item); },
+      onFavorite: (item: RecentDocument): void => this.toggleFavorite(item.uri, item.name),
+      onRemove: (item: RecentDocument): void => this.confirmRemoveRecent([item]),
+      onDelete: (item: RecentDocument): void => this.confirmDeleteRecent([item]),
+      onMultiSelect: (item: RecentDocument): void => this.beginSelection(item),
+      onToggleSelected: (item: RecentDocument): void => this.toggleSelected(item),
+      onShareSelected: (): void => { void this.shareRecents(this.selectedItems()); },
+      onFavoriteSelected: (): void => {
+        const items = this.selectedItems();
+        this.favoriteRecents(items, !this.selectionAllFavorite());
+      },
+      onRemoveSelected: (): void => this.confirmRemoveRecent(this.selectedItems()),
+      onDeleteSelected: (): void => this.confirmDeleteRecent(this.selectedItems())
     })
   }
 

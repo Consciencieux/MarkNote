@@ -128,6 +128,43 @@ export class DocumentFiles {
     // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/filemanagerservice-arkts-filemanagerservice
     await fileManagerService.deleteToTrash(info.uri);
   }
+
+  /** Copy a saved file byte for byte into a picker URI or a private share path. */
+  static async writeCopy(sourceUri: string, target: string): Promise<void> {
+    if (target.length === 0) throw userNotice(AppText.text($r('app.string.no_writable_file')));
+    const expected = await fileFingerprint(sourceUri);
+    const input = await fileIo.open(sourceUri, fileIo.OpenMode.READ_ONLY);
+    try {
+      const output = await fileIo.open(target, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE);
+      try {
+        const original = await fileIo.stat(input.fd);
+        const destination = await fileIo.stat(output.fd);
+        if (sourceUri === target || (original.ino > BigInt(0) && original.ino === destination.ino)) {
+          throw userNotice(AppText.text($r('app.string.copy_same_file')));
+        }
+        await fileIo.copyFile(input.fd, output.fd);
+        await fileIo.fsync(output.fd);
+      } finally {
+        await fileIo.close(output);
+      }
+    } finally {
+      await fileIo.close(input);
+    }
+    if (await fileFingerprint(target) !== expected) {
+      throw userNotice(AppText.text($r('app.string.verify_failed')));
+    }
+  }
+
+  /** Move a stored file to the recycle bin after checking write access and current bytes. */
+  static async deleteStored(uri: string): Promise<void> {
+    const access = await DocumentFiles.prepare(uri, true);
+    if (!access.writable) throw userNotice(AppText.text($r('app.string.no_delete_permission')));
+    const info = new DocumentInfo();
+    info.uri = uri;
+    info.writable = true;
+    info.fingerprint = await fileFingerprint(uri);
+    await DocumentFiles.moveToTrash(info);
+  }
   /**
    * A persisted picker grant stays inactive across launches until activatePermission.
    * Activate both stored modes before canOpen. Opening first makes a still-valid
