@@ -219,6 +219,92 @@ test('a failed recovery cleanup does not hide a completed save and keeps a delet
   assert.equal(opened.recoveryErrors.length, 2);
 });
 
+for (const asNewFile of [false, true]) {
+  test(`confirmed ${asNewFile ? 'save-as' : 'save'} updates recovery before cleanup can fail`, async () => {
+    let persisted = null;
+    const opened = await service({
+      files: { chooseSave: async () => 'file://b.md' },
+      local: {
+        writeDraft: async (_context, value) => { persisted = { ...value }; },
+        clearDraft: async () => { throw new Error('unlink failed'); }
+      }
+    });
+    const result = await opened.api.save({}, asNewFile);
+    assert.equal(result.saved, true);
+    assert.equal(persisted.uri, asNewFile ? 'file://b.md' : 'file://a.md');
+    assert.equal(persisted.savedText, 'edited');
+    assert.equal(persisted.text, 'edited');
+    assert.equal(persisted.fingerprint, 'written');
+    assert.equal(persisted.writeUncertain, false);
+  });
+}
+
+test('edits while recovery cleanup is in flight are reflected in the save result', async () => {
+  let entered;
+  let release;
+  const waiting = new Promise((resolve) => { entered = resolve; });
+  const opened = await service({ local: { clearDraft: async () => {
+    entered();
+    await new Promise((resolve) => { release = resolve; });
+  } } });
+  const pending = opened.api.save({}, false);
+  await waiting;
+  opened.api.edit('typed during cleanup');
+  release();
+  const result = await pending;
+  assert.equal(opened.api.current().savedText, 'edited');
+  assert.equal(opened.api.current().source, 'typed during cleanup');
+  assert.equal(result.stillDirty, true);
+  assert.equal(result.message, 'app.string.saved_dirty');
+});
+
+test('after an interrupted recovery update, restart identifies the verified save-as target', async () => {
+  let savedDraft = null;
+  let attempts = 0;
+  const opened = await service({
+    files: {
+      chooseSave: async () => 'file://b.md',
+      read: async (uri) => ({
+        info: { uri, name: uri.endsWith('b.md') ? 'b.md' : 'a.md', newline: '\n', lineEndings: '',
+          encoding: 'utf-8', hasBom: false, fingerprint: uri.endsWith('b.md') ? 'written' : 'original',
+          formatId: 'markdown', writable: true, persistent: true },
+        text: uri.endsWith('b.md') ? 'edited' : 'base'
+      })
+    },
+    local: {
+      writeDraft: async (_context, draft) => {
+        if (++attempts > 1) throw new Error('recovery storage failed');
+        savedDraft = { ...draft };
+      },
+      clearDraft: async () => { throw new Error('must not delete uncommitted record'); }
+    }
+  });
+  const result = await opened.api.save({}, true);
+  assert.equal(result.saved, true);
+  assert.equal(result.message, 'app.string.saved_recovery_pending');
+  assert.equal(savedDraft.uri, 'file://a.md');
+  assert.equal(savedDraft.pendingWriteUri, 'file://b.md');
+  assert.equal(await opened.api.restore(savedDraft), true);
+  assert.equal(opened.api.current().info.uri, 'file://b.md');
+  assert.equal(opened.api.current().savedText, 'edited');
+  assert.equal(opened.api.current().writeUncertain, false);
+});
+
+test('unresolved save-as recovery cannot silently overwrite the old file', async () => {
+  const opened = await service({ files: { read: async (uri) => {
+    if (uri === 'file://b.md') throw new Error('target unavailable');
+    return { info: { name: 'a.md', fingerprint: 'original' }, text: 'base' };
+  } } });
+  const draft = { name: 'a.md', uri: 'file://a.md', text: 'edited', savedText: 'base',
+    newline: '\n', lineEndings: '', encoding: 'utf-8', hasBom: false, fingerprint: 'original',
+    formatId: 'markdown', writable: true, persistent: true, writeUncertain: true,
+    pendingWriteText: 'edited', pendingWriteUri: 'file://b.md' };
+  assert.equal(await opened.api.restore(draft), true);
+  assert.equal(opened.api.current().info.uri, 'file://a.md');
+  assert.equal(opened.api.current().info.writable, false);
+  assert.equal(opened.api.current().writeUncertain, true);
+});
+
 function clock() {
   const timers = [];
   let now = 0;

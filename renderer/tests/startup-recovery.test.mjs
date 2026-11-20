@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { StartupRecovery } from '../../entry/src/main/ets/document/StartupRecovery.ts';
 import { loadArkts } from './helpers/arkts-loader.mjs';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import vm from 'node:vm';
 
 function localState(readText) {
   return loadArkts('storage/LocalState.ets', 'LocalState', {
@@ -16,7 +19,69 @@ test('missing recovery file is distinct from a read failure or malformed content
   const unreadable = localState(async () => { throw new Error('permission denied'); });
   await assert.rejects(unreadable.readDraft({ filesDir: '/app' }), /permission denied/);
   const malformed = localState(async () => '{not json');
-  await assert.rejects(malformed.readDraft({ filesDir: '/app' }), /invalid draft/);
+  await assert.rejects(malformed.readDraft({ filesDir: '/app' }), (error) =>
+    error.name === 'InvalidDraftError' && error.message === 'invalid draft');
+});
+
+test('quarantines a damaged draft without replacing an earlier backup', async () => {
+  const files = new Map([
+    ['/app/unsaved-draft.json', '{broken'],
+    ['/app/unsaved-draft-corrupt-0.json', 'earlier'],
+  ]);
+  const storage = loadArkts('storage/LocalState.ets', 'LocalState', {
+    fileIo: {
+      access: async (path) => files.has(path),
+      rename: async (from, to) => { files.set(to, files.get(from)); files.delete(from); }
+    }, Error, JSON, Promise
+  });
+  const backup = await storage.quarantineDraft({ filesDir: '/app' });
+  assert.equal(backup, '/app/unsaved-draft-corrupt-1.json');
+  assert.equal(files.get(backup), '{broken');
+  assert.equal(files.get('/app/unsaved-draft-corrupt-0.json'), 'earlier');
+  assert.equal(files.has('/app/unsaved-draft.json'), false);
+});
+
+test('a failed quarantine leaves the original recovery file untouched', async () => {
+  const files = new Map([['/app/unsaved-draft.json', '{broken']]);
+  const storage = loadArkts('storage/LocalState.ets', 'LocalState', {
+    fileIo: { access: async (path) => files.has(path), rename: async () => { throw new Error('disk error'); } },
+    Error, JSON, Promise
+  });
+  await assert.rejects(storage.quarantineDraft({ filesDir: '/app' }), /disk error/);
+  assert.equal(files.get('/app/unsaved-draft.json'), '{broken');
+});
+
+test('startup proceeds only after the user accepts and quarantine succeeds', async () => {
+  const text = readFileSync(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+  const start = text.indexOf('  private async resumeDraft(');
+  const end = text.indexOf('\n  /**', start);
+  const method = text.slice(start, end);
+  let confirmed = false;
+  let backedUp = 0;
+  let failBackup = false;
+  const invalid = new Error('invalid draft');
+  invalid.name = 'InvalidDraftError';
+  const LocalState = {
+    readDraft: async () => { throw invalid; },
+    isInvalidDraft: (error) => error.name === 'InvalidDraftError',
+    quarantineDraft: async () => { if (failBackup) throw new Error('backup failed'); backedUp++; }
+  };
+  const View = vm.runInNewContext(stripTypeScriptTypes(`class View { ${method} } View`),
+    { LocalState, DocumentService: {}, Error, Promise, $r: (value) => value });
+  const view = new View();
+  view.context = { filesDir: '/app' };
+  view.disposed = false;
+  view.confirmDamagedDraft = async () => confirmed;
+  view.toast = () => {};
+  assert.equal(await view.resumeDraft(), false);
+  assert.equal(backedUp, 0);
+  confirmed = true;
+  failBackup = true;
+  await assert.rejects(view.resumeDraft(), /backup failed/);
+  assert.equal(backedUp, 0);
+  failBackup = false;
+  assert.equal(await view.resumeDraft(), true);
+  assert.equal(backedUp, 1);
 });
 
 test('an unconfirmed write remains recoverable even when the visible text matches the baseline', async () => {

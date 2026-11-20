@@ -171,8 +171,26 @@ export class LocalState {
       if (parsed.text === parsed.savedText && !parsed.writeUncertain) return null;
       return parsed;
     } catch {
-      throw new Error('invalid draft');
+      const error = new Error('invalid draft');
+      error.name = 'InvalidDraftError';
+      throw error;
     }
+  }
+
+  static isInvalidDraft(error: Object): boolean {
+    return error instanceof Error && error.name === 'InvalidDraftError';
+  }
+
+  /** Keep the unreadable bytes in a separate file before allowing a new recovery slot. */
+  static async quarantineDraft(context: common.UIAbilityContext): Promise<string> {
+    let index = 0;
+    let destination = context.filesDir + '/unsaved-draft-corrupt-' + index + '.json';
+    while (await fileIo.access(destination)) {
+      index++;
+      destination = context.filesDir + '/unsaved-draft-corrupt-' + index + '.json';
+    }
+    await fileIo.rename(context.filesDir + DRAFT, destination);
+    return destination;
   }
 
   static async writeDraft(context: common.UIAbilityContext, draft: RecoveryData): Promise<void> {

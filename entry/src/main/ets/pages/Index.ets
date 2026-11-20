@@ -6,7 +6,7 @@ import {
   HdsNavigation, HdsNavigationTitleMode,
   HdsNavigationTitleBarOptions, TitleBarContentOptions
 } from '@kit.UIDesignKit';
-import { RecentDocument } from '../model/Document';
+import { RecentDocument, RecoveryData } from '../model/Document';
 import { DocumentService, DocumentSession } from '../document/DocumentService';
 import { StartupRecovery } from '../document/StartupRecovery';
 import { sortRecentDocuments } from '../document/RecentOrder';
@@ -202,7 +202,16 @@ struct Index {
    */
   private async resumeDraft(): Promise<boolean> {
     if (!this.context || this.disposed) return false;
-    const draft = await LocalState.readDraft(this.context);
+    let draft: RecoveryData | null;
+    try {
+      draft = await LocalState.readDraft(this.context);
+    } catch (error) {
+      if (!LocalState.isInvalidDraft(error as Object)) throw error instanceof Error ? error : new Error('draft read failed');
+      if (!await this.confirmDamagedDraft() || !this.context || this.disposed) return false;
+      await LocalState.quarantineDraft(this.context);
+      if (!this.disposed) this.toast($r('app.string.draft_corrupt_saved'));
+      return !this.disposed;
+    }
     if (draft === null) return true;
     if (!await DocumentService.restore(draft, (): boolean => !this.disposed)) {
       if (!this.disposed) throw new Error('draft restore blocked');
@@ -212,6 +221,34 @@ struct Index {
     this.presentOpened();
     if (this.externalWaiting === 0) this.toast($r('app.string.draft_restored'));
     return true;
+  }
+
+  /** A damaged copy is kept separately only after the user chooses to continue. */
+  private confirmDamagedDraft(): Promise<boolean> {
+    return new Promise<boolean>((resolve: (accepted: boolean) => void): void => {
+      let settled = false;
+      const finish = (accepted: boolean): void => {
+        if (settled) return;
+        settled = true;
+        resolve(accepted);
+      };
+      this.getUIContext().showAlertDialog({
+        message: AppText.text($r('app.string.draft_corrupt_message')),
+        autoCancel: true,
+        buttonDirection: DialogButtonDirection.HORIZONTAL,
+        buttons: [
+          { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => finish(false) },
+          { value: AppText.text($r('app.string.draft_corrupt_keep')), primary: true, action: (): void => finish(true) }
+        ],
+        cancel: (): void => finish(false),
+        onWillDismiss: (action: DismissDialogAction): void => {
+          if (action.reason === DismissReason.PRESS_BACK || action.reason === DismissReason.TOUCH_OUTSIDE) {
+            action.dismiss();
+            finish(false);
+          }
+        }
+      });
+    });
   }
 
   /**

@@ -195,7 +195,36 @@ export class DocumentService {
     info.formatId = draft.formatId;
     info.writable = false;
     info.persistent = false;
-    if (draft.uri.length > 0) {
+    let restoredBaseline = draft.savedText;
+    let restoredUncertain = draft.writeUncertain === true;
+    let restoredPendingText = typeof draft.pendingWriteText === 'string' ? draft.pendingWriteText : '';
+    let restoredPendingUri = typeof draft.pendingWriteUri === 'string' ? draft.pendingWriteUri : '';
+    const pendingSaveAs = restoredUncertain && restoredPendingUri.length > 0 && restoredPendingUri !== draft.uri;
+    let confirmedTarget = false;
+    if (pendingSaveAs) {
+      try {
+        const access = await DocumentFiles.prepare(restoredPendingUri, true);
+        const target = await DocumentFiles.read(restoredPendingUri);
+        if (target.text === restoredPendingText) {
+          info.uri = restoredPendingUri;
+          info.name = target.info.name;
+          info.newline = target.info.newline;
+          info.lineEndings = target.info.lineEndings;
+          info.encoding = target.info.encoding;
+          info.hasBom = target.info.hasBom;
+          info.fingerprint = target.info.fingerprint;
+          info.formatId = FormatRegistry.byFilename(target.info.name).id;
+          info.writable = access.writable;
+          info.persistent = access.persistent;
+          restoredBaseline = restoredPendingText;
+          restoredUncertain = false;
+          restoredPendingText = '';
+          restoredPendingUri = '';
+          confirmedTarget = true;
+        }
+      } catch { /* Keep the old checkpoint, but do not overwrite its original file. */ }
+    }
+    if (!confirmedTarget && draft.uri.length > 0) {
       try {
         const access = await DocumentFiles.prepare(draft.uri, true);
         const disk = await DocumentFiles.read(draft.uri);
@@ -203,7 +232,7 @@ export class DocumentService {
           ? disk.info.fingerprint !== draft.fingerprint
           : disk.text !== draft.savedText;
         info.persistent = access.persistent;
-        info.writable = access.writable && !changed;
+        info.writable = access.writable && !changed && !pendingSaveAs;
         if (!changed) info.fingerprint = disk.info.fingerprint;
         if (info.formatId.length === 0) info.formatId = FormatRegistry.byFilename(disk.info.name).id;
       } catch {
@@ -214,10 +243,10 @@ export class DocumentService {
     const session = new DocumentSession(DocumentService.allocateId());
     session.info = info;
     session.source = draft.text;
-    session.savedText = draft.savedText;
-    session.writeUncertain = draft.writeUncertain === true;
-    session.pendingWriteText = typeof draft.pendingWriteText === 'string' ? draft.pendingWriteText : '';
-    session.pendingWriteUri = typeof draft.pendingWriteUri === 'string' ? draft.pendingWriteUri : '';
+    session.savedText = restoredBaseline;
+    session.writeUncertain = restoredUncertain;
+    session.pendingWriteText = restoredPendingText;
+    session.pendingWriteUri = restoredPendingUri;
     session.editing = true;
     if (DocumentService.session !== previous || previous.source !== previousSource ||
       previous.editing !== previousEditing || DocumentService.session.fileOperation !== 'idle' ||
@@ -299,20 +328,35 @@ export class DocumentService {
       session.pendingWriteText = '';
       session.pendingWriteUri = '';
       result.saved = true;
-      result.stillDirty = session.source !== snapshot;
       result.sessionId = session.id;
-      if (result.stillDirty) {
-        DocumentService.scheduleDraft(session);
-        result.message = AppText.text($r('app.string.saved_dirty'));
-      } else {
+      let recoveryCommitted = false;
+      try {
+        // The pre-write checkpoint still points at the old baseline and possibly an old URI.
+        // Publish the verified target before attempting to remove that checkpoint.
+        await DocumentService.checkpointRecovery(session, session.savedText, session.info);
+        recoveryCommitted = true;
+      } catch (error) {
+        DocumentService.reportRecovery(session.id, error);
+        // Even a clean session must replace the stale pre-write checkpoint on retry.
+        if (DocumentService.drafts !== null) DocumentService.drafts.schedule(DocumentService.makeSnapshot(session));
+      }
+      if (recoveryCommitted && session.source === snapshot) {
         try {
           const cleared = await DocumentService.clearRecovery(session, 'saved');
           if (!cleared) DocumentService.scheduleDraft(session);
         } catch (error) {
           DocumentService.reportRecovery(session.id, error);
         }
-        if (readOnly) result.message = AppText.text($r('app.string.saved_readonly'));
-        else result.message = AppText.text($r('app.string.saved'));
+      }
+      result.stillDirty = session.source !== snapshot;
+      if (result.stillDirty) {
+        DocumentService.scheduleDraft(session);
+        result.message = AppText.text($r('app.string.saved_dirty'));
+      } else if (readOnly) result.message = AppText.text($r('app.string.saved_readonly'));
+      else result.message = AppText.text($r('app.string.saved'));
+      if (!recoveryCommitted) {
+        const warning = AppText.text($r('app.string.saved_recovery_pending'));
+        result.message = result.stillDirty ? `${result.message}\n${warning}` : warning;
       }
       return result;
     } catch (error) {
