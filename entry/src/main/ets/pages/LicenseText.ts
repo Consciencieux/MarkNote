@@ -23,6 +23,11 @@ export function splitLicenseText(text: string): string[] {
         end = line + 1;
       }
     }
+    if (end < text.length && end > start &&
+      text.charCodeAt(end - 1) >= 0xD800 && text.charCodeAt(end - 1) <= 0xDBFF &&
+      text.charCodeAt(end) >= 0xDC00 && text.charCodeAt(end) <= 0xDFFF) {
+      end--;
+    }
     chunks.push(text.slice(start, end));
     start = end;
   }

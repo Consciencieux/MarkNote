@@ -10,12 +10,33 @@ import { writeAll } from '../storage/FileBytes';
 /** Share a snapshot of the editor through the system panel, without modifying the original file. */
 export class DocumentShare {
   private static sequence: number = 0;
+  private static readonly CACHE_AGE_MS: number = 7 * 24 * 60 * 60 * 1000;
+
+  private static async cleanExpired(root: string): Promise<void> {
+    try {
+      const entries = await fileIo.listFile(root);
+      for (const entry of entries) {
+        if (!/^\d+-\d+$/.test(entry)) continue;
+        const created = Number(entry.split('-')[0]);
+        if (Date.now() - created < DocumentShare.CACHE_AGE_MS) continue;
+        try {
+          await fileIo.rmdir(`${root}/${entry}`);
+        } catch {
+          // Retry on a later share if the file is still in use.
+        }
+      }
+    } catch {
+      // The share directory may not exist yet.
+    }
+  }
 
   static async show(context: common.UIAbilityContext, name: string, source: string): Promise<void> {
     const safeName = name.replace(/[\/\\\0]/g, '_');
     const filename = safeName.length === 0 || safeName === '.' || safeName === '..' ?
       AppText.text($r('app.string.file_share_fallback')) : safeName;
-    const directory = `${context.cacheDir}/marknote-share/${Date.now()}-${DocumentShare.sequence++}`;
+    const root = `${context.cacheDir}/marknote-share`;
+    await DocumentShare.cleanExpired(root);
+    const directory = `${root}/${Date.now()}-${DocumentShare.sequence++}`;
     await fileIo.mkdir(directory, true);
     const path = `${directory}/${filename}`;
     // A UTF-8 snapshot also supports new, read-only and unsaved documents.

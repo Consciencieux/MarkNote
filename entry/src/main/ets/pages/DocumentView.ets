@@ -60,7 +60,7 @@ export struct DocumentView {
   /** 文稿页在导航栈里，不跟随首页 @Link。语言从 AppStorage 取，查找栏和预览才会重取。 */
   @StorageLink('marknote_language') language: string = 'default';
   @StorageLink('marknote_code_theme') codeTheme: string = 'github';
-  @Prop @Watch('onWideChange') wide: boolean = false;
+  @State private wide: boolean = false;
   @Prop canExpand: boolean = false;
   @Prop expanded: boolean = false;
   @Prop favorite: boolean = false;
@@ -975,6 +975,13 @@ export struct DocumentView {
     }
     .width('100%')
     .height('100%')
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      const wide = Number(newArea.width) >= 840;
+      if (wide !== this.wide) {
+        this.wide = wide;
+        this.onWideChange();
+      }
+    })
   }
 
   /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */

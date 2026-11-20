@@ -22,6 +22,7 @@ export class FileContents {
 export class FileAccess {
   writable: boolean = false;
   persistent: boolean = false;
+  newMode: number = 0;
 }
 
 /** SHA-256 of empty input. Frames MD does not accept a zero-length update, so it is a constant. */
@@ -124,7 +125,7 @@ export class DocumentFiles {
    * Activate both stored modes before canOpen. Opening first makes a still-valid
    * recent file look expired, and the grant is never activated.
    */
-  static async prepare(uri: string, writeRequested: boolean): Promise<FileAccess> {
+  static async prepare(uri: string, writeRequested: boolean, persist: boolean = true): Promise<FileAccess> {
     const access = new FileAccess();
     if (uri.length === 0) return access;
     // Must run before canOpen. A restart leaves the persisted grant inactive.
@@ -135,8 +136,15 @@ export class DocumentFiles {
     if (!readable) throw userNotice(AppText.text($r('app.string.auth_expired')));
     const mode = writable ? READ_WRITE : fileShare.OperationMode.READ_MODE;
     let persistent = writable ? persistedWrite : persistedRead;
-    if (!persistent) persistent = await retain(uri, mode);
-    if (!persistent && writable) persistent = await retain(uri, fileShare.OperationMode.READ_MODE);
+    if (persist && !persistent) {
+      persistent = await retain(uri, mode);
+      // Keep an existing read grant intact if a later adoption fails.
+      if (persistent && !persistedRead) access.newMode = mode;
+    }
+    if (persist && !persistent && writable) {
+      persistent = await retain(uri, fileShare.OperationMode.READ_MODE);
+      if (persistent && !persistedRead) access.newMode = fileShare.OperationMode.READ_MODE;
+    }
     access.writable = writable;
     access.persistent = persistent;
     return access;
@@ -151,6 +159,15 @@ export class DocumentFiles {
       } catch {
         // The persisted grant may already have been removed.
       }
+    }
+  }
+
+  static async releaseNew(uri: string, access: FileAccess): Promise<void> {
+    if (access.newMode === 0) return;
+    try {
+      await fileShare.revokePermission([policy(uri, access.newMode)]);
+    } catch {
+      // The grant may already have been removed by the provider.
     }
   }
 

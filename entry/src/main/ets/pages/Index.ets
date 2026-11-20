@@ -1,6 +1,6 @@
 import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
 import {
-  ColorMetrics, ComponentContent, LengthMetrics, mediaquery, SegmentButtonV2Items, TabSegmentButtonV2
+  ColorMetrics, ComponentContent, LengthMetrics, SegmentButtonV2Items, TabSegmentButtonV2
 } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationTitleMode,
@@ -37,7 +37,6 @@ struct Index {
   @State private theme: string = 'system';
   @State private language: string = 'default';
   @State private version: string = '';
-  @State private wide: boolean = false;
   @State private navigationMode: NavigationMode = NavigationMode.Stack;
   @State private documentExpanded: boolean = false;
   @State private documentOpen: boolean = false;
@@ -57,7 +56,6 @@ struct Index {
   private context: common.UIAbilityContext | null = null;
   private routes: NavPathStack = new NavPathStack();
   private libraryScroller: Scroller = new Scroller();
-  private wideQuery: mediaquery.MediaQueryListener | null = null;
   private homeMenu: ComponentContent<Object> | null = null;
   private documentMenu: ComponentContent<Object> | null = null;
   private recentTask: Promise<void> = Promise.resolve();
@@ -96,7 +94,6 @@ struct Index {
     if (this.context) this.language = LocalState.readLanguageSync(this.context);
     AppStorage.setOrCreate('marknote_code_theme', this.context ? LocalState.readCodeThemeSync(this.context) : 'github');
     publishAppLanguage(this.language);
-    this.bindWideBreakpoint();
     this.startupTask = this.initialize();
   }
 
@@ -105,10 +102,6 @@ struct Index {
     LaunchRequests.unbind();
     documentBridge.cancelWait();
     this.releaseMenus();
-    if (this.wideQuery !== null) {
-      this.wideQuery.off('change');
-      this.wideQuery = null;
-    }
   }
 
   onBackPress(): boolean {
@@ -248,18 +241,6 @@ struct Index {
           }
         }
       });
-    });
-  }
-
-  /**
-   * 分栏阈值使用 ArkUI 典型 WIDTH_LG 断点（API 枚举文档 ts-appendix-enums）：窗口宽度达到 840vp。
-   * 监听仍由官方媒体查询 API 完成，避免在页面区域变化事件里自行计算宽度。
-   */
-  private bindWideBreakpoint(): void {
-    this.wideQuery = this.getUIContext().getMediaQuery().matchMediaSync('(width >= 840vp)');
-    this.wide = this.wideQuery.matches;
-    this.wideQuery.on('change', (result: mediaquery.MediaQueryResult) => {
-      this.wide = result.matches;
     });
   }
 
@@ -618,16 +599,16 @@ struct Index {
     if (!this.context || uri.length === 0) return;
     try {
       const context = this.context;
-      this.recentTask = this.recentTask.then(async (): Promise<void> => {
+      const task = this.recentTask.then(async (): Promise<void> => {
         this.recents = await LocalState.removeRecent(context, uri, this.recents, deleted);
         const retained = this.recents.some((item: RecentDocument): boolean => item.uri === uri);
         if (!retained && (!this.documentOpen || DocumentService.current().info.uri !== uri)) {
           await DocumentFiles.release(uri);
         }
       });
-      await this.recentTask;
+      this.recentTask = task.catch((): void => {});
+      await task;
     } catch {
-      this.recentTask = Promise.resolve();
       this.toast($r('app.string.recent_update_failed'));
     }
   }
@@ -723,7 +704,6 @@ struct Index {
     if (name === 'document') {
       DocumentView({
         theme: this.theme,
-        wide: this.wide,
         canExpand: this.navigationMode === NavigationMode.Split || this.documentExpanded,
         expanded: this.documentExpanded,
         favorite: this.recents.some((item: RecentDocument): boolean =>
