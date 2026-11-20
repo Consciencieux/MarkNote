@@ -1,18 +1,23 @@
 import { HdsTabsAttribute } from '@kit.UIDesignKit';
-import { TITLE_BLUR_EXTENSION } from './HdsMaterialStyles';
 
 /**
  * Shared by native Scroll and List; controllers remain local to each page/tab.
- * safeAreaPadding lays out the first item below the extra titlebar mask. SAFE_AREA lets moving
- * content paint back into that area and the surrounding HDS component safe area.
+ * SAFE_AREA lets scrolling content paint through the initial spacing and into the HDS titlebar.
  * Sources: arkts-develop-apply-immersive-effects (滚动类场景),
  * ts-container-scrollable-common (clipContent / edgeEffect / autoAdjustScrollBarMargin),
  * faqs-arkui-271 (cross-file AttributeModifier reuse).
  */
-export class PageScrollPolicy<T extends ScrollAttribute | ListAttribute> implements AttributeModifier<T> {
-  applyNormalAttribute(instance: T): void {
+class PageScrollPolicy implements AttributeModifier<ScrollAttribute | ListAttribute> {
+  private readonly hasSectionHeader: boolean;
+
+  constructor(hasSectionHeader: boolean = false) {
+    this.hasSectionHeader = hasSectionHeader;
+  }
+
+  applyNormalAttribute(instance: ScrollAttribute | ListAttribute): void {
     instance
-      .safeAreaPadding({ top: TITLE_BLUR_EXTENSION })
+      // MarkNote uses the settings list's initial spacing. SubHeader supplies its own.
+      .safeAreaPadding({ top: this.hasSectionHeader ? $r('sys.float.padding_level0') : $r('sys.float.padding_level8') })
       .clipContent(ContentClipMode.SAFE_AREA)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Auto)
@@ -20,6 +25,9 @@ export class PageScrollPolicy<T extends ScrollAttribute | ListAttribute> impleme
       .autoAdjustScrollBarMargin(true);
   }
 }
+
+export const pageScroll = new PageScrollPolicy();
+export const pageScrollWithSectionHeader = new PageScrollPolicy(true);
 
 /**
  * TabContent clips by default. Release the ancestor clip as well as configuring Scroll's

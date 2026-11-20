@@ -1,14 +1,14 @@
-import { PageScrollPolicy } from './PageScrollPolicy';
+import { pageScroll } from './PageScrollPolicy';
 
 /**
- * The single vertical scroll surface for preview, editing, outline, and split panes.
- * Each child is sized to its content so this ArkUI Scroll owns page movement in every tab.
+ * Preview and outline content scroll with this container. The bounded editor has its own
+ * viewport and coordinates scrolling with this container through nested scrolling.
  */
 @Component
 export struct DocumentScrollLayer {
-  private scrollPolicy: PageScrollPolicy<ScrollAttribute> = new PageScrollPolicy<ScrollAttribute>();
   @Consume('documentNavigationInsetAbsent') navigationInsetAbsent: boolean;
   scroller: Scroller = new Scroller();
+  boundedEditor: boolean = false;
   onViewportChange: (top: number, height: number) => void = (_top: number, _height: number): void => {};
   @State private viewportHeight: number = 0;
   @BuilderParam content: () => void = this.EmptyContent;
@@ -20,18 +20,21 @@ export struct DocumentScrollLayer {
     Scroll(this.scroller) {
       Column() {
         this.content()
-        // HdsTabs 悬浮样式默认高度为 56vp；内容末尾留出同等空间，避免被悬浮页签遮挡。
-        // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ui-design-hdstabs
-        Blank().height(56)
-        if (this.navigationInsetAbsent) {
-          Blank().height($r('sys.float.margin_left'))
+        if (!this.boundedEditor) {
+          // 阅读内容延伸到悬浮页签下方，末尾需要留出页签空间。
+          Blank().height(56)
+          if (this.navigationInsetAbsent) {
+            Blank().height($r('sys.float.margin_left'))
+          }
         }
-      }.width('100%')
+      }
+      .width('100%')
+      .height(this.boundedEditor && this.viewportHeight > 0 ? this.viewportHeight : undefined)
     }
     // faqs-arkui-725: bounded Scroll centers short content unless aligned to the top.
     .align(Alignment.Top)
     .scrollable(ScrollDirection.Vertical)
-    .attributeModifier(this.scrollPolicy)
+    .attributeModifier(pageScroll)
     .onDidScroll(() => {
       this.onViewportChange(this.scroller.currentOffset().yOffset, this.viewportHeight);
     })

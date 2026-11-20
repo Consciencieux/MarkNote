@@ -57,6 +57,7 @@ export struct DocumentCodeEditor {
   @Prop @Watch('updateTheme') theme: string = 'github';
   @Prop @Watch('updateTheme') appearance: string = 'system';
   @Prop webTheme: string = 'system';
+  @StorageLink('marknote_font_scale') fontScale: number = 1;
   @Prop @Watch('updateLocale') language: string = 'zh-CN';
   @Prop @Watch('updateLocale') textDirection: string = 'ltr';
   controller: DocumentCodeEditorController = new DocumentCodeEditorController();
@@ -259,6 +260,7 @@ export struct DocumentCodeEditor {
       .darkMode(this.webTheme === 'system' ? WebDarkMode.Auto :
         (this.webTheme === 'dark' ? WebDarkMode.On : WebDarkMode.Off))
       .backgroundColor($r('sys.color.ohos_id_color_background'))
+      .textZoomRatio(Math.round(this.fontScale * 100))
       .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST })
       .onPageEnd(() => this.connect())
       .width('100%').height('100%')

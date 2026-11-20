@@ -1,4 +1,4 @@
-import { PageScrollPolicy } from './PageScrollPolicy';
+import { pageScroll } from './PageScrollPolicy';
 import { SettingsActionRow, SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { LANGUAGE_VALUES } from '../i18n/AppLanguage';
 
@@ -56,7 +56,6 @@ export function languageLabel(choice: string): Resource {
 @Component
 export struct SettingsView {
   scroller: Scroller = new Scroller();
-  private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
   private groupStyle: SettingsGroupStyle = new SettingsGroupStyle();
   /** @Link keeps the displayed theme in sync with the owner when returning from a detail page. */
   @Link theme: string;
@@ -119,7 +118,7 @@ export struct SettingsView {
         })
       }.attributeModifier(this.groupStyle)
     }
-    .attributeModifier(this.scrollPolicy)
+    .attributeModifier(pageScroll)
     .width('100%')
     .height('100%')
   }
