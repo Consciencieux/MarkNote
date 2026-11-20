@@ -10,9 +10,17 @@ import { TITLE_BLUR_EXTENSION } from './HdsMaterialStyles';
  * faqs-arkui-271 (cross-file AttributeModifier reuse).
  */
 export class PageScrollPolicy<T extends ScrollAttribute | ListAttribute> implements AttributeModifier<T> {
+  private readonly reserveTitleMask: boolean;
+
+  constructor(reserveTitleMask: boolean = true) {
+    this.reserveTitleMask = reserveTitleMask;
+  }
+
   applyNormalAttribute(instance: T): void {
+    if (this.reserveTitleMask) {
+      instance.safeAreaPadding({ top: TITLE_BLUR_EXTENSION });
+    }
     instance
-      .safeAreaPadding({ top: TITLE_BLUR_EXTENSION })
       .clipContent(ContentClipMode.SAFE_AREA)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Auto)

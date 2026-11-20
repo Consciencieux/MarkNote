@@ -11,15 +11,14 @@ import {
 export const TITLE_BLUR_EXTENSION: number = 32;
 
 /** One titlebar contract for the library, settings and document destinations. */
-export function scrollingTitleBar(content: TitleBarContentOptions): HdsNavigationTitleBarOptions {
+export function scrollingTitleBar(content: TitleBarContentOptions, followScroll: boolean = false): HdsNavigationTitleBarOptions {
   return {
     enableComponentSafeArea: true,
     content: content,
     style: {
-      // ui-design-hds-component-material: false keeps the gradient blur active; it does NOT
-      // disable blur. The button material is independent of the titlebar background effect.
+      // Settings fades in the gradient as the list scrolls. Library and document pages keep it active.
       scrollEffectOpts: {
-        enableScrollEffect: false,
+        enableScrollEffect: followScroll,
         scrollEffectType: ScrollEffectType.GRADIENT_BLUR
       },
       originalStyle: { backgroundStyle: { maskExtraHeight: TITLE_BLUR_EXTENSION } },
