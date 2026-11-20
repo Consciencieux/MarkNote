@@ -89,6 +89,7 @@
     { "name": "language_ug", "value": "ئۇيغۇرچە" },
     { "name": "language_save_failed", "value": "تعذر حفظ إعداد اللغة" },
     { "name": "settings_appearance", "value": "المظهر" },
+    { "name": "settings_theme_group", "value": "السمة" },
     { "name": "settings_code_theme", "value": "تمييز الشيفرة" },
     { "name": "code_theme_off", "value": "إيقاف" },
     { "name": "code_theme_github", "value": "GitHub" },

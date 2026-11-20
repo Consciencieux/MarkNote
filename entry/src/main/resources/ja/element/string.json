@@ -89,6 +89,7 @@
     { "name": "language_ug", "value": "ئۇيغۇرچە" },
     { "name": "language_save_failed", "value": "言語設定を保存できませんでした" },
     { "name": "settings_appearance", "value": "外観" },
+    { "name": "settings_theme_group", "value": "テーマ" },
     { "name": "settings_code_theme", "value": "コードの強調表示" },
     { "name": "code_theme_off", "value": "オフ" },
     { "name": "code_theme_github", "value": "GitHub" },

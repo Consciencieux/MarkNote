@@ -89,6 +89,7 @@
     { "name": "language_ug", "value": "ئۇيغۇرچە" },
     { "name": "language_save_failed", "value": "تىل تەڭشىكى ساقلانمىدى" },
     { "name": "settings_appearance", "value": "كۆرۈنۈش" },
+    { "name": "settings_theme_group", "value": "تېما" },
     { "name": "settings_code_theme", "value": "كودنى گەۋدىلەندۈرۈش" },
     { "name": "code_theme_off", "value": "تاقاش" },
     { "name": "code_theme_github", "value": "GitHub" },

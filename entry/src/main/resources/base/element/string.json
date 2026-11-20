@@ -89,6 +89,7 @@
     { "name": "language_ug", "value": "ئۇيغۇرچە" },
     { "name": "language_save_failed", "value": "语言设置未能保存" },
     { "name": "settings_appearance", "value": "外观" },
+    { "name": "settings_theme_group", "value": "主题" },
     { "name": "settings_code_theme", "value": "代码高亮" },
     { "name": "code_theme_off", "value": "关闭" },
     { "name": "code_theme_github", "value": "GitHub" },

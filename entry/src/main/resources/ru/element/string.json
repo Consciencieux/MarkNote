@@ -89,6 +89,7 @@
     { "name": "language_ug", "value": "ئۇيغۇرچە" },
     { "name": "language_save_failed", "value": "Не удалось сохранить язык" },
     { "name": "settings_appearance", "value": "Оформление" },
+    { "name": "settings_theme_group", "value": "Тема" },
     { "name": "settings_code_theme", "value": "Подсветка кода" },
     { "name": "code_theme_off", "value": "Выключено" },
     { "name": "code_theme_github", "value": "GitHub" },

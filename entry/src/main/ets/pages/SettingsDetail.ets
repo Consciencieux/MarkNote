@@ -1,6 +1,8 @@
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
+import { SubHeader } from '@kit.ArkUI';
 import { PageScrollPolicy } from './PageScrollPolicy';
+import { TITLE_BLUR_EXTENSION } from './HdsMaterialStyles';
 import { SettingsActionRow, SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { SettingsReadingFrame } from './SettingsReadingFrame';
 import { CODE_THEME_VALUES, LANGUAGE_VALUES, THEME_VALUES, codeThemeLabel, languageLabel, themeLabel } from './SettingsView';
@@ -163,6 +165,12 @@ export struct SettingsDetail {
   }
 
   @Builder
+  private ThemeHeader() {
+    // 卡片栅格已处理页面外边距，标题内边距和排版由 SubHeader 提供。
+    SubHeader({ secondaryTitle: $r('app.string.settings_theme_group'), contentMargin: {} })
+  }
+
+  @Builder
   private InfoRow(title: ResourceStr, status: ResourceStr) {
     ListItem({ style: ListItemStyle.CARD }) {
       SettingsListRow({ title: title, value: status })
@@ -234,6 +242,9 @@ export struct SettingsDetail {
           }, (choice: string) => choice)
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'code-theme') {
+        ListItemGroup({ style: ListItemGroupStyle.CARD, header: this.ThemeHeader() }) {}
+          .backgroundColor(Color.Transparent)
+          .padding($r('sys.float.padding_level0'))
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           ForEach(CODE_THEME_VALUES, (choice: string) => {
             SettingsChoiceRow({ title: codeThemeLabel(choice), selected: this.codeTheme === choice,
@@ -308,6 +319,8 @@ export struct SettingsDetail {
       }
     }
     .attributeModifier(this.scrollPolicy)
+    // SubHeader 的自身高度已为页首标题留出空间，避免与模糊区避让重复叠加。
+    .safeAreaPadding({ top: this.section === 'code-theme' ? $r('sys.float.padding_level0') : TITLE_BLUR_EXTENSION })
     .width('100%')
     .height('100%')
   }
