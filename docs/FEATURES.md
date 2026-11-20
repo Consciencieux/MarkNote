@@ -56,6 +56,6 @@
 
 首页和设置页使用原生 `List`；文稿页签和分栏使用 `DocumentScrollLayer` 中的 `Scroll`。这些页面通过 `PageScrollPolicy` 共用边缘回弹、按需显示滚动条及安全区配置，同时各自持有滚动控制器。
 
-标题栏使用 `HdsMaterialStyles` 中的公共配置。初始内容避开标题栏的模糊区域；向上滚动时，内容可以进入标题栏下方并显示模糊效果。预览使用 ArkWeb 的 `FIT_CONTENT`，页面滚动由外层滚动容器处理。
+标题栏在列表起点显示初始样式，内容向上滚动时由 HDS 渐变模糊。代码高亮设置页由分组标题提供首项留白。预览随原生容器滚动，编辑器在底部页签上方有独立视口，通过 ArkWeb 的嵌套滚动与原生容器衔接。
 
 主要代码：[PageScrollPolicy.ets](../entry/src/main/ets/pages/PageScrollPolicy.ets)、[HdsMaterialStyles.ets](../entry/src/main/ets/pages/HdsMaterialStyles.ets)、[DocumentScrollLayer.ets](../entry/src/main/ets/pages/DocumentScrollLayer.ets)。

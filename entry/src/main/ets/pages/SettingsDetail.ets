@@ -1,7 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { SubHeader } from '@kit.ArkUI';
-import { PageScrollPolicy } from './PageScrollPolicy';
+import { pageScroll, pageScrollWithSectionHeader } from './PageScrollPolicy';
 import { SettingsActionRow, SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { SettingsReadingFrame } from './SettingsReadingFrame';
 import { CODE_THEME_VALUES, LANGUAGE_VALUES, THEME_VALUES, codeThemeLabel, languageLabel, themeLabel } from './SettingsView';
@@ -80,7 +80,6 @@ struct SettingsChoiceRow {
 @Component
 export struct SettingsDetail {
   scroller: Scroller = new Scroller();
-  private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>(false);
   private groupStyle: SettingsGroupStyle = new SettingsGroupStyle();
   /** 路由名，同时就是这一页的 section。 */
   @Prop section: string = 'about';
@@ -317,11 +316,7 @@ export struct SettingsDetail {
         }
       }
     }
-    .attributeModifier(this.scrollPolicy)
-    // 代码高亮页首的 SubHeader 自带标题留白。其他列表在起点使用控件间距。
-    .safeAreaPadding({
-      top: this.section === 'code-theme' ? $r('sys.float.padding_level0') : $r('sys.float.padding_level8')
-    })
+    .attributeModifier(this.section === 'code-theme' ? pageScrollWithSectionHeader : pageScroll)
     .width('100%')
     .height('100%')
   }

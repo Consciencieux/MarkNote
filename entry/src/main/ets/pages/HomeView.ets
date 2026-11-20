@@ -1,4 +1,4 @@
-import { PageScrollPolicy } from './PageScrollPolicy';
+import { pageScroll } from './PageScrollPolicy';
 import { ComposeListItem, IconType, LengthMetrics, SymbolGlyphModifier } from '@kit.ArkUI';
 import { RecentDocument } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
@@ -18,7 +18,6 @@ export struct HomeView {
   @StorageLink('marknote_language') language: string = 'default';
   @Prop favoritesOnly: boolean = false;
   @Prop recents: RecentDocument[] = [];
-  private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
   scroller: Scroller = new Scroller();
   onNew: (id: string) => void = (_id: string): void => {};
   onOpen: () => void = (): void => {};
@@ -113,6 +112,6 @@ export struct HomeView {
       start: LengthMetrics.resource($r('sys.float.margin_left')),
       end: LengthMetrics.resource($r('sys.float.margin_right'))
     })
-    .attributeModifier(this.scrollPolicy)
+    .attributeModifier(pageScroll)
   }
 }

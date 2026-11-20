@@ -42,7 +42,7 @@ export struct SettingsPage {
     }
     .titleBar(scrollingTitleBar({
       title: { mainTitle: this.pageTitle() }
-    }, true))
+    }))
     .titleMode(HdsNavDestinationTitleMode.MINI)
     // 从语言页返回时，被盖住的设置首页可能还停在切换前的选项。重新对上 AppStorage 后再画右侧小字。
     .onShown((): void => {

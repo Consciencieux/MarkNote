@@ -322,7 +322,11 @@ struct Index {
           TabSegmentButtonV2({
             items: this.librarySegmentItems,
             selectedIndex: this.librarySegment,
-            $selectedIndex: (index: number): void => { this.librarySegment = index; },
+            $selectedIndex: (index: number): void => {
+              if (this.librarySegment === index) return;
+              this.librarySegment = index;
+              this.libraryScroller.scrollTo({ xOffset: 0, yOffset: 0 });
+            },
             itemSelectedFontColor: ColorMetrics.resourceColor($r('sys.color.font_emphasize')),
             // 默认选中背景与强调文字在深色模式下对比不足；使用随主题变化的系统强调背景。
             // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ohos-arkui-advanced-segmentbuttonv2/

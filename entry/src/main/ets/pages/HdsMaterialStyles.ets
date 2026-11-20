@@ -3,25 +3,16 @@ import {
   ScrollEffectType, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 
-/**
- * HdsNavigationBackgroundStyle.maskExtraHeight defaults to 32vp for GRADIENT_BLUR.
- * Share that documented extent with the content safe area; do not shorten the blur to move text.
- * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ui-design-hdsnavigation
- */
-export const TITLE_BLUR_EXTENSION: number = 32;
-
-/** One titlebar contract for the library, settings and document destinations. */
-export function scrollingTitleBar(content: TitleBarContentOptions, followScroll: boolean = false): HdsNavigationTitleBarOptions {
+/** https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ui-design-navigation-dynamic-blur */
+export function scrollingTitleBar(content: TitleBarContentOptions): HdsNavigationTitleBarOptions {
   return {
     enableComponentSafeArea: true,
     content: content,
     style: {
-      // Settings fades in the gradient as the list scrolls. Library and document pages keep it active.
       scrollEffectOpts: {
-        enableScrollEffect: followScroll,
+        enableScrollEffect: true,
         scrollEffectType: ScrollEffectType.GRADIENT_BLUR
       },
-      originalStyle: { backgroundStyle: { maskExtraHeight: TITLE_BLUR_EXTENSION } },
       systemMaterialEffect: {
         materialType: hdsMaterial.MaterialType.ADAPTIVE,
         materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE

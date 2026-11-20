@@ -942,7 +942,7 @@ export struct DocumentView {
       // Leave the floating tab bar uncovered so it retains its native interactions.
       Column() {
         ForEach([this.editorSessionKey], (key: number) => {
-          DocumentScrollLayer({ scroller: this.editScroller }) {
+          DocumentScrollLayer({ scroller: this.editScroller, boundedEditor: true }) {
             DocumentCodeEditor({
               sessionId: `document-${key}`, source: this.source, formatId: this.formatId,
               webTheme: this.theme, appearance: this.theme, theme: this.codeTheme,
