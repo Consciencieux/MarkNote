@@ -39,6 +39,23 @@ export class DocumentShare {
     const directory = `${root}/${Date.now()}-${DocumentShare.sequence++}`;
     await fileIo.mkdir(directory, true);
     const path = `${directory}/${filename}`;
+    let shown = false;
+    try {
+      await DocumentShare.showFile(context, filename, source, path);
+      shown = true;
+    } finally {
+      if (!shown) {
+        try {
+          await fileIo.rmdir(directory);
+        } catch {
+          // The expired-cache cleanup will retry on a later share.
+        }
+      }
+    }
+  }
+
+  private static async showFile(context: common.UIAbilityContext, filename: string,
+    source: string, path: string): Promise<void> {
     // A UTF-8 snapshot also supports new, read-only and unsaved documents.
     const bytes = TextEncoding.encode(source, new DocumentInfo()).bytes;
     const file = await fileIo.open(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);

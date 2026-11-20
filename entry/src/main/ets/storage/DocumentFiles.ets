@@ -138,8 +138,10 @@ export class DocumentFiles {
     let persistent = writable ? persistedWrite : persistedRead;
     if (persist && !persistent) {
       persistent = await retain(uri, mode);
-      // Keep an existing read grant intact if a later adoption fails.
-      if (persistent && !persistedRead) access.newMode = mode;
+      // Revoke only the newly added write grant when read access already existed.
+      if (persistent) {
+        access.newMode = persistedRead ? fileShare.OperationMode.WRITE_MODE : mode;
+      }
     }
     if (persist && !persistent && writable) {
       persistent = await retain(uri, fileShare.OperationMode.READ_MODE);
