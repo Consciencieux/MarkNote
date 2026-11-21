@@ -599,16 +599,16 @@ struct Index {
     if (!this.context || uri.length === 0) return;
     try {
       const context = this.context;
-      this.recentTask = this.recentTask.then(async (): Promise<void> => {
+      const task = this.recentTask.then(async (): Promise<void> => {
         this.recents = await LocalState.removeRecent(context, uri, this.recents, deleted);
         const retained = this.recents.some((item: RecentDocument): boolean => item.uri === uri);
         if (!retained && (!this.documentOpen || DocumentService.current().info.uri !== uri)) {
           await DocumentFiles.release(uri);
         }
       });
-      await this.recentTask;
+      this.recentTask = task.catch((): void => {});
+      await task;
     } catch {
-      this.recentTask = Promise.resolve();
       this.toast($r('app.string.recent_update_failed'));
     }
   }
