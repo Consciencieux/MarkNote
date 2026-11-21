@@ -144,13 +144,19 @@ new ResizeObserver(() => {
 }).observe(host);
 
 function sanitizedFragment(html: string): DocumentFragment {
-  return DOMPurify.sanitize(html, {
+  const fragment = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true, svg: true, svgFilters: true, mathMl: true },
     FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'foreignObject', 'video', 'audio', 'form'],
     FORBID_ATTR: ['src', 'srcset', 'target', 'formaction'],
     SANITIZE_NAMED_PROPS: false,
     RETURN_DOM_FRAGMENT: true
   });
+  // User text can have a different base direction in each paragraph.
+  // https://www.w3.org/International/questions/qa-html-dir#dirauto
+  for (const block of fragment.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,dt,dd,td,th,pre.plain')) {
+    if (!block.hasAttribute('dir')) block.setAttribute('dir', 'auto');
+  }
+  return fragment;
 }
 
 function renderBody(kind: Kind, source: string): string {

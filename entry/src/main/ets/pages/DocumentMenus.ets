@@ -1,4 +1,21 @@
-import { SymbolGlyphModifier } from '@kit.ArkUI';
+import { SymbolGlyphModifier, UIContext } from '@kit.ArkUI';
+import { AppText } from '../i18n/AppText';
+
+export async function chooseDocumentEncoding(context: UIContext): Promise<string> {
+  try {
+    const result = await context.getPromptAction().showActionMenu({
+      title: AppText.text($r('app.string.menu_reopen_encoding')),
+      buttons: [
+        { text: 'UTF-8', color: $r('sys.color.font_primary') },
+        { text: 'UTF-16 LE', color: $r('sys.color.font_primary') },
+        { text: 'UTF-16 BE', color: $r('sys.color.font_primary') },
+        { text: 'GB18030', color: $r('sys.color.font_primary') }
+      ]
+    });
+    return ['utf-8', 'utf-16le', 'utf-16be', 'gb18030'][result.index] ?? '';
+  } catch { return ''; }
+}
+
 
 /**
  * 菜单内容通过全局 @Builder 交给 ComponentContent 渲染，拿不到页面实例，所以用这个桥把
@@ -7,10 +24,12 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
 export class MenuBridge {
   openFile: () => void = (): void => {};
   saveAs: () => void = (): void => {};
+  reopenEncoding: () => void = (): void => {};
   share: () => void = (): void => {};
   deleteDocument: () => void = (): void => {};
   save: () => void = (): void => {};
   showDocumentActions: boolean = false;
+  canReopen: boolean = false;
   canDeleteDocument: boolean = false;
   favorite: boolean = false;
   toggleFavorite: () => void = (): void => {};
@@ -100,6 +119,10 @@ export function DocumentMenuContent() {
         .onClick(() => menuBridge.openFile())
       MenuItem({ content: $r('app.string.menu_save_as') })
         .onClick(() => menuBridge.saveAs())
+      if (menuBridge.canReopen) {
+        MenuItem({ content: $r('app.string.menu_reopen_encoding') })
+          .onClick(() => menuBridge.reopenEncoding())
+      }
       if (!menuBridge.showDocumentActions) {
         MenuItem({ content: $r('app.string.menu_save') })
           .onClick(() => menuBridge.save())

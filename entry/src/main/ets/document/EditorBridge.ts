@@ -8,10 +8,10 @@ export class EditorBridge {
   private nextSequence: number = 1;
   private conflicted: boolean = false;
   private read: () => string;
-  private write: (source: string, selection: EditorSelection) => void;
+  private write: (source: string, selection: EditorSelection, endingChange?: EditorChangeRange) => void;
 
   constructor(sessionId: string, epoch: number, revision: number, read: () => string,
-    write: (source: string, selection: EditorSelection) => void) {
+    write: (source: string, selection: EditorSelection, endingChange?: EditorChangeRange) => void) {
     this.sessionId = sessionId;
     this.epoch = epoch;
     this.currentRevision = revision;
@@ -64,7 +64,7 @@ export class EditorBridge {
         const range = message.changes[index];
         updated = updated.slice(0, range.from) + range.insert + updated.slice(range.to);
       }
-      this.write(updated, message.selection);
+      this.write(updated, message.selection, message.endingChange);
       this.currentRevision++;
       this.nextSequence++;
       return { type: 'ack', sessionId: this.sessionId, epoch: this.epoch,

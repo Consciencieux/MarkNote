@@ -3,11 +3,12 @@ import { EditorView, type ViewUpdate } from '@codemirror/view';
 import { redo, undo, undoDepth, redoDepth, isolateHistory } from '@codemirror/commands';
 import { insertEditorAction } from './editor-actions.ts';
 import type { EditorAck, EditorChangeRange, EditorConflict } from '../../shared/editor-protocol.ts';
+import { changedEndings, mixedEndings } from './mixed-endings.ts';
 import { EditorChangeQueue } from './bridge.ts';
 
 interface InitMessage {
   type: 'init'; sessionId: string; epoch: number; revision: number; source: string;
-  format: string; theme: string; appearance?: string; language: string; direction: string; anchor: number; head: number;
+  lineEndings?: string; format: string; theme: string; appearance?: string; language: string; direction: string; anchor: number; head: number;
 }
 
 /** Web-side session. It only exchanges document messages over the transferred port. */
@@ -75,7 +76,7 @@ export class EditorSession {
       if (typeof init.sessionId !== 'string' || !init.sessionId || !Number.isSafeInteger(init.epoch) ||
         !Number.isSafeInteger(init.revision) || init.revision < 0 || typeof init.source !== 'string' ||
         !['markdown', 'latex', 'svg', 'plain'].includes(init.format) || typeof init.theme !== 'string' ||
-        typeof init.language !== 'string' || !['ltr', 'rtl', 'auto'].includes(init.direction) ||
+        typeof init.language !== 'string' || !['ltr', 'rtl'].includes(init.direction) ||
         !Number.isSafeInteger(init.anchor) || !Number.isSafeInteger(init.head) ||
         init.anchor < 0 || init.head < 0 || init.anchor > init.source.length || init.head > init.source.length) return;
       if (this.current?.sessionId === init.sessionId && this.current.epoch === init.epoch) {
@@ -86,6 +87,8 @@ export class EditorSession {
         this.send({ type: 'session-busy', sessionId: init.sessionId, epoch: init.epoch });
         return;
       }
+      if (init.lineEndings !== undefined && (typeof init.lineEndings !== 'string' ||
+        /[^nrc]/.test(init.lineEndings) || init.lineEndings.length !== (init.source.match(/\n/g)?.length ?? 0))) return;
       this.current = init;
       this.blocked = false;
       this.suspended = false;
@@ -118,7 +121,7 @@ export class EditorSession {
       message.sessionId === this.current.sessionId && message.epoch === this.current.epoch) {
       const selection = this.view.state.selection.main;
       this.trySend({ type: 'recovery-snapshot', sessionId: this.current.sessionId, epoch: this.current.epoch,
-        source: this.view.state.doc.toString(), anchor: selection.anchor, head: selection.head });
+        source: this.view.state.doc.toString(), lineEndings: this.view.state.field(mixedEndings, false), anchor: selection.anchor, head: selection.head });
     }
     if (message.type === 'recovery-accepted' && this.blocked && this.current &&
       message.sessionId === this.current.sessionId && message.epoch === this.current.epoch &&
@@ -183,7 +186,7 @@ export class EditorSession {
     }
     if (message.type === 'configure-locale' && this.current && message.sessionId === this.current.sessionId &&
       message.epoch === this.current.epoch && typeof message.language === 'string' &&
-      typeof message.direction === 'string' && ['ltr', 'rtl', 'auto'].includes(message.direction)) {
+      (message.direction === 'ltr' || message.direction === 'rtl')) {
       document.documentElement.lang = message.language;
       document.documentElement.dir = message.direction;
       if (typeof message.label === 'string') {
@@ -262,7 +265,8 @@ export class EditorSession {
 
   record(update: ViewUpdate): void {
     if (!this.queue || this.blocked) return;
-    if (!update.docChanged) {
+    const endingChange = changedEndings(update.startState.field(mixedEndings, false), update.state.field(mixedEndings, false));
+    if (!update.docChanged && !endingChange) {
       if (update.selectionSet) this.publishState();
       return;
     }
@@ -270,7 +274,7 @@ export class EditorSession {
     update.changes.iterChanges((from, to, _newFrom, _newTo, inserted) => {
       changes.push({ from, to, insert: inserted.toString() });
     });
-    this.queue.submit(changes, { anchor: update.state.selection.main.anchor, head: update.state.selection.main.head });
+    this.queue.submit(changes, { anchor: update.state.selection.main.anchor, head: update.state.selection.main.head }, endingChange);
     this.publishState();
   }
 }

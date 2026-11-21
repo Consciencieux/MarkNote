@@ -7,6 +7,7 @@ export interface EditorChangeMessage {
   sequence: number;
   baseRevision: number;
   changes: EditorChangeRange[];
+  endingChange?: EditorChangeRange;
   selection: EditorSelection;
 }
 export interface EditorAck {

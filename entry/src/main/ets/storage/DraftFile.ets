@@ -45,7 +45,9 @@ export async function writeDraftFile(stream: fileIo.WriteStream, draft: Recovery
   info.pendingWriteUri = draft.pendingWriteUri;
   const bodies: string[] = [];
   const fields: number[] = [];
-  for (const field of [draft.text, draft.savedText, draft.pendingWriteText, draft.lineEndings]) {
+  const values = [draft.text, draft.savedText, draft.pendingWriteText, draft.lineEndings];
+  if (draft.newline === 'mixed' && draft.editedEndings !== undefined) values.push(draft.editedEndings);
+  for (const field of values) {
     let index = bodies.indexOf(field);
     if (index < 0) index = bodies.push(field) - 1;
     fields.push(index);
@@ -87,8 +89,8 @@ export async function readDraftFile(path: string): Promise<RecoveryData> {
     return header as Object as RecoveryData;
   }
   if (!header || header.version !== 2 || !header.info || typeof header.info !== 'object' ||
-    !Array.isArray(header.lengths) || header.lengths.length === 0 || header.lengths.length > 4 ||
-    !Array.isArray(header.fields) || header.fields.length !== 4) throw invalidDraft();
+    !Array.isArray(header.lengths) || header.lengths.length === 0 || header.lengths.length > 5 ||
+    !Array.isArray(header.fields) || (header.fields.length !== 4 && header.fields.length !== 5)) throw invalidDraft();
   const bodies: string[] = [];
   for (const length of header.lengths) {
     if (!Number.isSafeInteger(length) || length < 0) throw invalidDraft();
@@ -111,5 +113,6 @@ export async function readDraftFile(path: string): Promise<RecoveryData> {
   info.savedText = bodies[header.fields[1]];
   info.pendingWriteText = bodies[header.fields[2]];
   info.lineEndings = bodies[header.fields[3]];
+  if (header.fields.length === 5) info.editedEndings = bodies[header.fields[4]];
   return info;
 }

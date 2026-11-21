@@ -197,7 +197,7 @@ export class DocumentFiles {
     return uris.length === 0 ? '' : uris[0];
   }
 
-  static async read(uri: string): Promise<FileContents> {
+  static async read(uri: string, encoding: string = ''): Promise<FileContents> {
     let file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
     let inspected: InspectedDocument;
     let name = '';
@@ -208,7 +208,7 @@ export class DocumentFiles {
         file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
         await fileIo.close(previous);
         return file.fd;
-      }, null);
+      }, null, encoding);
       name = fileName(file);
     } finally {
       await fileIo.close(file);

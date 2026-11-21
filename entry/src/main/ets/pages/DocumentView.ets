@@ -19,11 +19,12 @@ import { DocumentPreviewView } from './DocumentPreviewView';
 import { DocumentScrollLayer, documentTabClearance } from './DocumentScrollLayer';
 import { DocumentCodeEditor, DocumentCodeEditorController } from './DocumentCodeEditor';
 import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
-import { menuBridge } from './DocumentMenus';
+import { chooseDocumentEncoding, menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
 import { AppText } from '../i18n/AppText';
 import { isRightToLeftLanguage, resourceLanguage } from '../i18n/AppLanguage';
 import { shownDetail } from '../document/UserNotice';
+import { DocumentFiles } from '../storage/DocumentFiles';
 import { scrollingTitleBar, navigationMenuIcon } from './HdsMaterialStyles';
 
 /**
@@ -85,7 +86,7 @@ export struct DocumentView {
   private splitPreviewScroller: Scroller = new Scroller();
   @State private title: string = AppText.text($r('app.string.file_untitled_md'));
   @State private source: string = '';
-  @State private savedText: string = '';
+  @State private dirty: boolean = false;
   @State private selectedTab: number = TAB_PREVIEW;
   /** 页签数量、分栏索引、编辑器和预览都跟随当前文稿的格式。 */
   @State private formatId: string = '';
@@ -143,6 +144,9 @@ export struct DocumentView {
     // 文稿页自己的菜单项：另存为和查找只对当前文稿有意义。
     menuBridge.saveAs = (): void => {
       menuBridge.dismiss((): void => { void this.saveFile(true); });
+    };
+    menuBridge.reopenEncoding = (): void => {
+      menuBridge.dismiss((): void => { void this.reopenWithEncoding(); });
     };
     menuBridge.share = (): void => {
       menuBridge.dismiss((): void => { void this.shareDocument(); });
@@ -252,6 +256,7 @@ export struct DocumentView {
     DocumentService.unbindRecoveryError();
     void DocumentService.flushRecovery();
     menuBridge.saveAs = (): void => {};
+    menuBridge.reopenEncoding = (): void => {};
     menuBridge.share = (): void => {};
     menuBridge.toggleFavorite = (): void => {};
     menuBridge.save = (): void => {};
@@ -389,6 +394,7 @@ export struct DocumentView {
 
   private openDocumentMenu(): void {
     menuBridge.showDocumentActions = this.inEditTab();
+    menuBridge.canReopen = this.info.uri.length > 0;
     menuBridge.canDeleteDocument = this.info.uri.length > 0 && !this.deleting;
     menuBridge.favorite = this.favorite;
     menuBridge.openDocumentMenu();
@@ -462,7 +468,7 @@ export struct DocumentView {
   }
 
   private isDirty(): boolean {
-    return this.source !== this.savedText;
+    return this.dirty;
   }
 
   /**
@@ -559,7 +565,7 @@ export struct DocumentView {
     this.title = session.info.name;
     this.formatId = DocumentService.formatFor(session.info).id;
     this.source = session.source;
-    this.savedText = session.savedText;
+    this.dirty = session.isDirty();
     this.parseRevision = session.revision;
     this.documentSessionId = session.id;
     if (!sameText) {
@@ -608,6 +614,34 @@ export struct DocumentView {
       return false;
     } finally {
       this.saving = false;
+    }
+  }
+
+  private async reopenWithEncoding(): Promise<void> {
+    const owner = DocumentService.current();
+    if (this.saving || this.deleting || !owner.editing || !owner.info.uri) return;
+    this.saving = true;
+    try {
+      if (!await this.editor.flush(true) || DocumentService.current() !== owner) return;
+      if (owner.isDirty() || owner.writeUncertain) {
+        this.toast($r('app.string.reopen_encoding_dirty'));
+        return;
+      }
+      const encoding = await chooseDocumentEncoding(this.getUIContext());
+      if (!encoding || DocumentService.current() !== owner || !owner.editing) return;
+      const loaded = await DocumentFiles.read(owner.info.uri, encoding);
+      if (DocumentService.current() !== owner || !owner.editing || owner.isDirty() ||
+        owner.writeUncertain) return;
+      if (!loaded.info.name) loaded.info.name = owner.info.name;
+      loaded.info.formatId = owner.info.formatId;
+      loaded.info.persistent = owner.info.persistent;
+      loaded.info.writable = owner.info.writable;
+      if (await DocumentService.adopt(loaded)) this.loadSession();
+    } catch (error) {
+      this.toast(this.uiFormat($r('app.string.open_failed'), shownDetail(error)));
+    } finally {
+      this.saving = false;
+      this.editor.command({ action: 'resume' });
     }
   }
 
@@ -717,10 +751,11 @@ export struct DocumentView {
   }
 
   /** Apply the editor's confirmed text to the active document service. */
-  private updateSource(expected: string, text: string, anchor: number, head: number): boolean {
+  private updateSource(expected: string, text: string, anchor: number, head: number, endings?: string): boolean {
     if (this.sessionOwner !== DocumentService.current() || !DocumentService.current().editing ||
       DocumentService.current().source !== expected) return false;
-    const changed = DocumentService.edit(text);
+    const changed = DocumentService.edit(text, endings);
+    this.dirty = DocumentService.current().isDirty();
     this.source = text;
     this.selectionStart = anchor;
     this.selectionEnd = head;
@@ -957,19 +992,19 @@ export struct DocumentView {
             onViewportChange: (offset: number): void => { this.editorParentOffset = offset; } }) {
             DocumentCodeEditor({
               sessionId: `document-${key}`, source: this.source, formatId: this.formatId,
+              initialEndings: this.info.newline === 'mixed' ? DocumentService.current().lineEndings : undefined,
               webTheme: this.theme, appearance: this.theme, theme: this.codeTheme,
               language: resourceLanguage(this.language),
-              textDirection: this.language === 'default' ? 'auto' :
-                (isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr'),
+              textDirection: isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr',
               topInset: Math.max(0, this.workspaceTop - this.editorTop),
               parentOffset: this.editorParentOffset,
               bottomInset: documentTabClearance(this.tabBarBottomMargin),
               controller: this.editor,
-              onChange: (expected: string, source: string, anchor: number, head: number): boolean => {
-                return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head);
+              onChange: (expected: string, source: string, anchor: number, head: number, endings?: string): boolean => {
+                return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head, endings);
               },
-              onRecover: (expected: string, source: string, anchor: number, head: number): boolean => {
-                return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head);
+              onRecover: (expected: string, source: string, anchor: number, head: number, endings?: string): boolean => {
+                return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head, endings);
               },
               onFind: (): void => { if (key === this.editorSessionKey) this.openFind(); },
               onState: (anchor: number, head: number, canUndo: boolean, canRedo: boolean): void => {

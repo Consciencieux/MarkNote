@@ -22,7 +22,7 @@ export class EditorChangeQueue {
     this.send = send;
   }
 
-  submit(changes: EditorChangeRange[], selection: EditorSelection): EditorChangeMessage {
+  submit(changes: EditorChangeRange[], selection: EditorSelection, endingChange?: EditorChangeRange): EditorChangeMessage {
     if (this.blocked) throw new Error('editor sync conflict');
     const sequence = this.nextSequence++;
     const message: EditorChangeMessage = {
@@ -31,6 +31,7 @@ export class EditorChangeQueue {
       changes: changes.map((item) => ({ from: item.from, to: item.to, insert: item.insert })),
       selection: { anchor: selection.anchor, head: selection.head }
     };
+    if (endingChange) message.endingChange = endingChange;
     this.pending.push(message);
     if (this.deliveryPaused) {
       this.retransmit();

@@ -50,6 +50,7 @@ export class RecentDocument {
 }
 
 export class RecoveryData {
+  editedEndings?: string;
   name: string = AppText.text($r('app.string.file_untitled_md'));
   uri: string = '';
   text: string = '';
