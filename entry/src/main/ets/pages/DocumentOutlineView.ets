@@ -15,7 +15,7 @@ class OutlineRow {
 
 @Component
 export struct DocumentOutlineView {
-  @Consume('documentNavigationInsetAbsent') navigationInsetAbsent: boolean;
+  @Consume('documentTabBarBottomMargin') tabBarBottomMargin: number;
   @Prop @Watch('refreshRows') headings: Heading[] = [];
   @Prop @Watch('resetCollapsed') documentRevision: number = 0;
   private collapsedOutline: Set<string> = new Set();
@@ -88,14 +88,18 @@ export struct DocumentOutlineView {
       .height(40)
       .opacity(entry.item.isFolder ? 1 : 0)
       .enabled(entry.item.isFolder)
+      .accessibilityLevel(entry.item.isFolder ? 'yes' : 'no')
       .accessibilityRole(AccessibilityRoleType.BUTTON)
       .accessibilityText(entry.item.expanded ? $r('app.string.outline_collapse') : $r('app.string.outline_expand'))
+      .accessibilityDescription(entry.item.heading.text)
       .onClick(() => this.toggleOutline(entry.item))
       // 一级和子级都是标题文字，分别使用列表标题和副标题小号样式。
       Text(entry.item.heading.text)
         .attributeModifier(this.outlineText(entry.item.depth))
         .layoutWeight(1)
         .constraintSize({ minHeight: 40 })
+        .accessibilityLevel('yes')
+        .accessibilityRole(AccessibilityRoleType.BUTTON)
         .onClick(() => this.onSelect(entry.item.heading))
     }
     .padding({ start: LengthMetrics.vp(entry.item.depth * LengthMetrics.resource($r('sys.float.padding_level8')).value) })
@@ -122,7 +126,7 @@ export struct DocumentOutlineView {
       start: LengthMetrics.resource($r('sys.float.margin_left')),
       end: LengthMetrics.resource($r('sys.float.margin_right'))
     })
-    .attributeModifier(new PageScrollPolicy(false, documentTabClearance(this.navigationInsetAbsent)))
+    .attributeModifier(new PageScrollPolicy(false, documentTabClearance(this.tabBarBottomMargin)))
     .scrollBar(BarState.Auto)
     .width('100%')
     .height('100%')

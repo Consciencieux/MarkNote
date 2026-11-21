@@ -1,9 +1,9 @@
 import { LengthMetrics } from '@kit.ArkUI';
 import { pageScroll, PageScrollPolicy } from './PageScrollPolicy';
 
-export function documentTabClearance(navigationInsetAbsent: boolean): number {
+export function documentTabClearance(tabBarBottomMargin: number): number {
   const bar = LengthMetrics.resource($r('sys.float.tab_bar_default_height')).value;
-  return navigationInsetAbsent ? bar + LengthMetrics.resource($r('sys.float.margin_left')).value : bar;
+  return bar + tabBarBottomMargin;
 }
 
 /**
@@ -12,7 +12,7 @@ export function documentTabClearance(navigationInsetAbsent: boolean): number {
  */
 @Component
 export struct DocumentScrollLayer {
-  @Consume('documentNavigationInsetAbsent') navigationInsetAbsent: boolean;
+  @Consume('documentTabBarBottomMargin') tabBarBottomMargin: number;
   scroller: Scroller = new Scroller();
   boundedEditor: boolean = false;
   onViewportChange: (top: number, height: number) => void = (_top: number, _height: number): void => {};
@@ -38,7 +38,7 @@ export struct DocumentScrollLayer {
     .align(Alignment.Top)
     .scrollable(ScrollDirection.Vertical)
     .attributeModifier(this.boundedEditor ? pageScroll :
-      new PageScrollPolicy(false, documentTabClearance(this.navigationInsetAbsent)))
+      new PageScrollPolicy(false, documentTabClearance(this.tabBarBottomMargin)))
     // The bounded Web scrolls the source. This outer Scroll only coordinates its native safe area.
     .scrollBar(this.boundedEditor ? BarState.Off : BarState.Auto)
     .onDidScroll(() => {

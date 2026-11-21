@@ -63,6 +63,7 @@ struct SettingsChoiceRow {
     }
     .onClick(() => this.onSelect())
     .accessibilityGroup(true)
+    .accessibilityLevel('yes')
     .accessibilityText(this.title)
     .accessibilityRole(AccessibilityRoleType.RADIO)
     .accessibilityChecked(this.selected)

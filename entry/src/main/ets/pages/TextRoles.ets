@@ -59,10 +59,10 @@ export class BodyInputStyle implements AttributeModifier<TextAreaAttribute> {
   }
 }
 
-/** 工具栏符号原先写死 24。Title_M 是系统里与之对应的一档。 */
+/** 工具栏图标使用系统图标尺寸。 */
 export class ToolbarIconStyle implements AttributeModifier<SymbolGlyphAttribute> {
   applyNormalAttribute(instance: SymbolGlyphAttribute): void {
-    instance.fontSize($r('sys.float.Title_M'))
+    instance.fontSize($r('sys.float.ohos_id_toolbar_item_icon_size'))
       .fontColor([$r('sys.color.icon_primary')]);
   }
 }

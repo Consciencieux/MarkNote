@@ -56,4 +56,5 @@ li.task-list-item { list-style:none; }
 .markdown-page > :first-child { margin-block-start:0; }
 .markdown-page-last > :last-child { margin-block-end:0; }
 
+.markdown-spacer-before { position:relative; overflow:clip; }
 .markdown-metrics { position:absolute; inset:0 auto auto 0; width:max-content; white-space:pre; visibility:hidden; pointer-events:none; }

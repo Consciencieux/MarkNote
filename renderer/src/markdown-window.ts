@@ -17,6 +17,7 @@ export class MarkdownWindow {
 
   constructor(private readonly root: HTMLElement, private readonly markdown: MarkdownPages,
     private readonly sanitize: (html: string) => DocumentFragment) {
+    this.before.className = 'markdown-spacer-before';
     this.sample.className = 'markdown-metrics';
     this.sample.setAttribute('aria-hidden', 'true');
     this.sample.textContent = markdown.source.slice(0, 128).replace(/\s/g, ' ') || 'M';
