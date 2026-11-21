@@ -1,6 +1,6 @@
 import { webview } from '@kit.ArkWeb';
 import { Heading } from '../model/Document';
-import { loadLocalImages, PreviewImage, sourcesFromPage } from '../document/LocalImages';
+import { LocalImageRequest, sendLocalImage, sourcesFromPage } from '../document/LocalImages';
 import { AppText } from '../i18n/AppText';
 import { previewLanguageTag } from '../i18n/AppLanguage';
 import { PreviewCommand, PreviewCopy, PreviewDispatch } from './PreviewDispatch';
@@ -13,7 +13,24 @@ interface ParsedResult {
   documentId?: number;
   headings: ParsedHeading[];
   url?: string;
+  id?: number;
+  sequence?: number;
+  accepted?: boolean;
 }
+
+/** Structured control messages bracket ordered binary chunks on the same WebMessagePort. */
+interface ImageControl {
+  kind: string;
+  id: number;
+  documentId?: number;
+  revision?: number;
+  request?: LocalImageRequest;
+  mime?: string;
+  intrinsicWidth?: number;
+  intrinsicHeight?: number;
+  sequence?: number;
+}
+
 
 /** 文稿预览和分栏预览共用同一组 Web 与滚动配置。 */
 @Component
@@ -42,24 +59,29 @@ export struct DocumentPreviewView {
   scroller: Scroller = new Scroller();
   private controller: webview.WebviewController = new webview.WebviewController();
   private ready: boolean = false;
+  private hasPreviewContent: boolean = false;
   @State private previewFailed: boolean = false;
   private ports: webview.WebMessagePort[] = [];
   private timer: number = -1;
   private imageGeneration: number = 0;
-  private imageTimer: number = -1;
-  private imageBusy: boolean = false;
+  private renderedGeneration: number = -1;
+  private viewportBusy: boolean = false;
+  private viewportDirty: boolean = false;
+  private imageTransfer: number = 0;
+  private imageRequests: LocalImageRequest[] = [];
+  private activeImage: LocalImageRequest | null = null;
+  private imageAck: ((accepted: boolean) => void) | null = null;
+  private imageSequence: number = 0;
   private imageTop: number = 0;
   private imageHeight: number = 0;
-  private failedImages: string[] = [];
-  private publishedDocument: number = -1;
-  private documentGeneration: number = 0;
+  private failedImages: Set<string> = new Set<string>();
   private dispatch: PreviewDispatch = new PreviewDispatch((command: PreviewCommand): Promise<void> => this.deliver(command));
 
   aboutToDisappear(): void {
     this.imageGeneration++;
+    if (this.imageAck !== null) this.imageAck(false);
     this.dispatch.dispose();
     if (this.timer >= 0) clearTimeout(this.timer);
-    if (this.imageTimer >= 0) clearTimeout(this.imageTimer);
     this.timer = -1;
     this.ready = false;
     if (this.ports.length > 1) {
@@ -69,13 +91,24 @@ export struct DocumentPreviewView {
   }
 
   private connectResultPort(): void {
+    if (this.imageAck !== null) this.imageAck(false);
     try {
       if (this.ports.length > 1) this.ports[1].close();
+      // Standard ports carry both string and ArrayBuffer with postMessageEvent (web-app-page-data-channel).
       this.ports = this.controller.createWebMessagePorts();
       this.ports[1].onMessageEvent((message: webview.WebMessage): void => {
         if (typeof message !== 'string') return;
         try {
           const result = JSON.parse(message) as ParsedResult;
+          if (result.kind === 'image-ack') {
+            if (this.imageAck !== null && result.id === this.imageTransfer &&
+              result.sequence === this.imageSequence) this.imageAck(result.accepted === true);
+            return;
+          }
+          if (result.kind === 'preview-layout') {
+            if (result.revision === this.parseRevision && result.documentId === this.documentId) this.scheduleViewport();
+            return;
+          }
           if (result.kind === 'open-link') {
             const url = result.url;
             if (typeof url !== 'string' || url.length === 0) return;
@@ -107,13 +140,18 @@ export struct DocumentPreviewView {
 
   private scheduleUpdate(): void {
     this.imageGeneration++;
-    this.failedImages = [];
+    if (this.imageAck !== null) this.imageAck(false);
+    this.imageRequests = [];
+    this.failedImages.clear();
     if (this.timer >= 0) clearTimeout(this.timer);
     this.timer = -1;
+    if (this.workMode !== 'render' && this.hasPreviewContent) {
+      this.hasPreviewContent = false;
+      // Calls for this controller are queued after any render already sent.
+      this.controller.runJavaScript('window.MarknotePreview.release()').catch((): void => {});
+    }
     if (this.workMode === 'off') {
       this.dispatch.pause();
-      if (this.imageTimer >= 0) clearTimeout(this.imageTimer);
-      this.imageTimer = -1;
       return;
     }
     this.timer = setTimeout(() => {
@@ -124,10 +162,6 @@ export struct DocumentPreviewView {
 
   private publish(): void {
     if (!this.ready || this.workMode === 'off') return;
-    if (this.documentId !== this.publishedDocument) {
-      this.publishedDocument = this.documentId;
-      this.documentGeneration++;
-    }
     const copy: PreviewCopy = {
       lang: this.language === 'default' ? previewLanguageTag() : this.language,
       empty: AppText.text($r('app.string.preview_empty')),
@@ -153,60 +187,127 @@ export struct DocumentPreviewView {
     };
     this.dispatch.request(payload);
     this.dispatch.resume();
-    if (this.workMode === 'render') this.scheduleImages();
   }
 
   private deliver(command: PreviewCommand): Promise<void> {
+    if (command.mode !== this.workMode || command.documentId !== this.documentId ||
+      command.revision !== this.parseRevision) return Promise.resolve();
+    if (command.mode === 'render') this.hasPreviewContent = true;
     const script = 'window.MarknotePreview.update(' + JSON.stringify(command) + ')';
-    const current = (): boolean => this.ready && this.workMode === command.mode &&
+    const generation = this.imageGeneration;
+    const current = (): boolean => this.ready && generation === this.imageGeneration && this.workMode === command.mode &&
       this.documentId === command.documentId && this.parseRevision === command.revision &&
       this.source === command.source && this.theme === command.theme && this.codeTheme === command.codeTheme;
     return this.controller.runJavaScript(script).then((): void => {
-      if (current()) this.previewFailed = false;
+      if (current()) {
+        this.previewFailed = false;
+        this.renderedGeneration = generation;
+        this.scheduleViewport();
+      }
     }).catch((): void => {
       if (current()) this.previewFailed = true;
     });
   }
 
-  private scheduleImages(): void {
-    if (this.workMode !== 'render') return;
-    this.imageGeneration++;
-    if (this.imageTimer >= 0) clearTimeout(this.imageTimer);
-    this.imageTimer = setTimeout(() => {
-      this.imageTimer = -1;
-      if (this.workMode === 'render') void this.refreshImages();
-    }, 150);
+  /** The native Scroll moves outside ArkWeb. Even an unsaved document needs its visible Markdown blocks. */
+  private scheduleViewport(): void {
+    if (!this.ready || this.renderedGeneration !== this.imageGeneration || this.workMode !== 'render' ||
+      this.kind !== 'markdown' || this.imageHeight <= 0) return;
+    this.viewportDirty = true;
+    if (!this.viewportBusy) void this.refreshViewport();
   }
 
-  /** 根据原生 Scroll 的可视范围逐张读取，避免一次持有整篇文稿的图片。 */
-  private async refreshImages(): Promise<void> {
-    if (this.imageBusy || !this.ready || this.workMode !== 'render' || this.kind !== 'markdown' ||
-      this.documentUri.length === 0 || this.imageHeight <= 0) return;
-    this.imageBusy = true;
-    const generation = this.imageGeneration;
-    const source = this.source;
-    const uri = this.documentUri;
+  private async refreshViewport(): Promise<void> {
+    this.viewportBusy = true;
     try {
-      const raw = await this.controller.runJavaScript('JSON.stringify(window.MarknotePreview.imageWindow(' +
-        JSON.stringify(this.imageTop) + ',' + JSON.stringify(this.imageHeight) + '))');
-      if (generation !== this.imageGeneration || source !== this.source || uri !== this.documentUri) return;
-      const pending = sourcesFromPage(raw).filter((key: string): boolean => this.failedImages.indexOf(key) < 0);
-      if (pending.length === 0) return;
-      const key = pending[0];
-      const images: PreviewImage[] = await loadLocalImages(uri, [key]);
-      if (generation !== this.imageGeneration || source !== this.source || uri !== this.documentUri) return;
-      if (images.length === 0) {
-        this.failedImages.push(key);
-      } else {
-        await this.controller.runJavaScript('window.MarknotePreview.setImage(' + JSON.stringify(key) + ',' +
-          JSON.stringify(images[0].dataUrl) + ')');
+      while (this.viewportDirty && this.ready && this.renderedGeneration === this.imageGeneration &&
+        this.workMode === 'render' && this.kind === 'markdown') {
+        this.viewportDirty = false;
+        const generation = this.imageGeneration;
+        const raw = await this.controller.runJavaScript('JSON.stringify(window.MarknotePreview.imageWindow(' +
+          JSON.stringify(this.imageTop) + ',' + JSON.stringify(this.imageHeight) + '))');
+        if (generation !== this.imageGeneration || this.viewportDirty || !this.ready) continue;
+        this.imageRequests = this.documentUri ? sourcesFromPage(raw) : [];
+        if (this.failedImages.size > 0) {
+          const nearby = new Set(this.imageRequests.map((item: LocalImageRequest): string => this.imageRequestKey(item)));
+          this.failedImages.forEach((key: string): void => { if (!nearby.has(key)) this.failedImages.delete(key); });
+        }
+        if (this.activeImage !== null && !this.needsImage(this.activeImage) && this.imageAck !== null) {
+          this.imageAck(false);
+        }
+        if (this.activeImage === null && this.ports.length > 1) {
+          const next = this.imageRequests.find((item: LocalImageRequest): boolean =>
+            !this.failedImages.has(this.imageRequestKey(item)));
+          if (next !== undefined) void this.transferImage(next);
+        }
       }
-      this.scheduleImages();
-    } catch {
-      // 页面已释放或图片不可用时，仍保留正文和图片占位。
-    } finally {
-      this.imageBusy = false;
-      if (generation !== this.imageGeneration && this.imageTimer < 0 && this.ready) this.scheduleImages();
+    } catch { /* The web component can be released during a viewport update. */ }
+    finally { this.viewportBusy = false; }
+  }
+
+  private imageRequestKey(item: LocalImageRequest): string {
+    return item.widthPx.toString() + '/' + item.heightPx.toString() + '/' + item.key;
+  }
+
+  private needsImage(request: LocalImageRequest): boolean {
+    return this.imageRequests.some((item: LocalImageRequest): boolean => item.key === request.key &&
+      item.widthPx === request.widthPx && item.heightPx === request.heightPx);
+  }
+
+  /** One packet in flight. A lost acknowledgement must release the file and the next image request. */
+  private postImagePacket(port: webview.WebMessagePort, packet: webview.WebMessage, sequence: number): Promise<void> {
+    this.imageSequence = sequence;
+    return new Promise<void>((resolve, reject): void => {
+      const settle = (accepted: boolean): void => {
+        clearTimeout(timeout);
+        this.imageAck = null;
+        if (accepted) resolve();
+        else reject(new Error('Image transfer interrupted'));
+      };
+      const timeout = setTimeout((): void => settle(false), 10000);
+      this.imageAck = settle;
+      try { port.postMessageEvent(packet); } catch { settle(false); }
+    });
+  }
+
+  private async transferImage(request: LocalImageRequest): Promise<void> {
+    this.activeImage = request;
+    const generation = this.imageGeneration;
+    const id = ++this.imageTransfer;
+    const port = this.ports[1];
+    const isCurrent = (): boolean => this.ready && port === this.ports[1] && this.workMode === 'render' &&
+      generation === this.imageGeneration && this.needsImage(request);
+    let installed = false;
+    let sequence = 0;
+    try {
+      const begin: ImageControl = { kind: 'image-begin', id, documentId: this.documentId,
+        revision: this.parseRevision, request };
+      await this.postImagePacket(port, JSON.stringify(begin), sequence);
+      if (!isCurrent()) throw new Error('Image left viewport');
+      const context = this.getUIContext().getHostContext();
+      if (!context) throw new Error('Preview context unavailable');
+      const result = await sendLocalImage(this.documentUri, context.cacheDir, request, async (bytes: Uint8Array): Promise<void> => {
+        if (!isCurrent()) throw new Error('Image left viewport');
+        const start = bytes.byteOffset;
+        const packet = start === 0 && bytes.byteLength === bytes.buffer.byteLength ?
+          bytes.buffer : bytes.buffer.slice(start, start + bytes.byteLength);
+        await this.postImagePacket(port, packet, ++sequence);
+      });
+      if (isCurrent() && result !== null) {
+        const end: ImageControl = { kind: 'image-finish', id, sequence: ++sequence, mime: result.mime,
+          intrinsicWidth: result.intrinsicWidth, intrinsicHeight: result.intrinsicHeight };
+        await this.postImagePacket(port, JSON.stringify(end), sequence);
+        installed = true;
+      }
+    } catch { /* Missing grants, unsupported images and closed ports keep the placeholder. */ }
+    finally {
+      if (!installed) {
+        if (isCurrent()) this.failedImages.add(this.imageRequestKey(request));
+        const cancel: ImageControl = { kind: 'image-cancel', id };
+        try { port.postMessageEvent(JSON.stringify(cancel)); } catch { /* Web released */ }
+      }
+      this.activeImage = null;
+      this.scheduleViewport();
     }
   }
 
@@ -243,7 +344,7 @@ export struct DocumentPreviewView {
     DocumentScrollLayer({ scroller: this.scroller, onViewportChange: (top: number, height: number): void => {
       this.imageTop = top;
       this.imageHeight = height;
-      this.scheduleImages();
+      this.scheduleViewport();
     } }) {
       this.PreviewWeb()
       if (this.previewFailed) {

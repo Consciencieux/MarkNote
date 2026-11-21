@@ -1,5 +1,7 @@
+import { LengthMetrics } from '@kit.ArkUI';
 import { Heading } from '../model/Document';
-import { DocumentScrollLayer } from './DocumentScrollLayer';
+import { documentTabClearance } from './DocumentScrollLayer';
+import { PageScrollPolicy } from './PageScrollPolicy';
 import { listTitle, outlineChildTitle } from './TextRoles';
 
 /** Flat row model used by the documented ArkUI List-based tree pattern. */
@@ -11,11 +13,41 @@ class OutlineRow {
   expanded: boolean = false;
 }
 
+// ArkUI invokes the List builder only for the visible and preloaded rows.
+// https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-rendering-control-lazyforeach
+class OutlineRows implements IDataSource {
+  private items: OutlineRow[] = [];
+  private listeners: Set<DataChangeListener> = new Set();
+
+  totalCount(): number {
+    return this.items.length;
+  }
+
+  getData(index: number): OutlineRow {
+    return this.items[index];
+  }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    this.listeners.add(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    this.listeners.delete(listener);
+  }
+
+  replace(items: OutlineRow[]): void {
+    this.items = items;
+    this.listeners.forEach((listener: DataChangeListener): void => listener.onDataReloaded());
+  }
+}
+
 @Component
 export struct DocumentOutlineView {
-  @Prop headings: Heading[] = [];
+  @Consume('documentNavigationInsetAbsent') navigationInsetAbsent: boolean;
+  @Prop @Watch('refreshRows') headings: Heading[] = [];
   @Prop @Watch('resetCollapsed') documentRevision: number = 0;
-  @State private collapsedOutline: string[] = [];
+  private collapsedOutline: Set<string> = new Set();
+  private rows: OutlineRows = new OutlineRows();
   scroller: Scroller = new Scroller();
   onSelect: (heading: Heading) => void = (_heading: Heading): void => {};
 
@@ -24,10 +56,11 @@ export struct DocumentOutlineView {
   }
 
   private resetCollapsed(): void {
-    this.collapsedOutline = [];
+    this.collapsedOutline.clear();
+    this.refreshRows();
   }
 
-  private outlineRows(): OutlineRow[] {
+  private refreshRows(): void {
     const rows: OutlineRow[] = [];
     const ancestors: OutlineRow[] = [];
     const occurrences: Map<string, number> = new Map();
@@ -47,19 +80,17 @@ export struct DocumentOutlineView {
       row.heading = heading;
       row.depth = ancestors.length;
       row.isFolder = nextHeading !== undefined && nextHeading.level > heading.level;
-      row.expanded = row.isFolder && this.collapsedOutline.indexOf(row.id) < 0;
+      row.expanded = row.isFolder && !this.collapsedOutline.has(row.id);
       if (ancestors.every((ancestor: OutlineRow) => ancestor.expanded)) rows.push(row);
       if (row.isFolder) ancestors.push(row);
     }
-    return rows;
+    this.rows.replace(rows);
   }
 
   private toggleOutline(row: OutlineRow): void {
-    const collapsed = this.collapsedOutline.slice();
-    const index = collapsed.indexOf(row.id);
-    if (index >= 0) collapsed.splice(index, 1);
-    else collapsed.push(row.id);
-    this.collapsedOutline = collapsed;
+    if (this.collapsedOutline.has(row.id)) this.collapsedOutline.delete(row.id);
+    else this.collapsedOutline.add(row.id);
+    this.refreshRows();
   }
 
   private outlineText(depth: number): AttributeModifier<TextAttribute> {
@@ -104,28 +135,27 @@ export struct DocumentOutlineView {
     .width('100%')
   }
 
-  /** The unbounded List contributes rows; the shared parent Scroll owns page movement. */
   build() {
-    DocumentScrollLayer({ scroller: this.scroller }) {
-      List({ initialIndex: 0 }) {
-        if (this.headings.length === 0) {
-          ListItem() {
-            Text($r('app.string.outline_empty'))
-          }
+    List({ scroller: this.scroller }) {
+      if (this.headings.length === 0) {
+        ListItem() {
+          Text($r('app.string.outline_empty'))
         }
-        ForEach(this.outlineRows(), (row: OutlineRow) => {
-          ListItem() {
-            this.OutlineRowContent(row)
-          }
-        // ForEach reuses a node for the same key, including its click handler. Refresh it
-        // when a heading moves or changes depth; collapse state remains keyed by row.id.
-        }, (row: OutlineRow) => `${row.id}:${row.heading.offset}:${row.depth}:${row.isFolder}:${row.expanded}`)
       }
-      // FAQ faqs-arkui-295: an unbounded List inside Scroll expands with its rows and lets the
-      // outer Scroll move the layout. ForEach already eagerly builds this outline's rows.
-      .width('100%')
-      .edgeEffect(EdgeEffect.None)
-      .scrollBar(BarState.Off)
+      LazyForEach(this.rows, (row: OutlineRow) => {
+        ListItem() {
+          this.OutlineRowContent(row)
+        }
+      // Recreate a row when its displayed state or jump target changes.
+      }, (row: OutlineRow) => `${row.id}:${row.heading.offset}:${row.depth}:${row.isFolder}:${row.expanded}`)
     }
+    .padding({
+      start: LengthMetrics.resource($r('sys.float.margin_left')),
+      end: LengthMetrics.resource($r('sys.float.margin_right'))
+    })
+    .attributeModifier(new PageScrollPolicy(false, documentTabClearance(this.navigationInsetAbsent)))
+    .scrollBar(BarState.Auto)
+    .width('100%')
+    .height('100%')
   }
 }

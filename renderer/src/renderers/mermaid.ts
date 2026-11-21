@@ -1,6 +1,6 @@
 import mermaid from 'mermaid';
 import { previewError, previewText } from '../preview-text.ts';
-import { mermaidSources, requestsUnsupportedLayout } from './mermaid-block.ts';
+import { requestsUnsupportedLayout } from './mermaid-block.ts';
 import { isolateSvg, sanitizeSvg } from './svg.ts';
 
 const FONT = "system-ui, -apple-system, 'HarmonyOS Sans', sans-serif";
@@ -8,6 +8,14 @@ const FONT = "system-ui, -apple-system, 'HarmonyOS Sans', sans-serif";
 export type PreviewTheme = 'system' | 'light' | 'dark';
 
 let generation = 0;
+const sources = new WeakMap<HTMLElement, string>();
+
+export function bindMermaid(root: HTMLElement, diagrams: string[]): void {
+  for (const block of root.querySelectorAll<HTMLElement>('.mermaid-block')) {
+    const source = diagrams[Number(block.dataset.mnMermaid)];
+    if (source !== undefined) sources.set(block, source);
+  }
+}
 
 /** Drop results from a render that a newer preview update has replaced. */
 export function nextMermaidGeneration(): number {
@@ -47,16 +55,16 @@ function showFailure(block: HTMLElement): void {
 
 /** Draw each placeholder from the sources captured by the latest Markdown render. */
 export async function paintMermaid(root: ParentNode, theme: PreviewTheme, ticket: number): Promise<void> {
-  const sources = mermaidSources();
   const blocks = [...root.querySelectorAll<HTMLElement>('.mermaid-block')];
   if (blocks.length === 0) return;
-  configure(diagramTheme(theme));
-  for (const block of blocks) {
+  const palette = diagramTheme(theme);
+  configure(palette);
+  for (const [index, block] of blocks.entries()) {
     if (ticket !== generation) return;
-    const index = Number(block.dataset.mnMermaid);
-    const source = sources[index];
-    if (!Number.isInteger(index) || source === undefined) continue;
+    const source = sources.get(block);
+    if (source === undefined || block.dataset.mnPalette === palette) continue;
     if (requestsUnsupportedLayout(source)) {
+      block.dataset.mnPalette = palette;
       showFailure(block);
       continue;
     }
@@ -64,10 +72,12 @@ export async function paintMermaid(root: ParentNode, theme: PreviewTheme, ticket
     try {
       const rendered = await mermaid.render(id, source);
       if (ticket !== generation) return;
+      block.dataset.mnPalette = palette;
       block.innerHTML = sanitizeSvg(rendered.svg);
       isolateSvg(block);
     } catch {
       if (ticket !== generation) return;
+      block.dataset.mnPalette = palette;
       showFailure(block);
     } finally {
       const leftover = document.getElementById(id);
