@@ -1,11 +1,9 @@
 import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
-import { util } from '@kit.ArkTS';
 import { preferences } from '@kit.ArkData';
 import { RecentDocument, RecoveryData } from '../model/Document';
 import { RecentEntry, removeRecentDocument, toggleFavoriteDocument, updateRecentDocument } from '../document/RecentOrder';
-import { AppText } from '../i18n/AppText';
-import { writeAll } from './FileBytes';
+import { readDraftFile, writeDraftFile } from './DraftFile';
 import { normalizeAppLanguage } from '../i18n/AppLanguage';
 
 const RECENT_KEY: string = 'recent_files';
@@ -18,7 +16,6 @@ const CODE_THEME_KEY: string = 'code_theme';
 const LANGUAGE_KEY: string = 'app_language';
 const SORT_KEY: string = 'recent_sort';
 const DRAFT: string = '/unsaved-draft.json';
-const TEMP: string = '/unsaved-draft.tmp';
 
 interface CodedError {
   code?: number;
@@ -141,17 +138,15 @@ export class LocalState {
   }
 
   static async readDraft(context: common.UIAbilityContext): Promise<RecoveryData | null> {
-    let text: string;
+    let parsed: RecoveryData;
     try {
-      text = await fileIo.readText(context.filesDir + DRAFT);
+      parsed = await readDraftFile(context.filesDir + DRAFT);
     } catch (error) {
       const coded = error as CodedError;
       if (coded && coded.code === 13900002) return null;
       throw error instanceof Error ? error : new Error('draft read failed');
     }
-    let parsed: RecoveryData;
     try {
-      parsed = JSON.parse(text) as RecoveryData;
       if (!parsed || typeof parsed.text !== 'string' || typeof parsed.savedText !== 'string' ||
           typeof parsed.name !== 'string' || typeof parsed.uri !== 'string') throw new Error('invalid draft');
       if (typeof parsed.encoding !== 'string' || parsed.encoding.length === 0) parsed.encoding = 'utf-8';
@@ -194,23 +189,20 @@ export class LocalState {
   }
 
   static async writeDraft(context: common.UIAbilityContext, draft: RecoveryData): Promise<void> {
-    const temporary = context.filesDir + TEMP;
-    const target = context.filesDir + DRAFT;
-    const file = await fileIo.open(temporary, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
+    const file = new fileIo.AtomicFile(context.filesDir + DRAFT);
+    const stream = file.startWrite();
     try {
-      await fileIo.truncate(file.fd, 0);
-      const data = new util.TextEncoder().encodeInto(JSON.stringify(draft));
-      await writeAll(file.fd, data, AppText.text($r('app.string.draft_interrupted')));
-      await fileIo.fsync(file.fd);
-    } finally {
-      await fileIo.close(file);
+      await writeDraftFile(stream, draft);
+      file.finishWrite();
+    } catch (error) {
+      file.failWrite();
+      throw error instanceof Error ? error : new Error('draft write failed');
     }
-    await fileIo.rename(temporary, target);
   }
 
   static async clearDraft(context: common.UIAbilityContext): Promise<void> {
     try {
-      await fileIo.unlink(context.filesDir + DRAFT);
+      new fileIo.AtomicFile(context.filesDir + DRAFT).delete();
     } catch (error) {
       const coded = error as CodedError;
       if (coded.code !== 13900002) throw error instanceof Error ? error : new Error('draft clear failed');

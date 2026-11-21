@@ -3,9 +3,8 @@ import { uniformTypeDescriptor } from '@kit.ArkData';
 import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { systemShare } from '@kit.ShareKit';
 import { DocumentInfo } from '../model/Document';
-import { TextEncoding } from './TextEncoding';
 import { AppText } from '../i18n/AppText';
-import { writeAll } from '../storage/FileBytes';
+import { writeVerifiedText } from '../storage/DocumentStream';
 
 /** Share a snapshot of the editor through the system panel, without modifying the original file. */
 export class DocumentShare {
@@ -57,10 +56,9 @@ export class DocumentShare {
   private static async showFile(context: common.UIAbilityContext, filename: string,
     source: string, path: string): Promise<void> {
     // A UTF-8 snapshot also supports new, read-only and unsaved documents.
-    const bytes = TextEncoding.encode(source, new DocumentInfo()).bytes;
-    const file = await fileIo.open(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
+    const file = await fileIo.open(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
     try {
-      await writeAll(file.fd, bytes, AppText.text($r('app.string.share_write_failed')));
+      await writeVerifiedText(file.fd, source, new DocumentInfo(), AppText.text($r('app.string.share_write_failed')));
     } finally {
       await fileIo.close(file);
     }

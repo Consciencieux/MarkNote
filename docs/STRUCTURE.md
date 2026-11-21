@@ -14,7 +14,7 @@ marknote/
 │       │   ├── document/             文稿会话、格式、编辑桥接、查找和编码
 │       │   ├── i18n/                 界面文字资源读取
 │       │   ├── model/                文稿及大纲数据结构
-│       │   └── storage/              文件访问和本机状态
+│       │   └── storage/              分块文件读写、草稿存储和本机状态
 │       └── resources/rawfile/        构建生成的编辑器、预览页与许可证文本
 ├── renderer/                         离线预览源码及构建脚本
 │   ├── package.json、package-lock.json  npm 依赖声明与锁定版本
@@ -53,7 +53,7 @@ marknote/
 | 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets`、`pages/SettingsReadingFrame.ets`、`pages/LicenseText.ts` |
 | 界面语言 | `i18n/AppText.ets`、`i18n/AppLanguage.ets`，以及 `entry/src/main/resources/` 下 `base`（简体中文）、`zh_Hant`、`bo`、`en_US`、`ja`、`ko`、`ru`、`ar`、`ug` 的 `element/string.json` |
 | 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
-| 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/DraftCoordinator.ets`、`document/StartupRecovery.ts`、`document/DocumentAnalysis.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/FileBytes.ets`、`storage/LocalState.ets` |
+| 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/DraftCoordinator.ets`、`document/StartupRecovery.ts`、`document/DocumentAnalysis.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/DocumentStream.ets`、`storage/DraftFile.ets`、`storage/LocalState.ets` |
 | Markdown 本地图片 | `document/LocalImages.ets`、`pages/DocumentPreviewView.ets`，以及仓库根目录下的 `renderer/src/renderers/markdown.ts` |
 | Markdown 网页链接 | `pages/DocumentPreviewView.ets`、`pages/DocumentView.ets`，以及仓库根目录下的 `renderer/src/renderers/external-link.ts`、`renderer/src/preview-link-message.ts` |
 | 文稿分享 | `document/DocumentShare.ets`、`pages/DocumentMenus.ets` |
