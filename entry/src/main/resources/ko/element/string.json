@@ -5,6 +5,7 @@
     { "name": "EntryAbility_label", "value": "MarkNote" },
     { "name": "home_all", "value": "전체" },
     { "name": "home_favorites", "value": "즐겨찾기" },
+    { "name": "home_favorites_segment", "value": "즐겨찾기" },
     { "name": "home_new", "value": "새 문서" },
     { "name": "home_open", "value": "파일 열기" },
     { "name": "home_unfavorite", "value": "즐겨찾기 해제" },

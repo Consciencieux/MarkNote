@@ -5,6 +5,7 @@
     { "name": "EntryAbility_label", "value": "MarkNote" },
     { "name": "home_all", "value": "すべて" },
     { "name": "home_favorites", "value": "お気に入り" },
+    { "name": "home_favorites_segment", "value": "お気に入り" },
     { "name": "home_new", "value": "新規文書" },
     { "name": "home_open", "value": "ファイルを開く" },
     { "name": "home_unfavorite", "value": "お気に入り解除" },

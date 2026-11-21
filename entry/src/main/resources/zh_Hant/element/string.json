@@ -5,6 +5,7 @@
     { "name": "EntryAbility_label", "value": "MarkNote" },
     { "name": "home_all", "value": "全部" },
     { "name": "home_favorites", "value": "收藏" },
+    { "name": "home_favorites_segment", "value": "收藏" },
     { "name": "home_new", "value": "新增文稿" },
     { "name": "home_open", "value": "開啟檔案" },
     { "name": "home_unfavorite", "value": "取消收藏" },

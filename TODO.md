@@ -21,8 +21,8 @@
 
 - [ ] **编辑器滚动条（N02）**：三折叠分栏试用 ArkWeb 原生纵向滚动条时，右栏滚动截图中未观察到可拖动滑块。现保留可读区域内的滑块；替换前须核对两端避让和鼠标拖动。[编辑器宿主](entry/src/main/ets/pages/DocumentCodeEditor.ets)、[滚动条](editor/src/source-scrollbar.ts)
 - [ ] **底部避让**：在无系统导航指示区的窗口核对额外底边距、末行和悬浮页签的点击区域。[文稿页面](entry/src/main/ets/pages/DocumentView.ets)、[滚动层](entry/src/main/ets/pages/DocumentScrollLayer.ets)
-- [ ] **窄窗口查找栏**：已在三折叠收拢的窄屏确认首次展开、匹配计数和替换行均可见。保留搜索框内的计数和上下箭头，核对窄屏叠加系统大字体时清除按钮、结果导航和正文顶部是否遮挡。[查找栏](entry/src/main/ets/pages/DocumentFindBar.ets)
-- [ ] **首页分段按钮**：窄侧栏、大字体和长译文组合下检查“全部／收藏”是否完整可读且可点击。当前两侧有 40vp 占位，中间最大宽度为 150vp。[首页](entry/src/main/ets/pages/Index.ets)
+- [x] **窄窗口查找栏**：修复大字体下匹配计数挤掉输入文字的问题。三折叠模拟器收拢并使用最大字号时，查询文字、匹配计数、上下箭头、清除按钮和替换行均可见。[查找栏](entry/src/main/ets/pages/DocumentFindBar.ets)
+- [ ] **首页分段按钮**：三折叠模拟器窄侧栏和最大字号下，俄文收藏标签已使用单行短名，完整名称仍用于无障碍播报。继续确认其他语言在更窄窗口下的显示。[首页](entry/src/main/ets/pages/Index.ets)
 - [ ] **设置行和分组标题**：CARD 内已使用 ComposeListItem 承载标题、状态、箭头和单选标记，已验证整行切换语言。待核对大字体和读屏选中状态。“主题”位于代码高亮二级页的选项卡片上方，标题与选项各用一个列表组。保留这个位置，核对分组语义、对齐及无障碍朗读。[设置行](entry/src/main/ets/pages/SettingsListRow.ets)、[设置详情](entry/src/main/ets/pages/SettingsDetail.ets)
 - [ ] **图标与底部距离的资源用途**：部分符号尺寸使用 `Title_M`，无导航指示区时底部距离使用 `margin_left`。核对组件适用资源及实际显示，底部遮挡与上述避让事项一并处理。[文字与图标样式](entry/src/main/ets/pages/TextRoles.ets)
 - [ ] **阅读与 Web 视觉配置**：编辑、预览与大纲已共用系统横向边距，帮助等页面使用应用选定的栅格与 24vp 侧距。核对编辑、预览及其他阅读页面的基础字号、颜色和版心，保留文稿排版与灰色代码框。[阅读版心](entry/src/main/ets/pages/SettingsReadingFrame.ets)、[预览样式](renderer/src/styles.css)、[编辑器样式](editor/src/production.css)

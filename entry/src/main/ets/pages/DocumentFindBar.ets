@@ -3,6 +3,8 @@ import { AppText } from '../i18n/AppText';
 import { searchFieldMaterial } from './ImmersiveMaterials';
 import { toolbarIcon } from './TextRoles';
 
+const findButtonSize = 40;
+
 /**
  * 查找栏只负责自己的外观和测量。查询、匹配和替换仍由文稿页持有。
  * 标题栏用 @Builder 创建本组件，语言直接订阅 AppStorage，避免按值传入后不刷新。
@@ -21,7 +23,7 @@ export struct DocumentFindBar {
   onReplace: () => void = (): void => {};
   onClose: () => void = (): void => {};
   onHeightChange: (height: number) => void = (_height: number): void => {};
-  @State private controlsWidth: number = 80;
+  @State private controlsWidth: number = 2 * findButtonSize;
   private material = searchFieldMaterial();
 
   private format(resource: Resource, first: string, second: string = ''): string {
@@ -35,8 +37,8 @@ export struct DocumentFindBar {
       SymbolGlyph(icon).attributeModifier(toolbarIcon)
     }
     .buttonStyle(ButtonStyleMode.TEXTUAL)
-    .width(40)
-    .height(40)
+    .width(findButtonSize)
+    .height(findButtonSize)
     .stateStyles({
       normal: { .opacity(1) },
       pressed: { .opacity($r('sys.float.alpha_secondary')) }
@@ -57,12 +59,15 @@ export struct DocumentFindBar {
             .cancelButton({
               style: this.query.length > 0 ? CancelButtonStyle.CONSTANT : CancelButtonStyle.INVISIBLE
             })
-            .padding({ end: LengthMetrics.vp(this.query.length > 0 ? this.controlsWidth + 40 : 0) })
+            // Search already reserves space for its native clear button.
+            .padding({ end: LengthMetrics.vp(this.query.length > 0 ?
+              this.controlsWidth + LengthMetrics.resource($r('sys.float.padding_level2')).value : 0) })
             .systemMaterial(this.material)
           if (this.query.length > 0) {
             Row() {
               Text(this.matchOrdinal > 0 ? `${this.matchOrdinal}/${this.matchCount}` :
-                this.format($r('app.string.match_total'), String(this.matchCount)))
+                String(this.matchCount))
+                .maxLines(1)
                 .fontColor($r('sys.color.font_secondary'))
                 .accessibilityText(this.matchOrdinal > 0 ?
                   this.format($r('app.string.match_position'), String(this.matchOrdinal), String(this.matchCount)) :
@@ -70,7 +75,7 @@ export struct DocumentFindBar {
               this.MatchButton($r('sys.symbol.chevron_up'), $r('app.string.find_previous'), this.onPrevious)
               this.MatchButton($r('sys.symbol.chevron_down'), $r('app.string.find_next'), this.onNext)
             }
-            .margin({ end: LengthMetrics.vp(40) })
+            .margin({ end: LengthMetrics.vp(findButtonSize) })
             .onAreaChange((_oldArea: Area, newArea: Area) => {
               const width = parseFloat(String(newArea.width)) || 0;
               if (width > 0 && width !== this.controlsWidth) this.controlsWidth = width;
@@ -84,8 +89,8 @@ export struct DocumentFindBar {
             .attributeModifier(toolbarIcon)
         }
         .buttonStyle(ButtonStyleMode.TEXTUAL)
-        .width(40)
-        .height(40)
+        .width(findButtonSize)
+        .height(findButtonSize)
         .accessibilityText($r('app.string.find_close'))
         .onClick(() => this.onClose())
       }
@@ -102,7 +107,7 @@ export struct DocumentFindBar {
         }
         .layoutWeight(1)
         .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
-        Blank().width(40)
+        Blank().width(findButtonSize)
       }
       .width('100%')
       .margin({ top: $r('sys.float.padding_level4') })
