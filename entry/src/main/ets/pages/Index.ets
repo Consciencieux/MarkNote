@@ -1,6 +1,7 @@
 import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
 import {
-  ColorMetrics, ComponentContent, LengthMetrics, SegmentButtonV2Items, TabSegmentButtonV2, TextModifier
+  ColorMetrics, ComponentContent, ItemState, LengthMetrics, SegmentButtonV2Items, SymbolGlyphModifier,
+  TabSegmentButtonV2, TextModifier, ToolBar, ToolBarOptions
 } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationTitleMode,
@@ -34,7 +35,7 @@ import { applyAppLanguage, isRightToLeftLanguage, normalizeAppLanguage, publishA
 @Entry
 @Component
 struct Index {
-  @State private recents: RecentDocument[] = [];
+  @State @Watch('refreshSelectionToolbar') private recents: RecentDocument[] = [];
   @State private sortOrder: string = 'modified';
   @State private theme: string = 'system';
   @State private language: string = 'default';
@@ -45,7 +46,8 @@ struct Index {
   /** 首页分段按钮：0 是全部，1 是收藏。 */
   @State private librarySegment: number = 0;
   @State private selecting: boolean = false;
-  @State private selectedUris: string[] = [];
+  @State @Watch('refreshSelectionToolbar') private selectedUris: string[] = [];
+  @State private selectionToolbarItems: ToolBarOptions = new ToolBarOptions();
   // Keep both segments centered with one line. ArkUI fits long translations within the available lane.
   private readonly librarySegmentLabel = new TextModifier()
     .maxLines(1)
@@ -697,15 +699,18 @@ struct Index {
     this.selectedUris = [item.uri];
   }
 
-  private toggleSelected(item: RecentDocument): void {
-    const next: string[] = [];
-    let found = false;
-    for (let index = 0; index < this.selectedUris.length; index++) {
-      if (this.selectedUris[index] === item.uri) found = true;
-      else next.push(this.selectedUris[index]);
+  private setSelectionMode(enabled: boolean): void {
+    if (enabled) {
+      this.selecting = true;
+    } else {
+      this.clearSelection();
     }
-    if (!found) next.push(item.uri);
-    this.selectedUris = next;
+  }
+
+  private setSelected(item: RecentDocument, selected: boolean): void {
+    if (!this.selecting || this.selectedUris.includes(item.uri) === selected) return;
+    this.selectedUris = selected ? [...this.selectedUris, item.uri] :
+      this.selectedUris.filter((uri: string): boolean => uri !== item.uri);
   }
 
   private selectedItems(): RecentDocument[] {
@@ -885,6 +890,49 @@ struct Index {
     this.recents = merged;
   }
 
+  private refreshSelectionToolbar(): void {
+    const actions = new ToolBarOptions();
+    const state = this.selectedItems().length > 0 ? ItemState.ENABLE : ItemState.DISABLE;
+    const allFavorite = this.selectionAllFavorite();
+    actions.push(
+      {
+        content: $r('app.string.menu_share'),
+        toolBarSymbolOptions: { normal: new SymbolGlyphModifier($r('sys.symbol.share')) },
+        state,
+        action: (): void => { void this.shareRecents(this.selectedItems()); }
+      },
+      {
+        content: allFavorite ? $r('app.string.home_unfavorite') : $r('app.string.menu_favorite'),
+        toolBarSymbolOptions: {
+          normal: new SymbolGlyphModifier(allFavorite ? $r('sys.symbol.star_fill') : $r('sys.symbol.star'))
+        },
+        state,
+        action: (): void => this.favoriteRecents(this.selectedItems(), !this.selectionAllFavorite())
+      },
+      {
+        content: $r('app.string.home_remove_record'),
+        toolBarSymbolOptions: { normal: new SymbolGlyphModifier($r('sys.symbol.minus_circle')) },
+        state,
+        action: (): void => this.confirmRemoveRecent(this.selectedItems())
+      },
+      {
+        content: $r('app.string.menu_delete'),
+        toolBarSymbolOptions: { normal: new SymbolGlyphModifier($r('sys.symbol.trash')) },
+        state,
+        action: (): void => this.confirmDeleteRecent(this.selectedItems())
+      }
+    );
+    this.selectionToolbarItems = actions;
+  }
+
+  @Builder
+  private SelectionToolbar() {
+    Column() {
+      ToolBar({ toolBarList: this.selectionToolbarItems })
+    }
+    .id('marknote-home-share')
+  }
+
   @Builder
   private LibraryPage() {
     HomeView({
@@ -893,7 +941,6 @@ struct Index {
       scroller: this.libraryScroller,
       selecting: this.selecting,
       selectedUris: this.selectedUris,
-      selectionAllFavorite: this.selectionAllFavorite(),
       onNew: (id: string): void => { this.confirmSwitch(() => this.startNew(id)); },
       onOpen: (): void => this.confirmSwitch(() => this.pickOpen()),
       onRecent: (item: RecentDocument): void => this.openRecent(item),
@@ -903,14 +950,8 @@ struct Index {
       onRemove: (item: RecentDocument): void => this.confirmRemoveRecent([item]),
       onDelete: (item: RecentDocument): void => this.confirmDeleteRecent([item]),
       onMultiSelect: (item: RecentDocument): void => this.beginSelection(item),
-      onToggleSelected: (item: RecentDocument): void => this.toggleSelected(item),
-      onShareSelected: (): void => { void this.shareRecents(this.selectedItems()); },
-      onFavoriteSelected: (): void => {
-        const items = this.selectedItems();
-        this.favoriteRecents(items, !this.selectionAllFavorite());
-      },
-      onRemoveSelected: (): void => this.confirmRemoveRecent(this.selectedItems()),
-      onDeleteSelected: (): void => this.confirmDeleteRecent(this.selectedItems())
+      onSelectionChange: (item: RecentDocument, selected: boolean): void => this.setSelected(item, selected),
+      onEditModeChange: (enabled: boolean): void => this.setSelectionMode(enabled)
     })
   }
 
@@ -989,6 +1030,9 @@ struct Index {
       }
       .navDestination(this.Destination)
       .titleBar(this.homeTitle())
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ui-design-hdsnavigation/#toolbarconfiguration
+      .toolbarConfiguration(this.SelectionToolbar)
+      .hideToolBar(!this.selecting)
       // HdsNavigationTitleMode.MINI 固定为 56vp（ui-design-hdsnavigation）。
       .titleMode(HdsNavigationTitleMode.MINI)
       // The official multi-device office example changes navigation mode to expand the content page.

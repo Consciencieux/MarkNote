@@ -24,18 +24,15 @@ export struct HomeView {
   onRecent: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
   @Prop selecting: boolean = false;
   @Prop selectedUris: string[] = [];
-  @Prop selectionAllFavorite: boolean = false;
   onShare: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
   onCopy: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
   onFavorite: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
   onRemove: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
   onDelete: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
   onMultiSelect: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
-  onToggleSelected: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
-  onShareSelected: () => void = (): void => {};
-  onFavoriteSelected: () => void = (): void => {};
-  onRemoveSelected: () => void = (): void => {};
-  onDeleteSelected: () => void = (): void => {};
+  onSelectionChange: (item: RecentDocument, selected: boolean) => void =
+    (_item: RecentDocument, _selected: boolean): void => {};
+  onEditModeChange: (enabled: boolean) => void = (_enabled: boolean): void => {};
 
   /** 新建菜单的条目来自文稿格式注册表，新增格式不用改这里。 */
   private newDocumentMenu(): MenuElement[] {
@@ -59,13 +56,13 @@ export struct HomeView {
    * 不再手写 Row + SymbolGlyph + 两行 Text 和自行计算的 padding。
    */
   @Builder
-  private DocumentRow(title: string, detail: string, symbol: Resource) {
+  private RecentDocumentContent(item: RecentDocument) {
     ComposeListItem({
       contentItem: {
         iconStyle: IconType.SYSTEM_ICON,
-        symbolStyle: new SymbolGlyphModifier(symbol),
-        primaryText: title,
-        secondaryText: detail
+        symbolStyle: new SymbolGlyphModifier($r('sys.symbol.doc_text')),
+        primaryText: item.name,
+        secondaryText: FormatRegistry.displayTitle(FormatRegistry.byFilename(item.name))
       }
     })
   }
@@ -74,24 +71,13 @@ export struct HomeView {
     return this.selectedUris.indexOf(uri) >= 0;
   }
 
-  /**
-   * 前三项进入官方网格，后三项保持纵向菜单。
-   * gridStyle 只作用于标准 MenuItem，预览使用被长按的列表行。
-   * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-basic-components-menu
-   */
   private recentMenuOptions(): ContextMenuOptions {
     const material = menuMaterialOptions();
-    const options: ContextMenuOptions = {
+    return {
       preview: MenuPreviewMode.IMAGE,
-      gridStyle: {
-        count: 3,
-        horizontalSize: 3,
-        position: MenuGridPosition.TOP
-      }
+      backgroundBlurStyle: material.backgroundBlurStyle,
+      systemMaterial: material.systemMaterial
     };
-    options.backgroundBlurStyle = material.backgroundBlurStyle;
-    options.systemMaterial = material.systemMaterial;
-    return options;
   }
 
   private menuItem(label: ResourceStr, symbol: Resource): MenuItemOptions {
@@ -102,134 +88,88 @@ export struct HomeView {
     return options;
   }
 
+  // Use the system menu groups and let ArkUI lay them out for the current window.
+  // https://developer.huawei.com/consumer/cn/doc/design-guides/menu-0000001957001877/
   @Builder
   private RecentMenu(item: RecentDocument) {
     Menu() {
-      MenuItem(this.menuItem($r('app.string.menu_share'), $r('sys.symbol.share')))
-        .onClick(() => this.onShare(item))
-      MenuItem(this.menuItem($r('app.string.home_save_copy'), $r('sys.symbol.square_and_arrow_down')))
-        .onClick(() => this.onCopy(item))
-      MenuItem(this.menuItem($r('app.string.home_multi_select'), $r('sys.symbol.checkmark_square')))
-        .onClick(() => this.onMultiSelect(item))
-      MenuItem(this.menuItem(item.favorite === true ? $r('app.string.home_unfavorite') : $r('app.string.menu_favorite'),
-        item.favorite === true ? $r('sys.symbol.star_fill') : $r('sys.symbol.star')))
-        .onClick(() => this.onFavorite(item))
-      MenuItem(this.menuItem($r('app.string.home_remove_record'), $r('sys.symbol.minus_circle')))
-        .onClick(() => this.onRemove(item))
-      MenuItem(this.menuItem($r('app.string.delete_title'), $r('sys.symbol.trash')))
-        .contentFontColor($r('sys.color.warning'))
-        .onClick(() => this.onDelete(item))
-    }
-  }
-
-  @Builder
-  private SelectionAction(symbol: Resource, label: Resource, warning: boolean, action: () => void) {
-    Button() {
-      Column() {
-        SymbolGlyph(symbol)
-          .fontSize($r('sys.float.Subtitle_M'))
-          .fontColor([warning ? $r('sys.color.warning') : $r('sys.color.icon_primary')])
-        Text(label)
-          .fontSize($r('sys.float.Caption_L'))
-          .fontColor(warning ? $r('sys.color.warning') : $r('sys.color.font_primary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      MenuItemGroup() {
+        MenuItem(this.menuItem($r('app.string.menu_share'), $r('sys.symbol.share')))
+          .onClick(() => this.onShare(item))
+        MenuItem(this.menuItem(item.favorite === true ? $r('app.string.home_unfavorite') : $r('app.string.menu_favorite'),
+          item.favorite === true ? $r('sys.symbol.star_fill') : $r('sys.symbol.star')))
+          .onClick(() => this.onFavorite(item))
+        MenuItem(this.menuItem($r('app.string.home_save_copy'), $r('sys.symbol.square_and_arrow_down')))
+          .onClick(() => this.onCopy(item))
       }
-      .width('100%')
+      MenuItemGroup() {
+        MenuItem(this.menuItem($r('app.string.home_multi_select'), $r('sys.symbol.checkmark_square')))
+          .onClick(() => this.onMultiSelect(item))
+        MenuItem(this.menuItem($r('app.string.home_remove_record'), $r('sys.symbol.minus_circle')))
+          .onClick(() => this.onRemove(item))
+      }
+      MenuItemGroup() {
+        MenuItem(this.menuItem($r('app.string.menu_delete'), $r('sys.symbol.trash')))
+          .contentFontColor($r('sys.color.warning'))
+          .onClick(() => this.onDelete(item))
+      }
     }
-    .buttonStyle(ButtonStyleMode.TEXTUAL)
-    .layoutWeight(1)
-    .enabled(this.selectedUris.length > 0)
-    .onClick(action)
   }
 
   @Builder
   private RecentRow(item: RecentDocument) {
-    ListItem() {
-      Row() {
-        if (this.selecting) {
-          Checkbox({ name: item.uri, group: 'marknote-recent' })
-            .select(this.selected(item.uri))
-            .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
-            .onChange((checked: boolean) => {
-              if (checked !== this.selected(item.uri)) this.onToggleSelected(item);
-            })
-        }
-        Column() {
-          this.DocumentRow(item.name, FormatRegistry.displayTitle(FormatRegistry.byFilename(item.name)),
-            $r('sys.symbol.doc_text'))
-        }
-        .layoutWeight(1)
+    if (this.selecting) {
+      ListItem() {
+        this.RecentDocumentContent(item)
       }
-      .width('100%')
+      .selected(this.selected(item.uri))
+      .onSelect((selected: boolean) => this.onSelectionChange(item, selected))
+    } else {
+      ListItem() {
+        this.RecentDocumentContent(item)
+      }
+      .onClick(() => this.onRecent(item))
+      .bindContextMenu(this.RecentMenu(item), ResponseType.LongPress, this.recentMenuOptions())
     }
-    .onClick(() => {
-      if (this.selecting) this.onToggleSelected(item);
-      else this.onRecent(item);
-    })
-    .bindContextMenu(this.RecentMenu(item), ResponseType.LongPress, this.recentMenuOptions())
   }
 
   build() {
-    // 首页只承担两件事：开始一篇新文稿/打开已有文件，和回到最近打开过的文稿。
-    // 标题位于内容区，避免占用标题栏中分段按钮的空间。
-    // List keeps its native row layout; the shared policy owns safe areas and scrolling behavior.
-    Column() {
     List({ scroller: this.scroller, spaceWidth: $r('sys.float.padding_level6') }) {
-      ListItem() {
-        Text(this.favoritesOnly ? $r('app.string.home_favorites') : $r('app.string.home_all'))
-          .attributeModifier(pageTitle)
-      }
-
-      ListItem() {
-        Row() {
-          Button($r('app.string.home_new'))
-            .bindMenu(this.newDocumentMenu(), menuMaterialOptions())
-            .layoutWeight(1)
-            .margin({ end: LengthMetrics.resource($r('sys.float.padding_level6')) })
-          Button($r('app.string.home_open'))
-            // Button API (ts-basic-components-button)：打开文件采用普通操作的 NORMAL 样式。
-            .buttonStyle(ButtonStyleMode.NORMAL)
-            .layoutWeight(1)
-            .onClick(() => this.onOpen())
+      if (!this.selecting) {
+        ListItem() {
+          Text(this.favoritesOnly ? $r('app.string.home_favorites') : $r('app.string.home_all'))
+            .attributeModifier(pageTitle)
         }
-        .width('100%')
+        .selectable(false)
+
+        ListItem() {
+          Row() {
+            Button($r('app.string.home_new'))
+              .bindMenu(this.newDocumentMenu(), menuMaterialOptions())
+              .layoutWeight(1)
+              .margin({ end: LengthMetrics.resource($r('sys.float.padding_level6')) })
+            Button($r('app.string.home_open'))
+              .buttonStyle(ButtonStyleMode.NORMAL)
+              .layoutWeight(1)
+              .onClick(() => this.onOpen())
+          }
+          .width('100%')
+        }
+        .selectable(false)
       }
 
       ForEach(this.recents, (item: RecentDocument) => {
         this.RecentRow(item)
-      }, (item: RecentDocument) => JSON.stringify([
-        this.language, item.uri, item.name, item.favorite === true, this.selecting
-      ]))
+      }, (item: RecentDocument) => JSON.stringify([this.language, item.uri, item.name, item.favorite === true]))
     }
-    // Keep the list at the available width and use system margin resources for its edges.
-    .layoutWeight(1)
+    // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-layout-development-create-list/
+    .enableEditMode(this.selecting)
+    .onEditModeChange((enabled: boolean) => this.onEditModeChange(enabled))
+    .height('100%')
     .margin({
       start: LengthMetrics.resource($r('sys.float.margin_left')),
       end: LengthMetrics.resource($r('sys.float.margin_right'))
     })
     .attributeModifier(pageScroll)
-    if (this.selecting) {
-      Row() {
-        this.SelectionAction($r('sys.symbol.share'), $r('app.string.menu_share'), false,
-          (): void => this.onShareSelected())
-        this.SelectionAction(this.selectionAllFavorite ? $r('sys.symbol.star_fill') : $r('sys.symbol.star'),
-          this.selectionAllFavorite ? $r('app.string.home_unfavorite') : $r('app.string.menu_favorite'), false,
-          (): void => this.onFavoriteSelected())
-        this.SelectionAction($r('sys.symbol.minus_circle'), $r('app.string.home_remove_record'), false,
-          (): void => this.onRemoveSelected())
-        this.SelectionAction($r('sys.symbol.trash'), $r('app.string.menu_delete'), true,
-          (): void => this.onDeleteSelected())
-      }
-      .id('marknote-home-share')
-      .width('100%')
-      .padding({
-        top: $r('sys.float.padding_level2'),
-        bottom: $r('sys.float.padding_level4')
-      })
-    }
-    }
-    .width('100%')
-    .height('100%')
   }
 }
