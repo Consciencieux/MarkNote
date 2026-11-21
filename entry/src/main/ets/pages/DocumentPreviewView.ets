@@ -1,8 +1,10 @@
 import { webview } from '@kit.ArkWeb';
 import { Heading } from '../model/Document';
-import { LocalImageRequest, sendLocalImage, sourcesFromPage } from '../document/LocalImages';
+import { LocalImageRequest, openLocalImage, sourcesFromPage } from '../document/LocalImages';
 import { AppText } from '../i18n/AppText';
-import { previewLanguageTag } from '../i18n/AppLanguage';
+import { i18n } from '@kit.LocalizationKit';
+import { fileIo } from '@kit.CoreFileKit';
+import { resourceLanguage } from '../i18n/AppLanguage';
 import { PreviewCommand, PreviewCopy, PreviewDispatch } from './PreviewDispatch';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
 
@@ -13,24 +15,9 @@ interface ParsedResult {
   documentId?: number;
   headings: ParsedHeading[];
   url?: string;
-  id?: number;
-  sequence?: number;
-  accepted?: boolean;
 }
 
-/** Structured control messages bracket ordered binary chunks on the same WebMessagePort. */
-interface ImageControl {
-  kind: string;
-  id: number;
-  documentId?: number;
-  revision?: number;
-  request?: LocalImageRequest;
-  mime?: string;
-  intrinsicWidth?: number;
-  intrinsicHeight?: number;
-  sequence?: number;
-}
-
+const IMAGE_ORIGIN = 'https://images.marknote.invalid/';
 
 /** 文稿预览和分栏预览共用同一组 Web 与滚动配置。 */
 @Component
@@ -67,19 +54,14 @@ export struct DocumentPreviewView {
   private renderedGeneration: number = -1;
   private viewportBusy: boolean = false;
   private viewportDirty: boolean = false;
-  private imageTransfer: number = 0;
-  private imageRequests: LocalImageRequest[] = [];
-  private activeImage: LocalImageRequest | null = null;
-  private imageAck: ((accepted: boolean) => void) | null = null;
-  private imageSequence: number = 0;
+  private imageRequests: Map<string, LocalImageRequest> = new Map();
+  private imageQueue: Promise<void> = Promise.resolve();
   private imageTop: number = 0;
   private imageHeight: number = 0;
-  private failedImages: Set<string> = new Set<string>();
   private dispatch: PreviewDispatch = new PreviewDispatch((command: PreviewCommand): Promise<void> => this.deliver(command));
 
   aboutToDisappear(): void {
     this.imageGeneration++;
-    if (this.imageAck !== null) this.imageAck(false);
     this.dispatch.dispose();
     if (this.timer >= 0) clearTimeout(this.timer);
     this.timer = -1;
@@ -91,20 +73,13 @@ export struct DocumentPreviewView {
   }
 
   private connectResultPort(): void {
-    if (this.imageAck !== null) this.imageAck(false);
     try {
       if (this.ports.length > 1) this.ports[1].close();
-      // Standard ports carry both string and ArrayBuffer with postMessageEvent (web-app-page-data-channel).
       this.ports = this.controller.createWebMessagePorts();
       this.ports[1].onMessageEvent((message: webview.WebMessage): void => {
         if (typeof message !== 'string') return;
         try {
           const result = JSON.parse(message) as ParsedResult;
-          if (result.kind === 'image-ack') {
-            if (this.imageAck !== null && result.id === this.imageTransfer &&
-              result.sequence === this.imageSequence) this.imageAck(result.accepted === true);
-            return;
-          }
           if (result.kind === 'preview-layout') {
             if (result.revision === this.parseRevision && result.documentId === this.documentId) this.scheduleViewport();
             return;
@@ -140,9 +115,7 @@ export struct DocumentPreviewView {
 
   private scheduleUpdate(): void {
     this.imageGeneration++;
-    if (this.imageAck !== null) this.imageAck(false);
-    this.imageRequests = [];
-    this.failedImages.clear();
+    this.imageRequests.clear();
     if (this.timer >= 0) clearTimeout(this.timer);
     this.timer = -1;
     if (this.workMode !== 'render' && this.hasPreviewContent) {
@@ -162,8 +135,9 @@ export struct DocumentPreviewView {
 
   private publish(): void {
     if (!this.ready || this.workMode === 'off') return;
+    const lang = resourceLanguage(this.language);
     const copy: PreviewCopy = {
-      lang: this.language === 'default' ? previewLanguageTag() : this.language,
+      lang, rtl: i18n.isRTL(lang),
       empty: AppText.text($r('app.string.preview_empty')),
       failed: AppText.text($r('app.string.preview_failed')),
       unsafe: AppText.text($r('app.string.preview_unsafe')),
@@ -225,90 +199,69 @@ export struct DocumentPreviewView {
         this.viewportDirty = false;
         const generation = this.imageGeneration;
         const raw = await this.controller.runJavaScript('JSON.stringify(window.MarknotePreview.imageWindow(' +
-          JSON.stringify(this.imageTop) + ',' + JSON.stringify(this.imageHeight) + '))');
-        if (generation !== this.imageGeneration || this.viewportDirty || !this.ready) continue;
-        this.imageRequests = this.documentUri ? sourcesFromPage(raw) : [];
-        if (this.failedImages.size > 0) {
-          const nearby = new Set(this.imageRequests.map((item: LocalImageRequest): string => this.imageRequestKey(item)));
-          this.failedImages.forEach((key: string): void => { if (!nearby.has(key)) this.failedImages.delete(key); });
-        }
-        if (this.activeImage !== null && !this.needsImage(this.activeImage) && this.imageAck !== null) {
-          this.imageAck(false);
-        }
-        if (this.activeImage === null && this.ports.length > 1) {
-          const next = this.imageRequests.find((item: LocalImageRequest): boolean =>
-            !this.failedImages.has(this.imageRequestKey(item)));
-          if (next !== undefined) void this.transferImage(next);
-        }
+          JSON.stringify(this.imageTop) + ',' + JSON.stringify(this.imageHeight) + ',' + generation + '))');
+        if (generation !== this.imageGeneration || !this.ready) continue;
+        const requests = this.documentUri ? sourcesFromPage(raw) : [];
+        if (requests === null) continue;
+        this.imageRequests.clear();
+        for (const request of requests) this.imageRequests.set(IMAGE_ORIGIN + generation + '/' + request.id, request);
+        if (requests.length) await this.controller.runJavaScript('window.MarknotePreview.loadImages(' + generation + ')');
       }
     } catch { /* The web component can be released during a viewport update. */ }
     finally { this.viewportBusy = false; }
   }
 
-  private imageRequestKey(item: LocalImageRequest): string {
-    return item.widthPx.toString() + '/' + item.heightPx.toString() + '/' + item.key;
-  }
-
-  private needsImage(request: LocalImageRequest): boolean {
-    return this.imageRequests.some((item: LocalImageRequest): boolean => item.key === request.key &&
-      item.widthPx === request.widthPx && item.heightPx === request.heightPx);
-  }
-
-  /** One packet in flight. A lost acknowledgement must release the file and the next image request. */
-  private postImagePacket(port: webview.WebMessagePort, packet: webview.WebMessage, sequence: number): Promise<void> {
-    this.imageSequence = sequence;
-    return new Promise<void>((resolve, reject): void => {
-      const settle = (accepted: boolean): void => {
-        clearTimeout(timeout);
-        this.imageAck = null;
-        if (accepted) resolve();
-        else reject(new Error('Image transfer interrupted'));
-      };
-      const timeout = setTimeout((): void => settle(false), 10000);
-      this.imageAck = settle;
-      try { port.postMessageEvent(packet); } catch { settle(false); }
-    });
-  }
-
-  private async transferImage(request: LocalImageRequest): Promise<void> {
-    this.activeImage = request;
+  // ArkWeb owns the descriptor after setResponseData. Only visible slots receive a URL.
+  // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/arkts-basic-components-web-webresourceresponse/
+  private imageResponse(event: OnInterceptRequestEvent): WebResourceResponse | null {
+    const url = event.request.getRequestUrl();
+    if (!url.startsWith(IMAGE_ORIGIN)) return null;
+    const response = new WebResourceResponse();
+    const request = this.imageRequests.get(url);
     const generation = this.imageGeneration;
-    const id = ++this.imageTransfer;
-    const port = this.ports[1];
-    const isCurrent = (): boolean => this.ready && port === this.ports[1] && this.workMode === 'render' &&
-      generation === this.imageGeneration && this.needsImage(request);
-    let installed = false;
-    let sequence = 0;
-    try {
-      const begin: ImageControl = { kind: 'image-begin', id, documentId: this.documentId,
-        revision: this.parseRevision, request };
-      await this.postImagePacket(port, JSON.stringify(begin), sequence);
-      if (!isCurrent()) throw new Error('Image left viewport');
-      const context = this.getUIContext().getHostContext();
-      if (!context) throw new Error('Preview context unavailable');
-      const result = await sendLocalImage(this.documentUri, context.cacheDir, request, async (bytes: Uint8Array): Promise<void> => {
-        if (!isCurrent()) throw new Error('Image left viewport');
-        const start = bytes.byteOffset;
-        const packet = start === 0 && bytes.byteLength === bytes.buffer.byteLength ?
-          bytes.buffer : bytes.buffer.slice(start, start + bytes.byteLength);
-        await this.postImagePacket(port, packet, ++sequence);
-      });
-      if (isCurrent() && result !== null) {
-        const end: ImageControl = { kind: 'image-finish', id, sequence: ++sequence, mime: result.mime,
-          intrinsicWidth: result.intrinsicWidth, intrinsicHeight: result.intrinsicHeight };
-        await this.postImagePacket(port, JSON.stringify(end), sequence);
-        installed = true;
-      }
-    } catch { /* Missing grants, unsupported images and closed ports keep the placeholder. */ }
-    finally {
-      if (!installed) {
-        if (isCurrent()) this.failedImages.add(this.imageRequestKey(request));
-        const cancel: ImageControl = { kind: 'image-cancel', id };
-        try { port.postMessageEvent(JSON.stringify(cancel)); } catch { /* Web released */ }
-      }
-      this.activeImage = null;
-      this.scheduleViewport();
+    const current = (): boolean => this.ready && this.workMode === 'render' &&
+      generation === this.imageGeneration && this.imageRequests.has(url);
+    const missing = (): void => {
+      response.setResponseCode(404);
+      response.setReasonMessage('Not Found');
+      response.setResponseData('');
+    };
+    if (!request || event.request.isMainFrame() || event.request.getRequestMethod() !== 'GET' || !current()) {
+      missing();
+      return response;
     }
+    response.setResponseIsReady(false);
+    // Serialize decoding so a page with many visible large images only prepares one thumbnail at a time.
+    this.imageQueue = this.imageQueue.then(async (): Promise<void> => {
+      try {
+        const context = this.getUIContext().getHostContext();
+        if (!current() || !context) { missing(); return; }
+        const resource = await openLocalImage(this.documentUri, context.cacheDir, request);
+        if (!resource) { missing(); return; }
+        let transferred = false;
+        try {
+          if (!current()) { missing(); return; }
+          response.setResponseMimeType(resource.mime);
+          response.setResponseCode(200);
+          response.setReasonMessage('OK');
+          response.setResponseHeader([
+            { headerKey: 'Cache-Control', headerValue: 'no-store' },
+            { headerKey: 'X-Content-Type-Options', headerValue: 'nosniff' },
+            { headerKey: 'Content-Security-Policy', headerValue: "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:" }
+          ]);
+          response.setResponseData(resource.file.fd);
+          transferred = true;
+          if (resource.intrinsicWidth > 0) {
+            this.controller.runJavaScript('window.MarknotePreview.sizeImage(' +
+              request.id + ',' + resource.intrinsicWidth + ',' + resource.intrinsicHeight + ')').catch((): void => {});
+          }
+        } finally {
+          if (!transferred) await fileIo.close(resource.file);
+        }
+      } catch { missing(); }
+      finally { response.setResponseIsReady(true); }
+    }).catch((): void => {});
+    return response;
   }
 
   @Builder
@@ -317,6 +270,8 @@ export struct DocumentPreviewView {
     // SYNC_RENDER 让 Web 作为画布节点和 ArkUI 一起绘制，FIT_CONTENT 才能按内容撑高。
     Web({ src: $rawfile('preview/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
       .visibility(this.previewFailed ? Visibility.None : Visibility.Visible)
+      // SDK documents null as pass-through for rawfile, although its callback type omits null.
+      .onInterceptRequest((event) => this.imageResponse(event)!)
       .javaScriptAccess(true)
       .domStorageAccess(false)
       // ArkWeb 默认关闭深色模式；须在首次加载前设置，网页的 prefers-color-scheme 才能生效。
@@ -328,6 +283,8 @@ export struct DocumentPreviewView {
       .backgroundColor($r('sys.color.ohos_id_color_background'))
       .textZoomRatio(Math.round(this.fontScale * 100))
       .onPageEnd(() => {
+        this.imageGeneration++;
+        this.imageRequests.clear();
         this.ready = true;
         this.connectResultPort();
         if (this.workMode !== 'off') this.publish();

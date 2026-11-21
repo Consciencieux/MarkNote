@@ -1,6 +1,6 @@
 import { common, OpenLinkOptions } from '@kit.AbilityKit';
 import { url } from '@kit.ArkTS';
-import { FrameCallback, SymbolGlyphModifier, window } from '@kit.ArkUI';
+import { FrameCallback, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -123,16 +123,20 @@ export struct DocumentView {
   private analysis: DocumentAnalysis = new DocumentAnalysis((result: AnalysisResult): void => {
     this.applyAnalysis(result);
   });
-  /**
-   * 底部导航避让高度为 0 时，页签栏与 HdsTabs 底边留出一段应用自己的距离。
-   * 这段用 sys.float.margin_left，不是华为规定的底边距；有导航避让区时不再加。
-   */
-  @Provide('documentNavigationInsetAbsent') private navigationInsetAbsent: boolean = false;
+  // Shared by the floating bar and each document pane's content clearance.
+  @Provide('documentTabBarBottomMargin') private tabBarBottomMargin: number = 0;
+
+  private updateTabBarBottomMargin(indicatorHeight: number): void {
+    // HdsTabs handles the system navigation indicator. Leave breathing room in windows without it.
+    this.tabBarBottomMargin = indicatorHeight === 0 ?
+      LengthMetrics.resource($r('sys.float.padding_level8')).value : 0;
+  }
+
   private hostWindow: window.Window | null = null;
   private watchingIndicator: boolean = false;
   private readonly onAvoidArea = (data: window.AvoidAreaOptions): void => {
     if (data.type !== window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) return;
-    this.navigationInsetAbsent = data.area.bottomRect.height === 0;
+    this.updateTabBarBottomMargin(data.area.bottomRect.height);
   };
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -192,7 +196,7 @@ export struct DocumentView {
       if (!this.watchingIndicator) return;
       this.hostWindow = host;
       const area = host.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
-      this.navigationInsetAbsent = area.bottomRect.height === 0;
+      this.updateTabBarBottomMargin(area.bottomRect.height);
       host.on('avoidAreaChange', this.onAvoidArea);
     }).catch(() => {
       // 读不到窗口时保持默认，不额外抬高底栏。
@@ -933,15 +937,12 @@ export struct DocumentView {
       .barMode(BarMode.Fixed)
       // 按华为《沉浸光感》(ui-design-hds-component-material) 推荐值启用系统自适应材质。
       .barOverlap(true)
-      // barBottomMargin 是页签栏到 HdsTabs 底边的距离，默认 0。
-      // 导航避让高度大于 0 时不设置，避免和组件已有的安全区扩展叠成两段。
-      // 高度为 0 时用应用自己的边距，不是文档规定的底部间距。
       .barFloatingStyle({
         systemMaterialEffect: {
           materialType: hdsMaterial.MaterialType.ADAPTIVE,
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
         },
-        barBottomMargin: this.navigationInsetAbsent ? $r('sys.float.margin_left') : 0
+        barBottomMargin: this.tabBarBottomMargin
       })
       // HDS paints its floating bar above both panes. Empty tab content passes touches to the editor.
       .zIndex(1)
@@ -962,7 +963,7 @@ export struct DocumentView {
                 (isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr'),
               topInset: Math.max(0, this.workspaceTop - this.editorTop),
               parentOffset: this.editorParentOffset,
-              bottomInset: documentTabClearance(this.navigationInsetAbsent),
+              bottomInset: documentTabClearance(this.tabBarBottomMargin),
               controller: this.editor,
               onChange: (expected: string, source: string, anchor: number, head: number): boolean => {
                 return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head);

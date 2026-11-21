@@ -2,7 +2,9 @@
 
 离线预览的直接依赖和版本在 [renderer/package.json](../renderer/package.json) 声明，完整依赖树及解析版本由 [package-lock.json](../renderer/package-lock.json) 锁定。运行 `npm ci` 将依赖安装到本机 `renderer/node_modules/`；该目录不提交。构建工具依赖与运行时依赖在 `package.json` 中分别列出。
 
-`tex-to-myst` 暂时使用 npm 上的固定版本 `1.0.48`。安装脚本从 [固定的 GitHub 提交](https://github.com/Consciencieux/mystmd/commit/26c56a8dd27e7eb78e7c3b46eb2cd3bf30cfff1a) 获取两个修复后的源码文件，校验散列并用锁定版本的 TypeScript 编译到已安装的依赖目录；修复已向上游提交 [PR](https://github.com/jupyter-book/mystmd/pull/3128)。上游发布包含修复的版本后，应更新依赖并移除该安装步骤。修复文件的缓存不提交，构建和测试前会校验安装结果。
+`tex-to-myst` 暂时使用 npm 上的固定版本 `1.0.48`。安装脚本从 [固定的 GitHub 提交](https://github.com/Consciencieux/mystmd/commit/26c56a8dd27e7eb78e7c3b46eb2cd3bf30cfff1a) 获取两个修复后的源码文件，校验散列并用锁定版本的 TypeScript 编译到已安装的依赖目录。修复文件的缓存不提交，构建和测试前会校验安装结果。上游修复已合并，npm 最新版仍为 `1.0.48`。[上游 PR #3128](https://github.com/jupyter-book/mystmd/pull/3128)
+
+npm 发布包含修复的新版后，升级依赖并删除补丁脚本及其安装、构建钩子。
 
 ## 许可证材料与应用内声明
 

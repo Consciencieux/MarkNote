@@ -59,9 +59,11 @@ struct SettingsChoiceRow {
   build() {
     ListItem({ style: ListItemStyle.CARD }) {
       SettingsListRow({ title: this.title, selected: this.selected })
+        .accessibilityLevel('no-hide-descendants')
     }
     .onClick(() => this.onSelect())
     .accessibilityGroup(true)
+    .accessibilityLevel('yes')
     .accessibilityText(this.title)
     .accessibilityRole(AccessibilityRoleType.RADIO)
     .accessibilityChecked(this.selected)

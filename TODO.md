@@ -1,48 +1,39 @@
 # 待办
 
-## 大文件、图片和长文稿
+## 本地图片预览
 
-- [x] **文稿读写与草稿**：在三折叠模拟器打开超过 8 MiB 的文稿，编辑后强制退出，恢复并保存。取回文件与原稿逐字节对照，仅多出本次输入。[文件读写](entry/src/main/ets/storage/DocumentFiles.ets)
-- [x] **长 Markdown 分栏预览**：在分栏中滚动含 16,384 节的样稿，预览能显示后续章节，编辑栏仍可输入。[Markdown 预览](renderer/src/renderers/markdown.ts)
-- [x] **大图预览**：同一模拟器显示了文稿引用的 4200 × 4200 PNG，超过原文件大小和像素上限。图片按阅读区域加载，离开后释放。[本地图片](entry/src/main/ets/document/LocalImages.ets)
+- [x] **SVG 误拒绝（N04）**：本地 SVG 由 ArkWeb 作为隔离图片解析。三折叠模拟器已显示含网址说明和 Inkscape 命名空间的样图。[本地图片](entry/src/main/ets/document/LocalImages.ets)、[SVG 清理](renderer/src/renderers/svg.ts)
+- [ ] **动态图缩放（N03）**：Image Kit 识别多帧后，ArkWeb 直接读取原文件播放。三折叠模拟器已显示宽幅 GIF 和 4100 × 1800 动态 WebP 的不同帧；大动图播放时的内存峰值仍待测量。[缩图实现](entry/src/main/ets/document/LocalImages.ets)
+- [ ] **图片传输（N01）**：已用 ArkWeb 文件描述符响应交付原图和缩略图，普通与分栏预览均已显示，换篇后已显示新文稿引用的图片。仍需核对解码尚未完成时换篇，以及取消后的句柄释放。[原生传输](entry/src/main/ets/pages/DocumentPreviewView.ets)、[网页接收](renderer/src/image-window.ts)
 
 ## 首页文稿操作
 
 - [ ] **长按菜单**：将 `feature/home-document-actions` 已实现的分享、另存副本、多选、收藏／取消收藏、移除记录和删除文件合入 `dev`。在“全部”和“收藏”中核对操作对象。分享读取所选文件已保存的内容，另存副本保留原件，移除记录保留文件，确认删除才移入回收站。
-- [ ] **多选与批量操作**：合入时核对选择和退出多选、批量分享、收藏、移除记录与删除。另存副本仅用于单篇文稿。结合 F07 检查批量操作中一项失败后，其余项的处理结果及列表状态。
+- [ ] **多选与批量操作**：合入时核对选择和退出多选、批量分享、收藏、移除记录与删除。另存副本仅用于单篇文稿。检查批量操作中一项失败后，其余项的处理结果及列表状态。
 
 ## 文稿功能
 
 - [ ] **混合换行保存**：混合 LF、CRLF、CR 的文稿增删行后，当前不能按原方式保存；另存为使用 LF。明确新增和删除行的换行策略及用户选择，避免静默改变原文件。[编码与换行](entry/src/main/ets/document/TextEncoding.ets)
 - [ ] **无 BOM 编码识别**：UTF-16 依赖前 64 字节的零字节比例判断，当前不能手动纠正编码。完善识别和用户纠正途径，保留现有 BOM 与编码安全处理。[编码识别](entry/src/main/ets/document/TextEncoding.ets)
-- [x] **编辑器围栏语言覆盖**：编辑器与预览支持同一组 13 种围栏语言，复用语言别名和语法配色。未标记或未知语言保留原文。[编辑器语言](editor/src/languages.js)
-- [x] **外部链接长度**：预览、消息接收端和原生打开入口已移除 2048 字符限制。完整地址交给系统，保留协议、主机、凭据和文稿身份校验，系统拒绝打开时提示用户。[预览链接](renderer/src/renderers/external-link.ts)、[原生打开](entry/src/main/ets/pages/DocumentView.ets)
+- [ ] **界面文字方向（N08）**：原生和预览已按实际界面语言使用 `i18n.isRTL`。模拟器设置页已核对跟随系统、阿拉伯语与维吾尔语；待核对 RTL 文稿的预览与编辑选区，编辑器跟随系统时仍使用自动正文方向。[应用语言](entry/src/main/ets/i18n/AppLanguage.ets)、[预览](renderer/src/main.ts)
 
 ## 界面适配待确认
 
-- [x] **编辑与分栏的上下模糊**：两栏的滚动内容均可进入系统标题栏和悬浮页签下方，源码与预览共用横向边距。
-- [ ] **底部避让**：在无系统导航指示区的窗口核对额外底边距、末行和悬浮页签的点击区域。[文稿页面](entry/src/main/ets/pages/DocumentView.ets)、[滚动层](entry/src/main/ets/pages/DocumentScrollLayer.ets)
-- [x] **文末键盘避让**：已在折叠屏模拟器点入文末，确认键盘展开后编辑视口缩小，末行仍然可见。
-- [x] **连续换行时的光标跟随**：已在三折叠模拟器展开键盘，连续换行超过一屏后继续输入，确认新增末行保持可见。
-- [ ] **窄窗口查找栏**：已在三折叠收拢的窄屏确认首次展开、匹配计数和替换行均可见。仍需在窄屏叠加系统大字体时核对按钮和正文顶部。[查找栏](entry/src/main/ets/pages/DocumentFindBar.ets)
-- [ ] **首页分段按钮**：窄侧栏、大字体和长译文组合下检查“全部／收藏”是否完整可读且可点击。当前两侧有 40vp 占位，中间最大宽度为 150vp。[首页](entry/src/main/ets/pages/Index.ets)
-- [x] **顶部留白**：普通页面共用应用选取的首项间距，带分组标题的列表由 SubHeader 留出间距。已修正分栏返回页首及使用帮助首节的间距。[公共滚动策略](entry/src/main/ets/pages/PageScrollPolicy.ets)
-- [ ] **设置行和分组标题**：核对系统列表行能否承载导航和单选交互。“主题”位于代码高亮二级页的选项卡片上方，标题与选项各用一个列表组。保留这个位置，核对分组语义、对齐及无障碍朗读。[设置行](entry/src/main/ets/pages/SettingsListRow.ets)、[设置详情](entry/src/main/ets/pages/SettingsDetail.ets)
-- [ ] **图标与底部距离的资源用途**：部分符号尺寸使用 `Title_M`，无导航指示区时底部距离使用 `margin_left`。核对组件适用资源及实际显示，底部遮挡与上述避让事项一并处理。[文字与图标样式](entry/src/main/ets/pages/TextRoles.ets)
+- [ ] **编辑器滚动条（N02）**：三折叠分栏试用 ArkWeb 原生纵向滚动条时，右栏滚动截图中未观察到可拖动滑块。现保留可读区域内的滑块；替换前须核对两端避让和鼠标拖动。[编辑器宿主](entry/src/main/ets/pages/DocumentCodeEditor.ets)、[滚动条](editor/src/source-scrollbar.ts)
+- [x] **底部避让**：悬浮页签和各文稿视图共用同一个底边距值。已在三折叠模拟器的系统悬浮窗中核对预览末段和编辑末行均可见，底部页签可点击切换。[文稿页面](entry/src/main/ets/pages/DocumentView.ets)、[滚动层](entry/src/main/ets/pages/DocumentScrollLayer.ets)
+- [x] **窄窗口查找栏**：修复大字体下匹配计数挤掉输入文字的问题。三折叠模拟器收拢并使用最大字号时，查询文字、匹配计数、上下箭头、清除按钮和替换行均可见。[查找栏](entry/src/main/ets/pages/DocumentFindBar.ets)
+- [ ] **首页分段按钮**：三折叠模拟器窄侧栏和最大字号下，俄文收藏标签已使用单行短名，完整名称仍用于无障碍播报。继续确认其他语言在更窄窗口下的显示。[首页](entry/src/main/ets/pages/Index.ets)
+- [ ] **设置行和分组标题**：CARD 内已使用 ComposeListItem 承载标题、状态、箭头和单选标记，已验证整行切换语言。三折叠模拟器开启屏幕朗读后，单选行整行聚焦，滑动进入下一项，双击后选中标记随之更新。已确认系统合成语音，仍需核对选中播报内容和大字体显示。“主题”位于代码高亮二级页的选项卡片上方，标题与选项各用一个列表组。保留这个位置，核对分组语义、对齐及无障碍朗读。[设置行](entry/src/main/ets/pages/SettingsListRow.ets)、[设置详情](entry/src/main/ets/pages/SettingsDetail.ets)
+- [x] **图标与底部距离的资源用途**：查找按钮使用工具栏图标尺寸。无系统导航指示区时，页签栏的额外间距使用系统内边距资源，避让验收见上文。[文字与图标样式](entry/src/main/ets/pages/TextRoles.ets)
 - [ ] **阅读与 Web 视觉配置**：编辑、预览与大纲已共用系统横向边距，帮助等页面使用应用选定的栅格与 24vp 侧距。核对编辑、预览及其他阅读页面的基础字号、颜色和版心，保留文稿排版与灰色代码框。[阅读版心](entry/src/main/ets/pages/SettingsReadingFrame.ets)、[预览样式](renderer/src/styles.css)、[编辑器样式](editor/src/production.css)
-- [ ] **大纲行结构**：当前通过条件空行缩进并分别处理展开和跳转。核对系统树形组件能否满足两种独立操作与无障碍需求，再决定是否调整。[大纲](entry/src/main/ets/pages/DocumentOutlineView.ets)
+- [x] **大纲行结构**：系统 List 与 Repeat.virtualScroll 按需创建行。开启三折叠模拟器的屏幕朗读后，箭头和标题分别聚焦，双击分别收起子标题和跳转编辑位置。[大纲](entry/src/main/ets/pages/DocumentOutlineView.ets)
 - [ ] **菜单宽度**：首页顶层菜单对所有窗口固定 224vp，其他菜单使用组件默认宽度。检查手机、大字体、平板和小窗口下的内容显示，并核对适用的官方设计范围。[菜单](entry/src/main/ets/pages/DocumentMenus.ets)
 
 以上界面项包含需要确认的应用自定义选择，是否修改以官方组件适用性和实际交互结果为准。
 
 ## 已开始但尚未完成验证
 
-F06–F09 和 U05 的实施及验收状态如下。
-
 - [ ] **持久授权 F06**：持久授权申请已延后到打开确认后，接管失败时尝试释放新增授权，已有读授权时只释放新增的写授权。验证取消、读取失败、授权升级和会话切换。
-- [x] **最近文稿队列 F07**：已确认前一项失败时，已经排队的后续操作仍会执行。
 - [ ] **分享缓存 F08**：后续分享时会清理超过七天的副本，分享准备或面板打开失败时尝试清理本次副本。验证接收方读取与清理失败重试。
-- [x] **许可证分块 F09**：分块保留完整 Unicode 字符；已在三折叠模拟器打开并滚动第三方许可证，确认长正文正常显示。
-- [x] **文稿分栏 U05**：已按文稿区域宽度显示分栏。在三折叠模拟器收展侧栏、折叠并恢复展开后，文稿和撤销历史均保留。Markdown 换到 SVG 后，可直接在分栏编辑并看到预览更新。
 - [ ] **保存与恢复故障场景**：已修复保存和草稿恢复的主要问题；在模拟器或设备上核对文件提供方写入失败、外部修改冲突、恢复读取失败和清理失败时的结果。
 - [ ] **输入与国际化**：中文候选上屏及保存已有模拟器记录；补查日文输入法、RTL 和中英文混排下的输入、选区与定位。

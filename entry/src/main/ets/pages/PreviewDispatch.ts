@@ -1,6 +1,7 @@
 /** Copy sent with one preview update. Fields match the strings ArkWeb already understands. */
 export interface PreviewCopy {
   lang: string;
+  rtl: boolean;
   empty: string;
   failed: string;
   unsafe: string;

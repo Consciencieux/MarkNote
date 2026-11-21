@@ -1,24 +1,21 @@
 import { fileIo, fileUri } from '@kit.CoreFileKit';
-import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
 import { openScratchFile } from '../storage/FileBytes';
 
-/** Each transfer awaits ArkWeb before reading or encoding the next piece. */
-const TRANSFER_CHUNK_BYTES: number = 256 * 1024;
-
 export interface LocalImageRequest {
+  id: number;
   key: string;
   widthPx: number;
   heightPx: number;
 }
 
 export interface LocalImageResult {
+  file: fileIo.File;
   mime: string;
   intrinsicWidth: number;
   intrinsicHeight: number;
 }
 
-type SendChunk = (bytes: Uint8Array) => Promise<void>;
 
 function isImageExtension(extension: string): boolean {
   return extension === 'png' || extension === 'jpg' || extension === 'jpeg' ||
@@ -96,46 +93,6 @@ function imageUri(documentUri: string, relativePath: string): string {
   return prefix + encoded;
 }
 
-/** Validate exactly the bytes sent to ArkWeb. Keep the longest permitted URI across chunk boundaries. */
-class SvgCheck {
-  private decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { fatal: true, ignoreBOM: true });
-  private tail: string = '';
-  private hasRoot: boolean = false;
-
-  accepts(bytes: Uint8Array, last: boolean): boolean {
-    const svgNamespace = 'http://www.w3.org/2000/svg';
-    const xlinkNamespace = 'http://www.w3.org/1999/xlink';
-    const text = this.tail + this.decoder.decodeToString(bytes, { stream: !last }).toLowerCase();
-    this.hasRoot = this.hasRoot || text.includes('<svg');
-    if (text.includes('<script') || text.includes('foreignobject') || text.includes('javascript:')) return false;
-    const end = last ? text.length : Math.max(0, text.length - xlinkNamespace.length);
-    let pos = text.indexOf('http');
-    while (pos >= 0 && pos < end) {
-      if ((text.startsWith('http://', pos) || text.startsWith('https://', pos)) &&
-        !text.startsWith(svgNamespace, pos) && !text.startsWith(xlinkNamespace, pos)) return false;
-      pos = text.indexOf('http', pos + 4);
-    }
-    this.tail = text.substring(end);
-    return !last || this.hasRoot;
-  }
-}
-
-async function sendOriginal(fd: number, size: number, send: SendChunk, svg: boolean): Promise<void> {
-  fileIo.lseek(fd, 0);
-  const check = svg ? new SvgCheck() : null;
-  const buffer = new ArrayBuffer(Math.min(size, TRANSFER_CHUNK_BYTES));
-  let remaining = size;
-  while (remaining > 0) {
-    const length = Math.min(buffer.byteLength, remaining);
-    const count = await fileIo.read(fd, buffer, { length });
-    if (count <= 0 || count > length) throw new Error('Incomplete image');
-    remaining -= count;
-    const bytes = new Uint8Array(buffer, 0, count);
-    if (check !== null && !check.accepts(bytes, remaining === 0)) throw new Error('Unsupported SVG');
-    await send(bytes);
-  }
-}
-
 async function orientationOf(source: image.ImageSource, mime: string): Promise<number> {
   if (mime !== 'image/jpeg' && mime !== 'image/png' && mime !== 'image/webp') return 1;
   try {
@@ -172,8 +129,8 @@ async function encodeThumbnail(source: image.ImageSource, size: image.Size, orie
   }
 }
 
-async function sendRaster(fd: number, fileSize: number, source: image.ImageSource, info: image.ImageInfo,
-  mime: string, request: LocalImageRequest, cacheDir: string, send: SendChunk): Promise<LocalImageResult> {
+async function openRaster(fd: number, source: image.ImageSource, info: image.ImageInfo,
+  mime: string, request: LocalImageRequest, cacheDir: string): Promise<LocalImageResult> {
   const orientation = await orientationOf(source, mime);
   const width = orientation >= 5 ? info.size.height : info.size.width;
   const height = orientation >= 5 ? info.size.width : info.size.height;
@@ -182,10 +139,10 @@ async function sendRaster(fd: number, fileSize: number, source: image.ImageSourc
   const viewportPixels = request.widthPx * Math.max(request.heightPx, request.widthPx);
   const scale = Math.min(1, request.widthPx / width, Math.sqrt(viewportPixels / (width * height)),
     viewportPixels / Math.max(width, height));
-  if (scale === 1) {
-    // The browser keeps the original frames, color profile and metadata for images which already fit.
-    await sendOriginal(fd, fileSize, send, false);
-    return { mime, intrinsicWidth: 0, intrinsicHeight: 0 };
+  if (scale === 1 || ((mime === 'image/gif' || mime === 'image/webp') && await source.getFrameCount() > 1)) {
+    // Let ArkWeb decode animation over time, without expanding every frame into PixelMaps.
+    fileIo.lseek(fd, 0);
+    return { file: fileIo.dup(fd), mime, intrinsicWidth: 0, intrinsicHeight: 0 };
   }
   const size: image.Size = {
     width: Math.max(1, Math.floor(info.size.width * scale)),
@@ -195,18 +152,17 @@ async function sendRaster(fd: number, fileSize: number, source: image.ImageSourc
   const thumbnail = await openScratchFile(cacheDir);
   try {
     await encodeThumbnail(source, size, orientation, outputMime, thumbnail.fd);
-    const length = Number((await fileIo.stat(thumbnail.fd)).size);
-    if (length <= 0) throw new Error('Empty thumbnail');
-    await sendOriginal(thumbnail.fd, length, send, false);
-  } finally {
+    fileIo.lseek(thumbnail.fd, 0);
+    return { file: thumbnail, mime: outputMime, intrinsicWidth: width, intrinsicHeight: height };
+  } catch (error) {
     await fileIo.close(thumbnail);
+    throw error as Error;
   }
-  return { mime: outputMime, intrinsicWidth: width, intrinsicHeight: height };
 }
 
 /** Read only the referenced file under the document directory, with the system's actual URI grants. */
-export async function sendLocalImage(documentUri: string, cacheDir: string, request: LocalImageRequest,
-  send: SendChunk): Promise<LocalImageResult | null> {
+export async function openLocalImage(documentUri: string, cacheDir: string, request: LocalImageRequest):
+  Promise<LocalImageResult | null> {
   const relative = relativeImagePath(request.key);
   if (!documentUri || !relative) return null;
   const uri = imageUri(documentUri, relative);
@@ -222,13 +178,13 @@ export async function sendLocalImage(documentUri: string, cacheDir: string, requ
         source = image.createImageSource(opened.fd);
         info = await source.getImageInfo();
       } catch (error) {
-        // ArkWeb can display checked SVGs even when the platform image codec cannot inspect them.
+        // ArkWeb can decode SVG image subresources even when the platform image codec cannot inspect them.
         if (extensionOf(relative) !== 'svg') throw error as Error;
       }
       if (info && source) {
         const mime = info.mimeType === 'image/x-ms-bmp' ? 'image/bmp' : info.mimeType;
         if (['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'].includes(mime)) {
-          return await sendRaster(opened.fd, stat.size, source, info, mime, request, cacheDir, send);
+          return await openRaster(opened.fd, source, info, mime, request, cacheDir);
         }
       }
     } finally {
@@ -236,8 +192,8 @@ export async function sendLocalImage(documentUri: string, cacheDir: string, requ
     }
     if (extensionOf(relative) !== 'svg') return null;
     // Keep vector images in the isolated browser image context, including their intrinsic sizing.
-    await sendOriginal(opened.fd, stat.size, send, true);
-    return { mime: 'image/svg+xml', intrinsicWidth: 0, intrinsicHeight: 0 };
+    fileIo.lseek(opened.fd, 0);
+    return { file: fileIo.dup(opened.fd), mime: 'image/svg+xml', intrinsicWidth: 0, intrinsicHeight: 0 };
   } finally {
     await fileIo.close(opened.fd);
   }
@@ -254,12 +210,14 @@ function jsonText(value: string): string {
 }
 
 /** The page reports its column width and native viewport height in physical pixels. */
-export function sourcesFromPage(raw: string): LocalImageRequest[] {
+export function sourcesFromPage(raw: string): LocalImageRequest[] | null {
   try {
-    const parsed = JSON.parse(jsonText(raw.trim())) as LocalImageRequest[];
+    const text = jsonText(raw.trim());
+    if (text === 'null') return null;
+    const parsed = JSON.parse(text) as LocalImageRequest[];
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((item: LocalImageRequest): boolean => item !== null && typeof item === 'object' &&
-      typeof item.key === 'string' && item.key.length > 0 &&
+      Number.isSafeInteger(item.id) && item.id > 0 && typeof item.key === 'string' && item.key.length > 0 &&
       Number.isSafeInteger(item.widthPx) && item.widthPx > 0 &&
       Number.isSafeInteger(item.heightPx) && item.heightPx > 0);
   } catch {

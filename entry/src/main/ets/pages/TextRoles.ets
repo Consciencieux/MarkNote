@@ -32,16 +32,6 @@ export class ListTitleStyle implements AttributeModifier<TextAttribute> {
   }
 }
 
-/** 设置行中的状态、版本等辅助值属于正文信息，使用正文中号而非副标题角色。 */
-export class SettingsValueStyle implements AttributeModifier<TextAttribute> {
-  applyNormalAttribute(instance: TextAttribute): void {
-    instance.fontSize($r('sys.float.Body_M'))
-      .fontWeight(FontWeight.Regular)
-      .fontColor($r('sys.color.font_secondary'))
-      .textAlign(TextAlign.Start);
-  }
-}
-
 /** 大纲的子级仍是标题文字，使用副标题小号；层级通过字号区分，颜色保持主文字色。 */
 export class OutlineChildTitleStyle implements AttributeModifier<TextAttribute> {
   applyNormalAttribute(instance: TextAttribute): void {
@@ -69,10 +59,10 @@ export class BodyInputStyle implements AttributeModifier<TextAreaAttribute> {
   }
 }
 
-/** 工具栏符号原先写死 24。Title_M 是系统里与之对应的一档。 */
+/** 工具栏图标使用系统图标尺寸。 */
 export class ToolbarIconStyle implements AttributeModifier<SymbolGlyphAttribute> {
   applyNormalAttribute(instance: SymbolGlyphAttribute): void {
-    instance.fontSize($r('sys.float.Title_M'))
+    instance.fontSize($r('sys.float.ohos_id_toolbar_item_icon_size'))
       .fontColor([$r('sys.color.icon_primary')]);
   }
 }
@@ -80,7 +70,6 @@ export class ToolbarIconStyle implements AttributeModifier<SymbolGlyphAttribute>
 export const bodyText: BodyTextStyle = new BodyTextStyle();
 export const sectionTitle: SectionTitleStyle = new SectionTitleStyle();
 export const listTitle: ListTitleStyle = new ListTitleStyle();
-export const settingsValue: SettingsValueStyle = new SettingsValueStyle();
 export const outlineChildTitle: OutlineChildTitleStyle = new OutlineChildTitleStyle();
 export const pageTitle: PageTitleStyle = new PageTitleStyle();
 export const bodyInput: BodyInputStyle = new BodyInputStyle();

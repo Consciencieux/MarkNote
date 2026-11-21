@@ -13,41 +13,13 @@ class OutlineRow {
   expanded: boolean = false;
 }
 
-// ArkUI invokes the List builder only for the visible and preloaded rows.
-// https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-rendering-control-lazyforeach
-class OutlineRows implements IDataSource {
-  private items: OutlineRow[] = [];
-  private listeners: Set<DataChangeListener> = new Set();
-
-  totalCount(): number {
-    return this.items.length;
-  }
-
-  getData(index: number): OutlineRow {
-    return this.items[index];
-  }
-
-  registerDataChangeListener(listener: DataChangeListener): void {
-    this.listeners.add(listener);
-  }
-
-  unregisterDataChangeListener(listener: DataChangeListener): void {
-    this.listeners.delete(listener);
-  }
-
-  replace(items: OutlineRow[]): void {
-    this.items = items;
-    this.listeners.forEach((listener: DataChangeListener): void => listener.onDataReloaded());
-  }
-}
-
 @Component
 export struct DocumentOutlineView {
-  @Consume('documentNavigationInsetAbsent') navigationInsetAbsent: boolean;
+  @Consume('documentTabBarBottomMargin') tabBarBottomMargin: number;
   @Prop @Watch('refreshRows') headings: Heading[] = [];
   @Prop @Watch('resetCollapsed') documentRevision: number = 0;
   private collapsedOutline: Set<string> = new Set();
-  private rows: OutlineRows = new OutlineRows();
+  @State private rows: OutlineRow[] = [];
   scroller: Scroller = new Scroller();
   onSelect: (heading: Heading) => void = (_heading: Heading): void => {};
 
@@ -84,7 +56,7 @@ export struct DocumentOutlineView {
       if (ancestors.every((ancestor: OutlineRow) => ancestor.expanded)) rows.push(row);
       if (row.isFolder) ancestors.push(row);
     }
-    this.rows.replace(rows);
+    this.rows = rows;
   }
 
   private toggleOutline(row: OutlineRow): void {
@@ -101,18 +73,12 @@ export struct DocumentOutlineView {
   }
 
   @Builder
-  private OutlineRowContent(row: OutlineRow) {
+  private OutlineRowContent(entry: RepeatItem<OutlineRow>) {
     Row() {
-      // Indentation uses the system spacing resource; no row dimensions or colors are invented.
-      if (row.depth > 0) Row().width($r('sys.float.padding_level8'))
-      if (row.depth > 1) Row().width($r('sys.float.padding_level8'))
-      if (row.depth > 2) Row().width($r('sys.float.padding_level8'))
-      if (row.depth > 3) Row().width($r('sys.float.padding_level8'))
-      if (row.depth > 4) Row().width($r('sys.float.padding_level8'))
       // A separate arrow target keeps expansion independent of selecting the heading.
       // Leaves retain the same slot so titles at the same depth align.
       Row() {
-        SymbolGlyph(row.expanded ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_right'))
+        SymbolGlyph(entry.item.expanded ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_right'))
           .fontSize($r('sys.float.Subtitle_S'))
           .fontColor([$r('sys.color.font_primary')])
       }
@@ -120,18 +86,23 @@ export struct DocumentOutlineView {
       // The compact outline uses the 40 vp minimum in Huawei's touch-target-size rule.
       .width(40)
       .height(40)
-      .opacity(row.isFolder ? 1 : 0)
-      .enabled(row.isFolder)
+      .opacity(entry.item.isFolder ? 1 : 0)
+      .enabled(entry.item.isFolder)
+      .accessibilityLevel(entry.item.isFolder ? 'yes' : 'no')
       .accessibilityRole(AccessibilityRoleType.BUTTON)
-      .accessibilityText(row.expanded ? $r('app.string.outline_collapse') : $r('app.string.outline_expand'))
-      .onClick(() => this.toggleOutline(row))
+      .accessibilityText(entry.item.expanded ? $r('app.string.outline_collapse') : $r('app.string.outline_expand'))
+      .accessibilityDescription(entry.item.heading.text)
+      .onClick(() => this.toggleOutline(entry.item))
       // 一级和子级都是标题文字，分别使用列表标题和副标题小号样式。
-      Text(row.heading.text)
-        .attributeModifier(this.outlineText(row.depth))
+      Text(entry.item.heading.text)
+        .attributeModifier(this.outlineText(entry.item.depth))
         .layoutWeight(1)
         .constraintSize({ minHeight: 40 })
-        .onClick(() => this.onSelect(row.heading))
+        .accessibilityLevel('yes')
+        .accessibilityRole(AccessibilityRoleType.BUTTON)
+        .onClick(() => this.onSelect(entry.item.heading))
     }
+    .padding({ start: LengthMetrics.vp(entry.item.depth * LengthMetrics.resource($r('sys.float.padding_level8')).value) })
     .width('100%')
   }
 
@@ -142,18 +113,20 @@ export struct DocumentOutlineView {
           Text($r('app.string.outline_empty'))
         }
       }
-      LazyForEach(this.rows, (row: OutlineRow) => {
-        ListItem() {
-          this.OutlineRowContent(row)
-        }
-      // Recreate a row when its displayed state or jump target changes.
-      }, (row: OutlineRow) => `${row.id}:${row.heading.offset}:${row.depth}:${row.isFolder}:${row.expanded}`)
+      Repeat<OutlineRow>(this.rows)
+        .each((row: RepeatItem<OutlineRow>) => {
+          ListItem() {
+            this.OutlineRowContent(row)
+          }
+        })
+        .key((row: OutlineRow) => row.id)
+        .virtualScroll()
     }
     .padding({
       start: LengthMetrics.resource($r('sys.float.margin_left')),
       end: LengthMetrics.resource($r('sys.float.margin_right'))
     })
-    .attributeModifier(new PageScrollPolicy(false, documentTabClearance(this.navigationInsetAbsent)))
+    .attributeModifier(new PageScrollPolicy(false, documentTabClearance(this.tabBarBottomMargin)))
     .scrollBar(BarState.Auto)
     .width('100%')
     .height('100%')
