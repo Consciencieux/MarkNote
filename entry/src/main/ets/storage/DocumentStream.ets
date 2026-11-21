@@ -78,11 +78,15 @@ export async function fileDigest(fd: number): Promise<string> {
 }
 
 /** Reopen the provider only if strict decoding requires a different candidate. */
-export async function inspectDocument(fd: number, restart: () => Promise<number>, expected: string | null):
+export async function inspectDocument(fd: number, restart: () => Promise<number>, expected: string | null,
+  requestedEncoding: string = ''):
   Promise<InspectedDocument> {
   const size = Number((await fileIo.stat(fd)).size);
   const sample = await readPrefix(fd, size);
-  const probe = TextEncoding.probe(sample, size);
+  const probe = TextEncoding.probe(sample, size, requestedEncoding);
+  if (requestedEncoding && probe.bomLength > 0 && probe.encodings[0] !== requestedEncoding) {
+    throw userNotice(AppText.text($r('app.string.encoding_unknown')));
+  }
   for (let attempt = 0; attempt < probe.encodings.length; attempt++) {
     if (attempt > 0) {
       fd = await restart();
@@ -103,8 +107,11 @@ export async function inspectDocument(fd: number, restart: () => Promise<number>
     });
     if (valid) return new InspectedDocument(decoder.finish(encoding, probe.bomLength > 0), await digestHex(md));
   }
+  if (!requestedEncoding && probe.bomLength === 0) throw new UnknownEncodingError();
   throw userNotice(AppText.text($r('app.string.encoding_unknown')));
 }
+
+export class UnknownEncodingError extends Error {}
 
 /** The private file starts empty. Verify with the same detection and normalization used when reopening a URI. */
 export async function writeVerifiedText(fd: number, text: string, info: DocumentInfo, interrupted: string):
@@ -114,5 +121,5 @@ export async function writeVerifiedText(fd: number, text: string, info: Document
   return inspectDocument(fd, async (): Promise<number> => {
     fileIo.lseek(fd, 0);
     return fd;
-  }, text);
+  }, text, info.encoding);
 }

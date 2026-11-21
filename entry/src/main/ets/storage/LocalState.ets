@@ -3,6 +3,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { preferences } from '@kit.ArkData';
 import { RecentDocument, RecoveryData } from '../model/Document';
 import { RecentEntry, removeRecentDocument, toggleFavoriteDocument, updateRecentDocument } from '../document/RecentOrder';
+import { TextEncoding } from '../document/TextEncoding';
 import { readDraftFile, writeDraftFile } from './DraftFile';
 import { normalizeAppLanguage } from '../i18n/AppLanguage';
 
@@ -163,7 +164,11 @@ export class LocalState {
       parsed.writeUncertain = parsed.writeUncertain === true;
       if (typeof parsed.pendingWriteText !== 'string') parsed.pendingWriteText = '';
       if (typeof parsed.pendingWriteUri !== 'string') parsed.pendingWriteUri = '';
-      if (parsed.text === parsed.savedText && !parsed.writeUncertain) return null;
+      if (parsed.editedEndings !== undefined && (typeof parsed.editedEndings !== 'string' ||
+        parsed.newline !== 'mixed' || /[^nrc]/.test(parsed.editedEndings) ||
+        parsed.editedEndings.length !== TextEncoding.lineBreakCount(parsed.text))) throw new Error('invalid draft endings');
+      if (parsed.text === parsed.savedText && !parsed.writeUncertain &&
+        (parsed.editedEndings ?? parsed.lineEndings) === parsed.lineEndings) return null;
       return parsed;
     } catch {
       const error = new Error('invalid draft');

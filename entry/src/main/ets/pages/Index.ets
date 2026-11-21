@@ -17,8 +17,9 @@ import { SettingsPage } from './SettingsPage';
 import { scrollingTitleBar, navigationMenuIcon } from './HdsMaterialStyles';
 import { segmentButtonMaterial } from './ImmersiveMaterials';
 import { menuMaterialOptions } from './MenuMaterialOptions';
-import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
+import { chooseDocumentEncoding, DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
+import { UnknownEncodingError } from '../storage/DocumentStream';
 import { DocumentFiles } from '../storage/DocumentFiles';
 import { LocalState } from '../storage/LocalState';
 import { AppText } from '../i18n/AppText';
@@ -588,10 +589,18 @@ struct Index {
     return this.openApproved(uri, declaredType, writeRequested, external, owner, owner.source);
   }
 
-  private openApproved(uri: string, declaredType: string, writeRequested: boolean, external: boolean,
+  private async openApproved(uri: string, declaredType: string, writeRequested: boolean, external: boolean,
     owner: DocumentSession, approvedSource: string): Promise<boolean> {
-    return DocumentService.openUri(uri, declaredType, writeRequested, external,
-      (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource));
+    const confirm = (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource);
+    try {
+      return await DocumentService.openUri(uri, declaredType, writeRequested, external, confirm);
+    } catch (error) {
+      if (!(error instanceof UnknownEncodingError)) throw error instanceof Error ? error : new Error('open failed');
+      if (this.disposed || DocumentService.current() !== owner) return false;
+      const encoding = await chooseDocumentEncoding(this.getUIContext());
+      if (!encoding || this.disposed || DocumentService.current() !== owner) return false;
+      return DocumentService.openUri(uri, declaredType, writeRequested, external, confirm, encoding);
+    }
   }
 
   private async confirmPreparedOpen(owner: DocumentSession, approvedSource: string): Promise<boolean> {

@@ -16,10 +16,16 @@ export class DocumentSession {
   info: DocumentInfo = new DocumentInfo();
   source: string = '';
   savedText: string = '';
+  lineEndings: string = '';
+
   editing: boolean = false;
   writeUncertain: boolean = false;
   pendingWriteText: string = '';
   pendingWriteUri: string = '';
+
+  isDirty(): boolean {
+    return this.source !== this.savedText || this.lineEndings !== this.info.lineEndings;
+  }
 
   constructor(id: number) {
     this.id = id;
@@ -108,12 +114,13 @@ export class DocumentService {
   }
 
   /** Returns false when the text did not change, so callers can skip analysis and history. */
-  static edit(text: string): boolean {
+  static edit(text: string, endings: string = ''): boolean {
     const session = DocumentService.session;
-    if (!session.editing || session.source === text) return false;
+    if (!session.editing || (session.source === text && session.lineEndings === endings)) return false;
+    session.lineEndings = endings;
     session.source = text;
     session.revision++;
-    if (session.source === session.savedText && !session.writeUncertain) DocumentService.releaseDraft(session);
+    if (!session.isDirty() && !session.writeUncertain) DocumentService.releaseDraft(session);
     else DocumentService.scheduleDraft(session);
     return true;
   }
@@ -146,13 +153,13 @@ export class DocumentService {
    * strictType rejects system requests whose filename and declared type are both unknown.
    */
   static async openUri(uri: string, declaredType: string, writeRequested: boolean,
-    strictType: boolean, beforeAdopt: (() => Promise<boolean>) | null = null): Promise<boolean> {
+    strictType: boolean, beforeAdopt: (() => Promise<boolean>) | null = null, encoding: string = ''): Promise<boolean> {
     if (DocumentService.session.fileOperation !== 'idle') return false;
     const hinted = FormatRegistry.resolve(fileNameFromUri(uri), declaredType, !strictType);
     let access = await DocumentFiles.prepare(uri, writeRequested, false);
     let adopted = false;
     try {
-      const loaded = await DocumentFiles.read(uri);
+      const loaded = await DocumentFiles.read(uri, encoding);
       if (loaded.info.name.length === 0) {
         if (hinted === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
         loaded.info.name = FormatRegistry.defaultName(hinted);
@@ -186,6 +193,7 @@ export class DocumentService {
     session.info = opened.info;
     session.source = opened.text;
     session.savedText = opened.text;
+    session.lineEndings = opened.info.lineEndings;
     session.editing = true;
     DocumentService.session = session;
     DocumentService.activateSession(session);
@@ -217,12 +225,17 @@ export class DocumentService {
     if (pendingSaveAs) {
       try {
         const access = await DocumentFiles.prepare(restoredPendingUri, true);
-        const target = await DocumentFiles.read(restoredPendingUri);
+        const target = await DocumentFiles.read(restoredPendingUri, info.encoding);
         if (target.text === restoredPendingText) {
           info.uri = restoredPendingUri;
           info.name = target.info.name;
           info.newline = target.info.newline;
           info.lineEndings = target.info.lineEndings;
+          if (draft.newline === 'mixed' && info.newline !== 'mixed') {
+            const mark = info.newline === '\r' ? 'c' : info.newline === '\r\n' ? 'r' : 'n';
+            info.lineEndings = mark.repeat(TextEncoding.lineBreakCount(target.text));
+            info.newline = 'mixed';
+          }
           info.encoding = target.info.encoding;
           info.hasBom = target.info.hasBom;
           info.fingerprint = target.info.fingerprint;
@@ -240,7 +253,7 @@ export class DocumentService {
     if (!confirmedTarget && draft.uri.length > 0) {
       try {
         const access = await DocumentFiles.prepare(draft.uri, true);
-        const disk = await DocumentFiles.read(draft.uri);
+        const disk = await DocumentFiles.read(draft.uri, info.encoding);
         const changed = draft.fingerprint.length > 0
           ? disk.info.fingerprint !== draft.fingerprint
           : disk.text !== draft.savedText;
@@ -257,6 +270,22 @@ export class DocumentService {
     session.info = info;
     session.source = draft.text;
     session.savedText = restoredBaseline;
+    if (info.newline === 'mixed') {
+      session.lineEndings = draft.editedEndings ?? (session.source === restoredBaseline ? info.lineEndings : draft.lineEndings);
+      if (TextEncoding.lineBreakCount(session.source) !== session.lineEndings.length) {
+        // Old drafts had only the saved line map. Recover the text as a separate LF copy.
+        if (draft.editedEndings !== undefined) throw userNotice(AppText.text($r('app.string.encoding_lossy')));
+        info.writable = false;
+        info.persistent = false;
+        info.uri = '';
+        info.fingerprint = '';
+        restoredPendingText = '';
+        restoredPendingUri = '';
+        info.newline = '\n';
+        info.lineEndings = '';
+        session.lineEndings = '';
+      }
+    }
     session.writeUncertain = restoredUncertain;
     session.pendingWriteText = restoredPendingText;
     session.pendingWriteUri = restoredPendingUri;
@@ -277,10 +306,11 @@ export class DocumentService {
     if (!session.editing || session.fileOperation !== 'idle') return result;
     session.fileOperation = 'save';
     const snapshot = session.source;
+    const snapshotEndings = session.lineEndings;
     const baseline = session.savedText;
     const previous = session.info;
     const readOnly = !asNewFile && previous.uri.length > 0 && !previous.writable;
-    if (!asNewFile && previous.uri.length > 0 && previous.writable && snapshot === baseline && !session.writeUncertain) {
+    if (!asNewFile && previous.uri.length > 0 && previous.writable && !session.isDirty() && !session.writeUncertain) {
       session.fileOperation = 'idle';
       result.saved = true;
       result.message = AppText.text($r('app.string.saved'));
@@ -307,10 +337,7 @@ export class DocumentService {
       target.uri = uri;
       target.writable = true;
       target.persistent = access.persistent;
-      if (saveAs && target.newline === 'mixed' && !TextEncoding.hasMatchingLineCount(snapshot, target.lineEndings)) {
-        target.newline = '\n';
-        target.lineEndings = '';
-      }
+      target.lineEndings = snapshotEndings;
       const prepared = await DocumentFiles.prepareWrite(context.cacheDir, target, snapshot);
       try {
         if (DocumentService.session !== session || !session.editing) return result;
@@ -347,7 +374,7 @@ export class DocumentService {
         // Even a clean session must replace the stale pre-write checkpoint on retry.
         if (DocumentService.drafts !== null) DocumentService.drafts.schedule(DocumentService.makeSnapshot(session));
       }
-      if (recoveryCommitted && session.source === snapshot) {
+      if (recoveryCommitted && !session.isDirty()) {
         try {
           const cleared = await DocumentService.clearRecovery(session, 'saved');
           if (!cleared) DocumentService.scheduleDraft(session);
@@ -355,7 +382,7 @@ export class DocumentService {
           DocumentService.reportRecovery(session.id, error);
         }
       }
-      result.stillDirty = session.source !== snapshot;
+      result.stillDirty = session.isDirty();
       if (result.stillDirty) {
         DocumentService.scheduleDraft(session);
         result.message = AppText.text($r('app.string.saved_dirty'));
@@ -380,7 +407,7 @@ export class DocumentService {
             DocumentService.reportRecovery(session.id, recoveryError);
             DocumentService.scheduleDraft(session);
           }
-        } else if (session.source !== session.savedText || session.writeUncertain) DocumentService.scheduleDraft(session);
+        } else if (session.isDirty() || session.writeUncertain) DocumentService.scheduleDraft(session);
         else DocumentService.releaseDraft(session);
       }
       if (error instanceof Error) throw error;
@@ -471,7 +498,7 @@ export class DocumentService {
 
   private static scheduleDraft(session: DocumentSession): void {
     if (DocumentService.drafts === null || !session.editing) return;
-    if (session.source === session.savedText && !session.writeUncertain) return;
+    if (!session.isDirty() && !session.writeUncertain) return;
     DocumentService.drafts.schedule(DocumentService.makeSnapshot(session));
   }
 
@@ -501,6 +528,7 @@ export class DocumentService {
     data.savedText = session.savedText;
     data.newline = session.info.newline;
     data.lineEndings = session.info.lineEndings;
+    data.editedEndings = session.lineEndings;
     data.encoding = session.info.encoding;
     data.hasBom = session.info.hasBom;
     data.fingerprint = session.info.fingerprint;

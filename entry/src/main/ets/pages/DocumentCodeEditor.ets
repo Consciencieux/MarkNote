@@ -3,7 +3,7 @@ import { LengthMetrics } from '@kit.ArkUI';
 import { pageContentTop } from './PageScrollPolicy';
 import { AppText } from '../i18n/AppText';
 import { EditorBridge } from '../document/EditorBridge';
-import type { EditorSelection } from '../../../../../shared/editor-protocol';
+import type { EditorChangeRange, EditorSelection } from '../../../../../shared/editor-protocol';
 
 export interface CodeEditorCommand {
   action: string;
@@ -26,6 +26,7 @@ interface EditorPortMessage {
   requestId?: string;
   anchor?: number;
   head?: number;
+  lineEndings?: string;
   canUndo?: boolean;
   canRedo?: boolean;
   source?: string;
@@ -56,6 +57,7 @@ export struct DocumentCodeEditor {
   @Prop sessionId: string = '';
   @Prop epoch: number = 1;
   @Prop source: string = '';
+  initialEndings?: string;
   @Prop formatId: string = 'markdown';
   @Prop @Watch('updateTheme') theme: string = 'github';
   @Prop @Watch('updateTheme') appearance: string = 'system';
@@ -67,17 +69,18 @@ export struct DocumentCodeEditor {
   @Prop @Watch('updateViewport') parentOffset: number = 0;
   @Prop @Watch('updateViewport') bottomInset: number = 0;
   controller: DocumentCodeEditorController = new DocumentCodeEditorController();
-  onChange: (expected: string, source: string, anchor: number, head: number) => boolean =
+  onChange: (expected: string, source: string, anchor: number, head: number, endings?: string) => boolean =
     (_expected: string, _source: string, _anchor: number, _head: number): boolean => false;
   onConflict: () => void = (): void => {};
   onFind: () => void = (): void => {};
-  onRecover: (expected: string, source: string, anchor: number, head: number) => boolean =
+  onRecover: (expected: string, source: string, anchor: number, head: number, endings?: string) => boolean =
     (_expected: string, _source: string, _anchor: number, _head: number): boolean => false;
   onState: (anchor: number, head: number, canUndo: boolean, canRedo: boolean) => void =
     (_anchor: number, _head: number, _canUndo: boolean, _canRedo: boolean): void => {};
   private web: webview.WebviewController = new webview.WebviewController();
   private ports: webview.WebMessagePort[] = [];
   private sourceBuffer: string = '';
+  private endings?: string;
   private activeEpoch: number = 1;
   private bridge: EditorBridge | null = null;
   private ready: boolean = false;
@@ -87,6 +90,7 @@ export struct DocumentCodeEditor {
 
   aboutToAppear(): void {
     this.sourceBuffer = this.source;
+    this.endings = this.initialEndings;
     this.activeEpoch = this.epoch;
     this.resetBridge();
     this.controller.bind((suspend: boolean): Promise<boolean> => this.flush(suspend), (command: CodeEditorCommand): boolean => {
@@ -103,10 +107,18 @@ export struct DocumentCodeEditor {
   private resetBridge(): void {
     this.bridge = new EditorBridge(this.sessionId, this.activeEpoch, 0,
       (): string => this.sourceBuffer,
-      (source: string, selection: EditorSelection): void => {
-        if (!this.onChange(this.sourceBuffer, source, selection.anchor, selection.head)) {
+      (source: string, selection: EditorSelection, change?: EditorChangeRange): void => {
+        let endings = this.endings;
+        if (change !== undefined) {
+          if (endings === undefined || !Number.isSafeInteger(change.from) || !Number.isSafeInteger(change.to) ||
+            change.from < 0 || change.to < change.from || change.to > endings.length ||
+            typeof change.insert !== 'string' || /[^nrc]/.test(change.insert)) throw new Error('invalid endings');
+          endings = endings.slice(0, change.from) + change.insert + endings.slice(change.to);
+        }
+        if (!this.onChange(this.sourceBuffer, source, selection.anchor, selection.head, endings)) {
           throw new Error('document update rejected');
         }
+        this.endings = endings;
         this.sourceBuffer = source;
       });
   }
@@ -177,7 +189,7 @@ export struct DocumentCodeEditor {
     if (message.type === 'ready') {
       const format = this.formatId === 'tex-math' ? 'latex' : this.formatId;
       this.send(JSON.stringify({ type: 'init', sessionId: this.sessionId, epoch: this.activeEpoch,
-        revision: 0, source: this.sourceBuffer, format: format, theme: this.theme, appearance: this.appearance,
+        revision: 0, source: this.sourceBuffer, lineEndings: this.endings, format: format, theme: this.theme, appearance: this.appearance,
         language: this.language, direction: this.textDirection, anchor: 0, head: 0 }));
       return;
     }
@@ -218,11 +230,14 @@ export struct DocumentCodeEditor {
       message.anchor >= 0 && message.head >= 0 && message.anchor <= message.source.length &&
       message.head <= message.source.length) {
       const recoveredSource = message.source;
-      if (!this.onRecover(this.sourceBuffer, recoveredSource, message.anchor, message.head)) {
+      if ((message.lineEndings === undefined) !== (this.endings === undefined) ||
+        (message.lineEndings !== undefined && (typeof message.lineEndings !== 'string' || /[^nrc]/.test(message.lineEndings))) ||
+        !this.onRecover(this.sourceBuffer, recoveredSource, message.anchor, message.head, message.lineEndings)) {
         this.onConflict();
         return;
       }
       const oldEpoch = this.activeEpoch;
+      this.endings = message.lineEndings;
       this.sourceBuffer = recoveredSource;
       this.activeEpoch++;
       this.resetBridge();

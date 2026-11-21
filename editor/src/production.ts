@@ -3,6 +3,7 @@ import { Decoration, EditorView, keymap, ViewPlugin, type DecorationSet, type Vi
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { languageFor } from './languages.js';
 import { syntaxTheme } from './syntax-theme.js';
+import { trackMixedEndings } from './mixed-endings.ts';
 import { EditorSession } from './editor-session.ts';
 import { bindSourceScrollbar } from './source-scrollbar.ts';
 import './production.css';
@@ -71,7 +72,8 @@ session = new EditorSession(view, editable, (message) => {
   currentAppearance = message.appearance || 'system';
   return EditorState.create({
     doc: message.source, selection: { anchor: message.anchor, head: message.head },
-    extensions: extensions(message.format, message.theme, resolvedAppearance(currentAppearance))
+    extensions: [extensions(message.format, message.theme, resolvedAppearance(currentAppearance)),
+      ...(typeof message.lineEndings === 'string' ? [trackMixedEndings(message.lineEndings)] : [])]
   });
 }, applyTheme);
 media.addEventListener('change', () => {

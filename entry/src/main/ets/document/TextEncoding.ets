@@ -1,9 +1,10 @@
 import { util } from '@kit.ArkTS';
+import { i18n } from '@kit.LocalizationKit';
 import { DocumentInfo } from '../model/Document';
 import { AppText } from '../i18n/AppText';
 import { userNotice } from './UserNotice';
 
-export const ENCODING_SAMPLE_BYTES: number = 64;
+export const ENCODING_SAMPLE_BYTES: number = 64 * 1024;
 const ENCODE_CHARS: number = 32 * 1024;
 
 export class DecodedText {
@@ -17,20 +18,6 @@ export class DecodedText {
 export class EncodingProbe {
   encodings: string[] = [];
   bomLength: number = 0;
-}
-
-function utf16Encoding(sample: Uint8Array, size: number): string {
-  if (size < 4 || size % 2 !== 0) return '';
-  let evenZero = 0;
-  let oddZero = 0;
-  for (let index = 0; index + 1 < sample.length; index += 2) {
-    if (sample[index] === 0) evenZero++;
-    if (sample[index + 1] === 0) oddZero++;
-  }
-  const pairs = sample.length / 2;
-  if (oddZero > pairs * 0.8 && evenZero < pairs * 0.2) return 'utf-16le';
-  if (evenZero > pairs * 0.8 && oddZero < pairs * 0.2) return 'utf-16be';
-  return '';
 }
 
 function bomPrefix(encoding: string): Uint8Array {
@@ -141,7 +128,7 @@ export class DocumentDecoder {
 }
 
 export class TextEncoding {
-  static probe(sample: Uint8Array, size: number): EncodingProbe {
+  static probe(sample: Uint8Array, size: number, requested: string = ''): EncodingProbe {
     const result = new EncodingProbe();
     if (sample.length >= 3 && sample[0] === 0xEF && sample[1] === 0xBB && sample[2] === 0xBF) {
       result.encodings.push('utf-8');
@@ -152,9 +139,17 @@ export class TextEncoding {
     } else if (sample.length >= 2 && sample[0] === 0xFE && sample[1] === 0xFF) {
       result.encodings.push('utf-16be');
       result.bomLength = 2;
+    } else if (requested) {
+      result.encodings.push(requested);
     } else {
-      const hinted = utf16Encoding(sample, size);
-      if (hinted !== '') result.encodings.push(hinted);
+      // UTF-16 may also form valid UTF-8 bytes. Try the system's UTF-16 hint first.
+      // Prefer strict UTF-8 to GB18030 when both can decode the same unmarked bytes.
+      if (sample.length > 0 && size % 2 === 0) {
+        try {
+          const detected = i18n.Unicode.detectEncoding(sample).encodingName.toLowerCase();
+          if (detected === 'utf-16le' || detected === 'utf-16be') result.encodings.push(detected);
+        } catch { /* Continue with strict decoding. */ }
+      }
       result.encodings.push('utf-8', 'gb18030');
     }
     return result;
@@ -166,6 +161,7 @@ export class TextEncoding {
     const prefix = bomPrefix(encoding);
     if (info.hasBom && prefix.length > 0) await consume(prefix);
     let line = 0;
+    let previousWasCr: boolean = false;
     let offset = 0;
     while (offset < text.length) {
       let end = Math.min(text.length, offset + ENCODE_CHARS);
@@ -173,7 +169,16 @@ export class TextEncoding {
       if (end < text.length && tail >= 0xD800 && tail <= 0xDBFF) end--;
       let part = text.substring(offset, end);
       if (info.newline === 'mixed') {
-        part = part.replace(/\n/g, (): string => endingMark(info.lineEndings.charAt(line++)));
+        const input = part;
+        let lastCr: boolean = previousWasCr;
+        part = input.replace(/\n/g, (_break: string, index: number): string => {
+          const mark = info.lineEndings.charAt(line++);
+          const adjacentCr: boolean = index === 0 ? previousWasCr : input[index - 1] === '\n' && lastCr;
+          lastCr = mark === 'c';
+          // After a join, adjacent CR and LF would decode as a single separator.
+          return adjacentCr && mark === 'n' ? '\r\n' : endingMark(mark);
+        });
+        previousWasCr = input.endsWith('\n') && lastCr;
       } else if (info.newline === '\r' || info.newline === '\r\n') {
         part = part.replace(/\n/g, info.newline);
       }
@@ -183,13 +188,13 @@ export class TextEncoding {
       offset = end;
     }
     if (info.newline === 'mixed' && line !== info.lineEndings.length) {
-      throw userNotice(AppText.text($r('app.string.mixed_newlines')));
+      throw userNotice(AppText.text($r('app.string.encoding_lossy')));
     }
   }
 
-  static hasMatchingLineCount(text: string, lineEndings: string): boolean {
+  static lineBreakCount(text: string): number {
     let count = 0;
     for (let index = text.indexOf('\n'); index >= 0; index = text.indexOf('\n', index + 1)) count++;
-    return count === lineEndings.length;
+    return count;
   }
 }
