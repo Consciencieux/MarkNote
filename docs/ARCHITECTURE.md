@@ -29,7 +29,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 首页使用 `HdsNavigation`。文稿和设置页面使用 `HdsNavDestination`，并由同一个 `NavPathStack` 管理。`Index` 创建设置页路由，`SettingsPage` 构建各级页面；每个页面持有自己的滚动控制器。许可证页进入后再读取原文，并按段放进列表。`EntryAbility` 在加载页面前按已保存的语言偏好设置应用语言。跟随系统时解析为当前系统语言对应的资源，因此切换立即生效；下次冷启动会按当时的系统语言重新解析。
 
-`HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，预览和大纲各自保留滚动控制器；编辑与分栏复用一个编辑器及其滚动控制器。预览和大纲由原生 Scroll 显示滚动条。源码在有界 ArkWeb 中滚动，外层 Scroll 与标题栏联动。ArkUI 将可读区域和系统横向边距传给网页。编辑器按网页的实际滚动位置显示滑块，拖动滑块直接滚动同一份正文。两栏共用标题栏与页签避让范围，滑块布局遵循华为[滚动条设计指南](https://developer.huawei.com/consumer/cn/doc/design-guides/scrollbar-0000001956815473/)。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
+`HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。预览、编辑和分栏使用 `DocumentScrollLayer`。预览的原生 Scroll 与大纲的有界 List 共用 `PageScrollPolicy`，各自保留滚动控制器及原生滚动条。大纲通过 LazyForEach 按可见范围创建列表行。编辑与分栏复用同一个编辑器和滚动控制器。源码在有界 ArkWeb 中滚动，外层 Scroll 与标题栏联动。ArkUI 将可读区域和系统横向边距传给网页。编辑器按网页的实际滚动位置显示滑块，拖动滑块直接滚动同一份正文。两栏共用标题栏与页签避让范围，滑块布局遵循华为[滚动条设计指南](https://developer.huawei.com/consumer/cn/doc/design-guides/scrollbar-0000001956815473/)。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
 
 `DocumentView` 持有文稿编辑、查找和保存界面状态，并按页签是否可见决定预览工作方式；查找栏 `DocumentFindBar` 只绘制查询和替换控件。保存和删除后的文稿数据由 `DocumentService` 更新。`DocumentPreviewView` 管理各自的 Web 控制器，`PreviewDispatch` 保证每个实例最多一笔在途发送和一笔最新请求。`DocumentOutlineView` 管理大纲展示与展开状态。
 
@@ -37,7 +37,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 ## 离线预览
 
-`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号、工作模式，以及当前界面语言的预览提示。工作模式为关闭时不发送；LaTeX 大纲模式只解析并回传标题，不生成页面。分栏只让可见的那一个预览实例排版。应用按原生滚动容器的可视范围向网页查询附近的 Markdown 图片地址，再用文稿 URI 取得所在目录 URI，尝试逐张读取相对路径。读到的图片以 data URL 传回页面，离开阅读区域后释放；打不开的图片保持占位。网页不注册文件或导航接口，也不加载网络图片。Markdown 的 mermaid 代码围栏在页面清理之后画成 SVG，布局使用 Dagre，不加载外部图标。用户 SVG 和 Mermaid 的清理结果以 SVG 图片上下文显示，隔离样式与片段 ID；KaTeX 自身的布局 SVG 不走这一转换。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过已有的 `WebMessagePort` 回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲。Markdown 预览中的 http、https 链接不带可导航的 `href`；用户点击后，网页经同一端口发送 `open-link`，ArkTS 再校验协议、主机、凭据、长度以及当前文稿和修订，然后调用 `openLink` 交给系统打开。预览页面不导航、不加载这些地址。预览资源和网络限制见[功能目录](FEATURES.md)。
+`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号、工作模式，以及当前界面语言的预览提示。工作模式为关闭时不发送；LaTeX 大纲模式只解析并回传标题，不生成页面。隐藏的预览释放页面节点并停止着色，保留正文之前的高度供原生滚动容器维持位置。预览根据原生滚动容器报告的位置挂载附近的 Markdown 内容，用 markdown-it 解析块、引用、列表和围栏。每个挂载区的 HTML 经 DOMPurify 清理后插入。文内公式定义了跨公式复用的全局宏时，整篇按源码顺序排版，以保留定义和重定义的语义。应用根据当前文稿的 URI 和已有授权，逐张读取阅读位置附近的本地图片。ArkWeb 提供栏宽、视口高度和像素密度，原生用 Image Kit 读取图像格式和尺寸。需要缩小的位图通过 ImagePacker 直接编码到私有临时文件，关闭描述符后回收。原生通过同一 WebMessagePort 逐块发送 ArrayBuffer，收到确认后才发送下一块。Web 以 Blob URL 显示图片，离开阅读区域后释放。网页不注册文件或导航接口，也不加载网络图片。Markdown 的 mermaid 代码围栏在页面清理之后画成 SVG，布局使用 Dagre，不加载外部图标。用户 SVG 和 Mermaid 的清理结果以 SVG 图片上下文显示，隔离样式与片段 ID；KaTeX 自身的布局 SVG 不走这一转换。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过已有的 `WebMessagePort` 回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲。Markdown 预览中的 http、https 链接不带可导航的 `href`；用户点击后，网页经同一端口发送 `open-link`，ArkTS 再校验协议、主机、凭据以及当前文稿和修订，然后调用 `openLink` 交给系统打开。预览页面不导航、不加载这些地址。预览资源和网络限制见[功能目录](FEATURES.md)。
 
 Markdown 代码围栏先显示转义后的原文，再由离线打包的 Worker 顺序运行 highlight.js；更新文稿会终止旧 Worker。着色结果仅允许 `span` 和 `class`，经 DOMPurify 清理后写回对应代码节点。Worker 不可用或解析失败时保留原文。预览和编辑器共用 `shared/code-languages.ts` 的语言别名以及 `shared/syntax-colors.ts` 的前景色，具体语言引擎各自配置。
 
