@@ -148,21 +148,33 @@ export class DocumentService {
     strictType: boolean, beforeAdopt: (() => Promise<boolean>) | null = null): Promise<boolean> {
     if (DocumentService.session.fileOperation !== 'idle') return false;
     const hinted = FormatRegistry.resolve(fileNameFromUri(uri), declaredType, !strictType);
-    const access = await DocumentFiles.prepare(uri, writeRequested);
-    const loaded = await DocumentFiles.read(uri);
-    if (loaded.info.name.length === 0) {
-      if (hinted === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
-      loaded.info.name = FormatRegistry.defaultName(hinted);
+    let access = await DocumentFiles.prepare(uri, writeRequested, false);
+    let adopted = false;
+    try {
+      const loaded = await DocumentFiles.read(uri);
+      if (loaded.info.name.length === 0) {
+        if (hinted === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
+        loaded.info.name = FormatRegistry.defaultName(hinted);
+      }
+      const resolved = FormatRegistry.resolve(loaded.info.name, declaredType, !strictType);
+      if (resolved === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
+      loaded.info.formatId = resolved.id;
+      if (DocumentService.session.fileOperation !== 'idle') return false;
+      if (beforeAdopt !== null && !await beforeAdopt()) return false;
+      if (DocumentService.session.fileOperation !== 'idle') return false;
+      access = await DocumentFiles.prepare(uri, writeRequested);
+      loaded.info.writable = access.writable;
+      loaded.info.persistent = access.persistent;
+      if (DocumentService.session.fileOperation !== 'idle') return false;
+      if (beforeAdopt !== null && !await beforeAdopt()) return false;
+      if (DocumentService.session.fileOperation !== 'idle') return false;
+      adopted = await DocumentService.adopt(loaded);
+      return adopted;
+    } finally {
+      if (!adopted && DocumentService.current().info.uri !== uri) {
+        await DocumentFiles.releaseNew(uri, access);
+      }
     }
-    const resolved = FormatRegistry.resolve(loaded.info.name, declaredType, !strictType);
-    if (resolved === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
-    loaded.info.formatId = resolved.id;
-    loaded.info.writable = access.writable;
-    loaded.info.persistent = access.persistent;
-    if (DocumentService.session.fileOperation !== 'idle') return false;
-    if (beforeAdopt !== null && !await beforeAdopt()) return false;
-    if (DocumentService.session.fileOperation !== 'idle') return false;
-    return DocumentService.adopt(loaded);
   }
 
   static async adopt(opened: FileContents): Promise<boolean> {
