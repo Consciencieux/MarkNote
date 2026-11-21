@@ -274,14 +274,13 @@ export struct DocumentView {
   }
 
   /** 再次确认协议、主机和凭据后交给系统，不让预览页面自己打开。 */
-  private openExternalLink(link: string): void {
-    if (!this.context || link.length === 0 || link.length > 2048) return;
+  private async openExternalLink(link: string): Promise<void> {
+    if (!this.context || link.length === 0) return;
     let parsed = '';
     try {
       const address = new url.URL(link);
       if ((address.protocol === 'http:' || address.protocol === 'https:') &&
-        address.hostname.length > 0 && address.username.length === 0 && address.password.length === 0 &&
-        address.href.length <= 2048) {
+        address.hostname.length > 0 && address.username.length === 0 && address.password.length === 0) {
         parsed = address.href;
       }
     } catch {
@@ -289,9 +288,11 @@ export struct DocumentView {
     }
     if (parsed.length === 0) return;
     const options: OpenLinkOptions = { appLinkingOnly: false, hideFailureTipDialog: true };
-    this.context.openLink(parsed, options).catch((): void => {
+    try {
+      await this.context.openLink(parsed, options);
+    } catch {
       this.toast($r('app.string.link_open_failed'));
-    });
+    }
   }
 
   private async shareDocument(): Promise<void> {
@@ -846,7 +847,7 @@ export struct DocumentView {
           documentId: this.documentSessionId, workMode: this.splitWorkMode(),
           onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
             this.acceptTexOutline(documentId, revision, headings),
-          onOpenExternalLink: (link: string): void => this.openExternalLink(link)
+          onOpenExternalLink: (link: string): void => { void this.openExternalLink(link); }
         })
       }
         .layoutWeight(1)
@@ -886,7 +887,7 @@ export struct DocumentView {
             documentId: this.documentSessionId, workMode: this.mainWorkMode(),
             onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
               this.acceptTexOutline(documentId, revision, headings),
-            onOpenExternalLink: (link: string): void => this.openExternalLink(link)
+            onOpenExternalLink: (link: string): void => { void this.openExternalLink(link); }
           })
         }
           .onWillShow((): void => { this.previewShown = true; })

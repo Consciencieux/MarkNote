@@ -78,7 +78,7 @@ export struct DocumentPreviewView {
           const result = JSON.parse(message) as ParsedResult;
           if (result.kind === 'open-link') {
             const url = result.url;
-            if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return;
+            if (typeof url !== 'string' || url.length === 0) return;
             if (result.revision !== this.parseRevision || result.documentId !== this.documentId) return;
             if (this.kind !== 'markdown' || !this.ready) return;
             this.onOpenExternalLink(url);
