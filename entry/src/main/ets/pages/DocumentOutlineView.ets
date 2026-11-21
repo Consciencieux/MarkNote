@@ -1,4 +1,3 @@
-import { LengthMetrics } from '@kit.ArkUI';
 import { Heading } from '../model/Document';
 import { DocumentScrollLayer } from './DocumentScrollLayer';
 import { listTitle, outlineChildTitle } from './TextRoles';
@@ -103,10 +102,6 @@ export struct DocumentOutlineView {
         .onClick(() => this.onSelect(row.heading))
     }
     .width('100%')
-    .padding({
-      start: LengthMetrics.resource($r('sys.float.padding_level4')),
-      end: LengthMetrics.resource($r('sys.float.padding_level4'))
-    })
   }
 
   /** The unbounded List contributes rows; the shared parent Scroll owns page movement. */
@@ -116,10 +111,6 @@ export struct DocumentOutlineView {
         if (this.headings.length === 0) {
           ListItem() {
             Text($r('app.string.outline_empty'))
-              .padding({
-                start: LengthMetrics.resource($r('sys.float.padding_level4')),
-                end: LengthMetrics.resource($r('sys.float.padding_level4'))
-              })
           }
         }
         ForEach(this.outlineRows(), (row: OutlineRow) => {

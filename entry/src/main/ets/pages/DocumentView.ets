@@ -1,6 +1,6 @@
 import { common, OpenLinkOptions } from '@kit.AbilityKit';
 import { url } from '@kit.ArkTS';
-import { FrameCallback, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
+import { FrameCallback, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -9,14 +9,14 @@ import {
 import { DocumentInfo, Heading } from '../model/Document';
 import { DocumentService, DocumentSession } from '../document/DocumentService';
 import { DocumentShare } from '../document/DocumentShare';
-import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
+import { DocumentFormat, FormatRegistry, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
 import { AnalysisRequest, AnalysisResult, DocumentAnalysis } from '../document/DocumentAnalysis';
 import { FormatBarView } from './FormatBarView';
 import { DocumentFindBar } from './DocumentFindBar';
 import { DocumentOutlineView } from './DocumentOutlineView';
 import { DocumentPreviewView } from './DocumentPreviewView';
-import { DocumentScrollLayer } from './DocumentScrollLayer';
+import { DocumentScrollLayer, documentTabClearance } from './DocumentScrollLayer';
 import { DocumentCodeEditor, DocumentCodeEditorController } from './DocumentCodeEditor';
 import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { menuBridge } from './DocumentMenus';
@@ -60,7 +60,11 @@ export struct DocumentView {
   /** 文稿页在导航栈里，不跟随首页 @Link。语言从 AppStorage 取，查找栏和预览才会重取。 */
   @StorageLink('marknote_language') language: string = 'default';
   @StorageLink('marknote_code_theme') codeTheme: string = 'github';
-  @Prop @Watch('onWideChange') wide: boolean = false;
+  @State private wide: boolean = false;
+  @State private workspaceTop: number = 0;
+  @State private editorTop: number = 0;
+  @State private editorParentOffset: number = 0;
+  @State private splitEditorWidth: number = 0;
   @Prop canExpand: boolean = false;
   @Prop expanded: boolean = false;
   @Prop favorite: boolean = false;
@@ -83,7 +87,7 @@ export struct DocumentView {
   @State private source: string = '';
   @State private savedText: string = '';
   @State private selectedTab: number = TAB_PREVIEW;
-  /** Format id of the open document, kept as state so the format bar rebuilds on switch. */
+  /** 页签数量、分栏索引、编辑器和预览都跟随当前文稿的格式。 */
   @State private formatId: string = '';
   @State private headings: Heading[] = [];
   @State private parseRevision: number = 0;
@@ -439,7 +443,7 @@ export struct DocumentView {
   }
 
   private currentFormat(): DocumentFormat {
-    return DocumentService.formatFor(this.info);
+    return FormatRegistry.byId(this.formatId);
   }
 
   /** Bind HDS navigation effects to the shared Scroll surface(s) in the active tab. */
@@ -548,7 +552,7 @@ export struct DocumentView {
     this.sessionOwner = session;
     this.info = session.info;
     this.title = session.info.name;
-    this.formatId = session.info.formatId;
+    this.formatId = DocumentService.formatFor(session.info).id;
     this.source = session.source;
     this.savedText = session.savedText;
     this.parseRevision = session.revision;
@@ -851,6 +855,9 @@ export struct DocumentView {
       Column() { Blank() }
         .layoutWeight(1)
         .height('100%')
+        .onAreaChange((_old: Area, pane: Area): void => {
+          this.splitEditorWidth = Number(pane.width);
+        })
     }
     // RowSplit fixes divider positions after initialization; Row weights adapt to window resizing.
     // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-container-rowsplit
@@ -935,20 +942,26 @@ export struct DocumentView {
         },
         barBottomMargin: this.navigationInsetAbsent ? $r('sys.float.margin_left') : 0
       })
+      // HDS paints its floating bar above both panes. Empty tab content passes touches to the editor.
+      .zIndex(1)
+      .hitTestBehavior(HitTestMode.Transparent)
       .attributeModifier(this.tabsPolicy)
       .width('100%')
       .height('100%')
       // One Web instance remains mounted while editing and split tabs change.
-      // Leave the floating tab bar uncovered so it retains its native interactions.
       Column() {
         ForEach([this.editorSessionKey], (key: number) => {
-          DocumentScrollLayer({ scroller: this.editScroller, boundedEditor: true }) {
+          DocumentScrollLayer({ scroller: this.editScroller, boundedEditor: true,
+            onViewportChange: (offset: number): void => { this.editorParentOffset = offset; } }) {
             DocumentCodeEditor({
               sessionId: `document-${key}`, source: this.source, formatId: this.formatId,
               webTheme: this.theme, appearance: this.theme, theme: this.codeTheme,
               language: resourceLanguage(this.language),
               textDirection: this.language === 'default' ? 'auto' :
                 (isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr'),
+              topInset: Math.max(0, this.workspaceTop - this.editorTop),
+              parentOffset: this.editorParentOffset,
+              bottomInset: documentTabClearance(this.navigationInsetAbsent),
               controller: this.editor,
               onChange: (expected: string, source: string, anchor: number, head: number): boolean => {
                 return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head);
@@ -969,12 +982,26 @@ export struct DocumentView {
           }
         }, (key: number): string => key.toString())
       }
-      .width(this.wide && this.selectedTab === this.splitTab() ? '50%' : '100%')
-      .height('calc(100% - 56vp)')
+      .width(this.wide && this.selectedTab === this.splitTab() ? this.splitEditorWidth : '100%')
+      // ArkUI 安全区域（ts-universal-attributes-expand-safe-area）：matchParent 同时扩展位置和高度。
+      // 首行的避让放进可滚动正文，滚动后文字才能进入标题栏下方。
+      .height(LayoutPolicy.matchParent)
+      .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP])
+      .onAreaChange((_oldArea: Area, area: Area): void => {
+        this.editorTop = Number(area.globalPosition.y);
+      })
       .visibility(this.inEditTab() ? Visibility.Visible : Visibility.Hidden)
     }
     .width('100%')
     .height('100%')
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      this.workspaceTop = Number(newArea.globalPosition.y);
+      const wide = Number(newArea.width) >= 840;
+      if (wide !== this.wide) {
+        this.wide = wide;
+        this.onWideChange();
+      }
+    })
   }
 
   /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */

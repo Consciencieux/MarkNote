@@ -1,4 +1,10 @@
-import { pageScroll } from './PageScrollPolicy';
+import { LengthMetrics } from '@kit.ArkUI';
+import { pageScroll, PageScrollPolicy } from './PageScrollPolicy';
+
+export function documentTabClearance(navigationInsetAbsent: boolean): number {
+  const bar = LengthMetrics.resource($r('sys.float.tab_bar_default_height')).value;
+  return navigationInsetAbsent ? bar + LengthMetrics.resource($r('sys.float.margin_left')).value : bar;
+}
 
 /**
  * Preview and outline content scroll with this container. The bounded editor has its own
@@ -20,21 +26,21 @@ export struct DocumentScrollLayer {
     Scroll(this.scroller) {
       Column() {
         this.content()
-        if (!this.boundedEditor) {
-          // 阅读内容延伸到悬浮页签下方，末尾需要留出页签空间。
-          Blank().height(56)
-          if (this.navigationInsetAbsent) {
-            Blank().height($r('sys.float.margin_left'))
-          }
-        }
       }
+      .padding(this.boundedEditor ? 0 : {
+        start: LengthMetrics.resource($r('sys.float.margin_left')),
+        end: LengthMetrics.resource($r('sys.float.margin_right'))
+      })
       .width('100%')
       .height(this.boundedEditor && this.viewportHeight > 0 ? this.viewportHeight : undefined)
     }
     // faqs-arkui-725: bounded Scroll centers short content unless aligned to the top.
     .align(Alignment.Top)
     .scrollable(ScrollDirection.Vertical)
-    .attributeModifier(pageScroll)
+    .attributeModifier(this.boundedEditor ? pageScroll :
+      new PageScrollPolicy(false, documentTabClearance(this.navigationInsetAbsent)))
+    // The bounded Web scrolls the source. This outer Scroll only coordinates its native safe area.
+    .scrollBar(this.boundedEditor ? BarState.Off : BarState.Auto)
     .onDidScroll(() => {
       this.onViewportChange(this.scroller.currentOffset().yOffset, this.viewportHeight);
     })

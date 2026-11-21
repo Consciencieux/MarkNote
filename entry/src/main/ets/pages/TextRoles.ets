@@ -19,8 +19,7 @@ export class SectionTitleStyle implements AttributeModifier<TextAttribute> {
     instance.fontSize($r('sys.float.Subtitle_L'))
       .fontWeight(FontWeight.Medium)
       .fontColor($r('sys.color.font_primary'))
-      .textAlign(TextAlign.Start)
-      .margin({ top: $r('sys.float.padding_level8'), bottom: $r('sys.float.padding_level4') });
+      .textAlign(TextAlign.Start);
   }
 }
 

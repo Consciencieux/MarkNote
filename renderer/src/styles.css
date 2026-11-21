@@ -6,9 +6,8 @@
 html, body { width:100%; margin:0; padding:0; background:var(--background); color:var(--foreground); }
 body { font: 16px/1.72 system-ui,-apple-system,'HarmonyOS Sans',sans-serif; -webkit-text-size-adjust:100%; overflow-x:hidden; }
 /* ArkWeb guide bpta-web-adaptation documents CSS px as visually equivalent to HarmonyOS vp. */
-.preview { padding:0 18px 36px; overflow-wrap:break-word; }
-.preview > :first-child { margin-top:0; }
-.placeholder { color:var(--secondary); padding:22px 0; }
+.preview { display:flow-root; overflow-wrap:break-word; }
+.placeholder { color:var(--secondary); }
 h1,h2,h3,h4,h5,h6 { line-height:1.35; margin:1.4em 0 .7em; }
 h1{font-size:1.75em} h2{font-size:1.4em} h3{font-size:1.18em}
 pre,code{font-family:ui-monospace,monospace;} code { overflow-wrap:anywhere; }
@@ -49,3 +48,6 @@ li.task-list-item { list-style:none; }
 .math-canvas { width:100%; overflow-x:auto; }
 .katex-display { overflow:auto hidden; padding:5px 0; }
 .error { color:#c43d3d; white-space:pre-wrap; }
+/* The native Scroll reserves the page edges. Keep margins between document blocks. */
+.preview > :first-child { margin-block-start:0; }
+.preview > :last-child { margin-block-end:0; }

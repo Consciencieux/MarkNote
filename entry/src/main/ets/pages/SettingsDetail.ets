@@ -194,7 +194,7 @@ export struct SettingsDetail {
   @Builder
   private FramedColumn() {
     SettingsReadingFrame() {
-      Column() {
+      Column({ space: $r('sys.float.padding_level8') }) {
         if (this.section === 'help') {
           this.HelpSection($r('app.string.help_open_title'), $r('app.string.help_open_body'))
           this.HelpSection($r('app.string.help_edit_title'), $r('app.string.help_edit_body'))
@@ -220,9 +220,12 @@ export struct SettingsDetail {
 
   @Builder
   private HelpSection(title: Resource, body: Resource) {
-    Text(title)
-      .attributeModifier(sectionTitle)
-    this.Paragraph(body)
+    Column({ space: $r('sys.float.padding_level4') }) {
+      Text(title).attributeModifier(sectionTitle)
+      this.Paragraph(body)
+    }
+    .alignItems(HorizontalAlign.Start)
+    .width('100%')
   }
 
   build() {
@@ -297,10 +300,6 @@ export struct SettingsDetail {
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
-            .padding({
-              top: $r('sys.float.padding_level8'),
-              bottom: $r('sys.float.padding_level8')
-            })
           }
         } else if (this.licenseFailed) {
           this.LicenseBlock(this.section === 'project-license' ?
