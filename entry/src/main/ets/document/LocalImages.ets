@@ -1,29 +1,24 @@
 import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
+import { image } from '@kit.ImageKit';
+import { openScratchFile } from '../storage/FileBytes';
 
-/** 单张图片的读取上限。超过后保留占位，不阻止文稿打开。 */
-const MAX_IMAGE_BYTES: number = 32 * 1024 * 1024;
-/** 控制编码后缓存的内存，不限制文稿中的图片数量。 */
-const MAX_CACHE_BYTES: number = 8 * 1024 * 1024;
+/** Each transfer awaits ArkWeb before reading or encoding the next piece. */
+const TRANSFER_CHUNK_BYTES: number = 256 * 1024;
 
-export class PreviewImage {
-  key: string = '';
-  dataUrl: string = '';
-
-  constructor(key: string, dataUrl: string) {
-    this.key = key;
-    this.dataUrl = dataUrl;
-  }
+export interface LocalImageRequest {
+  key: string;
+  widthPx: number;
+  heightPx: number;
 }
 
-class CachedImage {
-  stamp: string = '';
-  dataUrl: string = '';
+export interface LocalImageResult {
+  mime: string;
+  intrinsicWidth: number;
+  intrinsicHeight: number;
 }
 
-const cache: Map<string, CachedImage> = new Map<string, CachedImage>();
-const cacheOrder: string[] = [];
-let cacheBytes: number = 0;
+type SendChunk = (bytes: Uint8Array) => Promise<void>;
 
 function isImageExtension(extension: string): boolean {
   return extension === 'png' || extension === 'jpg' || extension === 'jpeg' ||
@@ -101,104 +96,150 @@ function imageUri(documentUri: string, relativePath: string): string {
   return prefix + encoded;
 }
 
-function remember(key: string, stamp: string, dataUrl: string): void {
-  const existing = cacheOrder.indexOf(key);
-  if (existing >= 0) cacheOrder.splice(existing, 1);
-  const previous = cache.get(key);
-  if (previous !== undefined) cacheBytes -= previous.dataUrl.length * 2;
-  cache.delete(key);
-  const size = dataUrl.length * 2;
-  if (size > MAX_CACHE_BYTES) return;
-  cacheOrder.push(key);
-  const entry = new CachedImage();
-  entry.stamp = stamp;
-  entry.dataUrl = dataUrl;
-  cache.set(key, entry);
-  cacheBytes += size;
-  while (cacheBytes > MAX_CACHE_BYTES) {
-    const removed = cacheOrder.shift();
-    if (removed !== undefined) {
-      const old = cache.get(removed);
-      if (old !== undefined) cacheBytes -= old.dataUrl.length * 2;
-      cache.delete(removed);
+/** Validate exactly the bytes sent to ArkWeb. Keep the longest permitted URI across chunk boundaries. */
+class SvgCheck {
+  private decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { fatal: true, ignoreBOM: true });
+  private tail: string = '';
+  private hasRoot: boolean = false;
+
+  accepts(bytes: Uint8Array, last: boolean): boolean {
+    const svgNamespace = 'http://www.w3.org/2000/svg';
+    const xlinkNamespace = 'http://www.w3.org/1999/xlink';
+    const text = this.tail + this.decoder.decodeToString(bytes, { stream: !last }).toLowerCase();
+    this.hasRoot = this.hasRoot || text.includes('<svg');
+    if (text.includes('<script') || text.includes('foreignobject') || text.includes('javascript:')) return false;
+    const end = last ? text.length : Math.max(0, text.length - xlinkNamespace.length);
+    let pos = text.indexOf('http');
+    while (pos >= 0 && pos < end) {
+      if ((text.startsWith('http://', pos) || text.startsWith('https://', pos)) &&
+        !text.startsWith(svgNamespace, pos) && !text.startsWith(xlinkNamespace, pos)) return false;
+      pos = text.indexOf('http', pos + 4);
     }
+    this.tail = text.substring(end);
+    return !last || this.hasRoot;
   }
 }
 
-function startsWith(bytes: Uint8Array, values: number[]): boolean {
-  if (bytes.length < values.length) return false;
-  for (let index = 0; index < values.length; index++) {
-    if (bytes[index] !== values[index]) return false;
+async function sendOriginal(fd: number, size: number, send: SendChunk, svg: boolean): Promise<void> {
+  fileIo.lseek(fd, 0);
+  const check = svg ? new SvgCheck() : null;
+  const buffer = new ArrayBuffer(Math.min(size, TRANSFER_CHUNK_BYTES));
+  let remaining = size;
+  while (remaining > 0) {
+    const length = Math.min(buffer.byteLength, remaining);
+    const count = await fileIo.read(fd, buffer, { length });
+    if (count <= 0 || count > length) throw new Error('Incomplete image');
+    remaining -= count;
+    const bytes = new Uint8Array(buffer, 0, count);
+    if (check !== null && !check.accepts(bytes, remaining === 0)) throw new Error('Unsupported SVG');
+    await send(bytes);
   }
-  return true;
 }
 
-function svgAllowed(bytes: Uint8Array): boolean {
-  let text = '';
+async function orientationOf(source: image.ImageSource, mime: string): Promise<number> {
+  if (mime !== 'image/jpeg' && mime !== 'image/png' && mime !== 'image/webp') return 1;
   try {
-    const decoder = util.TextDecoder.create('utf-8', { fatal: true, ignoreBOM: true });
-    const decoded = decoder.decodeToString(bytes);
-    text = decoded === undefined ? '' : decoded.toLowerCase();
-  } catch {
-    return false;
-  }
-  if (text.indexOf('<svg') < 0) return false;
-  if (text.indexOf('<script') >= 0 || text.indexOf('foreignobject') >= 0 || text.indexOf('javascript:') >= 0) {
-    return false;
-  }
-  const plain = text.split('http://www.w3.org/2000/svg').join('').split('http://www.w3.org/1999/xlink').join('');
-  return plain.indexOf('http://') < 0 && plain.indexOf('https://') < 0;
+    const value = await source.getImageProperty(image.PropertyKey.ORIENTATION);
+    const labels = ['Top-left', 'Top-right', 'Bottom-right', 'Bottom-left',
+      'Left-top', 'Right-top', 'Right-bottom', 'Left-bottom'];
+    const index = labels.indexOf(value);
+    if (index >= 0) return index + 1;
+    const numeric = Number(value);
+    if (Number.isInteger(numeric) && numeric >= 1 && numeric <= 8) return numeric;
+  } catch { /* Images without Exif use their stored orientation. */ }
+  return 1;
 }
 
-function mimeOf(bytes: Uint8Array, extension: string): string {
-  if (startsWith(bytes, [0x89, 0x50, 0x4E, 0x47])) return 'image/png';
-  if (startsWith(bytes, [0xFF, 0xD8, 0xFF])) return 'image/jpeg';
-  if (startsWith(bytes, [0x47, 0x49, 0x46, 0x38])) return 'image/gif';
-  if (bytes.length >= 12 && startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) &&
-    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
-  if (startsWith(bytes, [0x42, 0x4D])) return 'image/bmp';
-  if (extension === 'svg' && svgAllowed(bytes)) return 'image/svg+xml';
-  return '';
-}
-
-async function readImage(uri: string, extension: string): Promise<string> {
-  let opened: fileIo.File | null = null;
+async function encodeThumbnail(source: image.ImageSource, size: image.Size, orientation: number,
+  mime: string, fd: number): Promise<void> {
+  // Image Kit downsamples JPEG and PNG while decoding. Other codecs can decode at full size internally.
+  // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/image-region-and-downsampling
+  const pixels = await source.createPixelMap({ desiredSize: size, editable: orientation !== 1 });
   try {
-    opened = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY | fileIo.OpenMode.NOFOLLOW);
-    const info = await fileIo.stat(opened.fd);
-    if (!info.isFile() || !Number.isInteger(info.size) || info.size <= 0 || info.size > MAX_IMAGE_BYTES) return '';
-    const stamp = info.size.toString() + ':' + info.mtime.toString();
-    const cached = cache.get(uri);
-    if (cached !== undefined && cached.stamp === stamp) {
-      remember(uri, stamp, cached.dataUrl);
-      return cached.dataUrl;
+    if (orientation === 2 || orientation === 5 || orientation === 7) await pixels.flip(true, false);
+    if (orientation === 4) await pixels.flip(false, true);
+    if (orientation === 3) await pixels.rotate(180);
+    if (orientation === 5 || orientation === 8) await pixels.rotate(270);
+    if (orientation === 6 || orientation === 7) await pixels.rotate(90);
+    const packer = image.createImagePacker();
+    try {
+      await packer.packToFile(pixels, fd, { format: mime, quality: 90 });
+    } finally {
+      await packer.release();
     }
-    const buffer = new ArrayBuffer(info.size);
-    let position = 0;
-    const target = new Uint8Array(buffer);
-    while (position < info.size) {
-      const chunk = new ArrayBuffer(Math.min(64 * 1024, info.size - position));
-      const count = await fileIo.read(opened.fd, chunk, { length: chunk.byteLength });
-      if (count <= 0 || count > chunk.byteLength) return '';
-      target.set(new Uint8Array(chunk, 0, count), position);
-      position += count;
-    }
-    const bytes = new Uint8Array(buffer);
-    const mime = mimeOf(bytes, extension);
-    if (mime.length === 0) return '';
-    const dataUrl = 'data:' + mime + ';base64,' + new util.Base64Helper().encodeToStringSync(bytes);
-    remember(uri, stamp, dataUrl);
-    return dataUrl;
-  } catch {
-    return '';
   } finally {
-    if (opened !== null) {
+    await pixels.release();
+  }
+}
+
+async function sendRaster(fd: number, fileSize: number, source: image.ImageSource, info: image.ImageInfo,
+  mime: string, request: LocalImageRequest, cacheDir: string, send: SendChunk): Promise<LocalImageResult> {
+  const orientation = await orientationOf(source, mime);
+  const width = orientation >= 5 ? info.size.height : info.size.width;
+  const height = orientation >= 5 ? info.size.width : info.size.height;
+  if (width <= 0 || height <= 0) throw new Error('Invalid image dimensions');
+  // Match the column; bound the pixel surface of very tall images to a viewport-sized buffer.
+  const viewportPixels = request.widthPx * Math.max(request.heightPx, request.widthPx);
+  const scale = Math.min(1, request.widthPx / width, Math.sqrt(viewportPixels / (width * height)),
+    viewportPixels / Math.max(width, height));
+  if (scale === 1) {
+    // The browser keeps the original frames, color profile and metadata for images which already fit.
+    await sendOriginal(fd, fileSize, send, false);
+    return { mime, intrinsicWidth: 0, intrinsicHeight: 0 };
+  }
+  const size: image.Size = {
+    width: Math.max(1, Math.floor(info.size.width * scale)),
+    height: Math.max(1, Math.floor(info.size.height * scale))
+  };
+  const outputMime = mime === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+  const thumbnail = await openScratchFile(cacheDir);
+  try {
+    await encodeThumbnail(source, size, orientation, outputMime, thumbnail.fd);
+    const length = Number((await fileIo.stat(thumbnail.fd)).size);
+    if (length <= 0) throw new Error('Empty thumbnail');
+    await sendOriginal(thumbnail.fd, length, send, false);
+  } finally {
+    await fileIo.close(thumbnail);
+  }
+  return { mime: outputMime, intrinsicWidth: width, intrinsicHeight: height };
+}
+
+/** Read only the referenced file under the document directory, with the system's actual URI grants. */
+export async function sendLocalImage(documentUri: string, cacheDir: string, request: LocalImageRequest,
+  send: SendChunk): Promise<LocalImageResult | null> {
+  const relative = relativeImagePath(request.key);
+  if (!documentUri || !relative) return null;
+  const uri = imageUri(documentUri, relative);
+  if (!uri) return null;
+  const opened = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY | fileIo.OpenMode.NOFOLLOW);
+  try {
+    const stat = await fileIo.stat(opened.fd);
+    if (!stat.isFile() || !Number.isSafeInteger(stat.size) || stat.size <= 0) return null;
+    let source: image.ImageSource | undefined;
+    try {
+      let info: image.ImageInfo | undefined;
       try {
-        await fileIo.close(opened.fd);
-      } catch {
-        // 文件可能已经关闭。
+        source = image.createImageSource(opened.fd);
+        info = await source.getImageInfo();
+      } catch (error) {
+        // ArkWeb can display checked SVGs even when the platform image codec cannot inspect them.
+        if (extensionOf(relative) !== 'svg') throw error as Error;
       }
+      if (info && source) {
+        const mime = info.mimeType === 'image/x-ms-bmp' ? 'image/bmp' : info.mimeType;
+        if (['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'].includes(mime)) {
+          return await sendRaster(opened.fd, stat.size, source, info, mime, request, cacheDir, send);
+        }
+      }
+    } finally {
+      if (source) await source.release();
     }
+    if (extensionOf(relative) !== 'svg') return null;
+    // Keep vector images in the isolated browser image context, including their intrinsic sizing.
+    await sendOriginal(opened.fd, stat.size, send, true);
+    return { mime: 'image/svg+xml', intrinsicWidth: 0, intrinsicHeight: 0 };
+  } finally {
+    await fileIo.close(opened.fd);
   }
 }
 
@@ -212,40 +253,16 @@ function jsonText(value: string): string {
   }
 }
 
-/** 解析网页返回的图片地址列表。地址来自 markdown-it，还没经过授权判断。 */
-export function sourcesFromPage(raw: string): string[] {
-  const text = jsonText(raw.trim());
-  if (text.length === 0 || text === 'null' || text === 'undefined') return [];
+/** The page reports its column width and native viewport height in physical pixels. */
+export function sourcesFromPage(raw: string): LocalImageRequest[] {
   try {
-    const parsed = JSON.parse(text) as string[];
+    const parsed = JSON.parse(jsonText(raw.trim())) as LocalImageRequest[];
     if (!Array.isArray(parsed)) return [];
-    const sources: string[] = [];
-    for (let index = 0; index < parsed.length; index++) {
-      const item = parsed[index];
-      if (typeof item === 'string' && item.length > 0 && sources.indexOf(item) < 0) sources.push(item);
-    }
-    return sources;
+    return parsed.filter((item: LocalImageRequest): boolean => item !== null && typeof item === 'object' &&
+      typeof item.key === 'string' && item.key.length > 0 &&
+      Number.isSafeInteger(item.widthPx) && item.widthPx > 0 &&
+      Number.isSafeInteger(item.heightPx) && item.heightPx > 0);
   } catch {
     return [];
   }
-}
-
-/**
- * 按系统授权逐张读取。文稿 URI 不代表目录可读；某一张打不开时跳过，调用方仍显示文稿。
- * 网络图片和绝对路径在这里被丢掉，不会发起访问。
- */
-export async function loadLocalImages(documentUri: string, sources: string[]): Promise<PreviewImage[]> {
-  const images: PreviewImage[] = [];
-  if (documentUri.length === 0) return images;
-  for (let index = 0; index < sources.length; index++) {
-    const key = sources[index];
-    const relative = relativeImagePath(key);
-    if (relative.length === 0) continue;
-    const uri = imageUri(documentUri, relative);
-    if (uri.length === 0) continue;
-    const dataUrl = await readImage(uri, extensionOf(relative));
-    if (dataUrl.length === 0) continue;
-    images.push(new PreviewImage(key, dataUrl));
-  }
-  return images;
 }

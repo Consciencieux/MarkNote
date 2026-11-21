@@ -2,10 +2,9 @@
 
 ## 大文件、图片和长文稿
 
-- [ ] **文稿大小与性能**：打开和保存仍有 8 MiB 上限。文件和草稿已改用异步 I/O，分析与预览已按需调度；仍需处理完整字节数组、编解码、草稿 JSON、写后回读及编辑器与预览同时持有正文的内存成本。结合实际测量改进打开、编辑、恢复和保存，处理突破上限后的完整流程。[文件读写](entry/src/main/ets/storage/DocumentFiles.ets)、[文稿服务](entry/src/main/ets/document/DocumentService.ets)
-- [ ] **大文件性能验收**：用模拟器上的不同大小文稿，记录输入到下一帧、长任务、内存峰值、滚动及编辑／预览分栏表现，并与同设备原编辑器比较。此前已采集部分数据，但曾出现低内存终止，尚无完整对比。
-- [ ] **本地图片大小与内存**：单张图片超过 32 MiB 时显示占位。图片读取已有分块和短读处理，但随后仍分配完整缓冲区并转成 Base64。结合解码尺寸、传输和缓存成本处理单图上限，评估现有 8 MiB Base64 缓存预算。[图片读取](entry/src/main/ets/document/LocalImages.ets)
-- [ ] **大量大纲条目**：大纲当前使用 `List + ForEach` 构建行，条目很多时需要测量创建和滚动成本；如需按需渲染，保留展开、标题跳转和现有滚动联动。[大纲](entry/src/main/ets/pages/DocumentOutlineView.ets)
+- [x] **文稿读写与草稿**：在三折叠模拟器打开超过 8 MiB 的文稿，编辑后强制退出，恢复并保存。取回文件与原稿逐字节对照，仅多出本次输入。[文件读写](entry/src/main/ets/storage/DocumentFiles.ets)
+- [x] **长 Markdown 分栏预览**：在分栏中滚动含 16,384 节的样稿，预览能显示后续章节，编辑栏仍可输入。[Markdown 预览](renderer/src/renderers/markdown.ts)
+- [x] **大图预览**：同一模拟器显示了文稿引用的 4200 × 4200 PNG，超过原文件大小和像素上限。图片按阅读区域加载，离开后释放。[本地图片](entry/src/main/ets/document/LocalImages.ets)
 
 ## 首页文稿操作
 

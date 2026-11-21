@@ -1,16 +1,13 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo, fileShare } from '@kit.CoreFileKit';
-import { cryptoFramework } from '@kit.CryptoArchitectureKit';
+import { openScratchFile } from './FileBytes';
 import { fileManagerService } from '@kit.FileManagerServiceKit';
 import { DocumentInfo } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
-import { TextEncoding, EncodedText } from '../document/TextEncoding';
 import { AppText } from '../i18n/AppText';
 import { userNotice } from '../document/UserNotice';
-import { writeAll } from './FileBytes';
+import { fileDigest, inspectDocument, InspectedDocument, writeVerifiedText } from './DocumentStream';
 
-const MAX_BYTES: number = 8 * 1024 * 1024;
-const CHUNK_BYTES: number = 64 * 1024;
 const READ_WRITE: number = fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE;
 
 export class FileContents {
@@ -25,24 +22,35 @@ export class FileAccess {
   newMode: number = 0;
 }
 
-/** SHA-256 of empty input. Frames MD does not accept a zero-length update, so it is a constant. */
-const EMPTY_DIGEST: string = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+export class PreparedWrite {
+  file: fileIo.File;
+  verified: InspectedDocument;
 
-async function fingerprintOf(bytes: Uint8Array): Promise<string> {
-  // 空文件也必须有指纹：冲突检查用「指纹为空」表示缺少指纹，
-  // 而 MD 的 update 对零长度数据会报 crypto operation error，所以直接返回空输入的摘要。
-  if (bytes.length === 0) return EMPTY_DIGEST;
-  const md = cryptoFramework.createMd('SHA256');
-  const blob: cryptoFramework.DataBlob = { data: bytes };
-  await md.update(blob);
-  const digest = await md.digest();
-  const data = digest.data;
-  let hex = '';
-  for (let index = 0; index < data.length; index++) {
-    const value = data[index];
-    hex += (value < 16 ? '0' : '') + value.toString(16);
+  constructor(file: fileIo.File, verified: InspectedDocument) {
+    this.file = file;
+    this.verified = verified;
   }
-  return hex;
+
+  async close(): Promise<void> {
+    await fileIo.close(this.file);
+  }
+}
+
+async function fileFingerprint(uri: string): Promise<string> {
+  const file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
+  try {
+    return await fileDigest(file.fd);
+  } finally {
+    await fileIo.close(file);
+  }
+}
+
+function fileName(file: fileIo.File): string {
+  try {
+    return file.name;
+  } catch {
+    return '';
+  }
 }
 
 function policy(uri: string, mode: number): fileShare.PolicyInfo {
@@ -114,7 +122,7 @@ export class DocumentFiles {
     if (info.uri.length === 0) throw userNotice(AppText.text($r('app.string.not_saved_file')));
     if (!info.writable) throw userNotice(AppText.text($r('app.string.no_delete_permission')));
     if (info.fingerprint.length === 0 ||
-      await fingerprintOf(await DocumentFiles.readBytes(info.uri)) !== info.fingerprint) {
+      await fileFingerprint(info.uri) !== info.fingerprint) {
       throw userNotice(AppText.text($r('app.string.delete_conflict')));
     }
     // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/filemanagerservice-arkts-filemanagerservice
@@ -189,39 +197,23 @@ export class DocumentFiles {
     return uris.length === 0 ? '' : uris[0];
   }
 
-  static async readBytes(uri: string): Promise<Uint8Array> {
-    const file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
+  static async read(uri: string): Promise<FileContents> {
+    let file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
+    let inspected: InspectedDocument;
+    let name = '';
     try {
-      const size = Number((await fileIo.stat(file.fd)).size);
-      if (size > MAX_BYTES) throw userNotice(AppText.text($r('app.string.too_large')));
-      const original = new Uint8Array(size);
-      let readPosition = 0;
-      while (readPosition < size) {
-        const length = Math.min(CHUNK_BYTES, size - readPosition);
-        const chunk = new ArrayBuffer(length);
-        const got = await fileIo.read(file.fd, chunk);
-        if (got <= 0) throw userNotice(AppText.text($r('app.string.read_incomplete')));
-        original.set(new Uint8Array(chunk, 0, got), readPosition);
-        readPosition += got;
-      }
-      return original;
+      inspected = await inspectDocument(file.fd, async (): Promise<number> => {
+        // A provider can expose a non-seekable descriptor. Each fallback starts at byte zero.
+        const previous = file;
+        file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
+        await fileIo.close(previous);
+        return file.fd;
+      }, null);
+      name = fileName(file);
     } finally {
       await fileIo.close(file);
     }
-  }
-
-  static async read(uri: string): Promise<FileContents> {
-    let name = '';
-    const named = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
-    try {
-      name = named.name;
-    } catch {
-      name = '';
-    } finally {
-      await fileIo.close(named);
-    }
-    const original = await DocumentFiles.readBytes(uri);
-    const decoded = TextEncoding.decode(original);
+    const decoded = inspected.decoded;
     const result = new FileContents();
     result.text = decoded.text;
     result.info.uri = uri;
@@ -231,83 +223,51 @@ export class DocumentFiles {
     result.info.lineEndings = decoded.lineEndings;
     result.info.hasBom = decoded.hasBom;
     result.info.encoding = decoded.encoding;
-    result.info.fingerprint = await fingerprintOf(original);
+    result.info.fingerprint = inspected.fingerprint;
     return result;
   }
 
-  /** Encode once and reject a save that cannot be stored, before any file is opened. */
-  static encodedForWrite(info: DocumentInfo, text: string): EncodedText {
+  static async prepareWrite(cacheDir: string, info: DocumentInfo, text: string): Promise<PreparedWrite> {
     if (info.uri.length === 0) throw userNotice(AppText.text($r('app.string.no_writable_file')));
     if (!info.writable) throw userNotice(AppText.text($r('app.string.no_write_use_save_as')));
-    if (info.newline === 'mixed') {
-      const parts = text.split('\n');
-      if (parts.length !== info.lineEndings.length + 1) {
-        throw userNotice(AppText.text($r('app.string.mixed_newlines')));
-      }
+    const file = await openScratchFile(cacheDir);
+    try {
+      const verified = await writeVerifiedText(file.fd, text, info, AppText.text($r('app.string.write_interrupted')));
+      return new PreparedWrite(file, verified);
+    } catch (error) {
+      await fileIo.close(file);
+      throw error as Error;
     }
-    const encoded = TextEncoding.encode(text, info);
-    if (encoded.bytes.length > MAX_BYTES) throw userNotice(AppText.text($r('app.string.save_too_large')));
-    return encoded;
   }
 
-  /** Reject a save that cannot be encoded or would exceed the size limit, before any file is opened. */
-  static validateForWrite(info: DocumentInfo, text: string): void {
-    DocumentFiles.encodedForWrite(info, text);
-  }
-
-  /**
-   * Outside providers cannot guarantee atomic replacement. Compare the byte fingerprint
-   * taken at open or the last successful save, then verify the bytes written back.
-   */
-  static async write(info: DocumentInfo, text: string, checkConflict: boolean,
-    prepared: EncodedText | null = null, onWriteStart: (() => void) | null = null): Promise<FileContents> {
-    const encoded = prepared === null ? DocumentFiles.encodedForWrite(info, text) : prepared;
+  /** Update the target metadata only after the verified snapshot has been copied and checked. */
+  static async write(info: DocumentInfo, checkConflict: boolean,
+    prepared: PreparedWrite, onWriteStart: () => void): Promise<void> {
     if (checkConflict) {
       if (info.fingerprint.length === 0) {
         throw userNotice(AppText.text($r('app.string.missing_fingerprint')));
       }
-      const current = await DocumentFiles.readBytes(info.uri);
-      if (await fingerprintOf(current) !== info.fingerprint) {
+      if (await fileFingerprint(info.uri) !== info.fingerprint) {
         throw userNotice(AppText.text($r('app.string.external_change')));
       }
     }
-    const bytes = encoded.bytes;
-    const expected = await fingerprintOf(bytes);
     const file = await fileIo.open(info.uri, fileIo.OpenMode.READ_WRITE);
+    let name = '';
     try {
-      if (onWriteStart !== null) onWriteStart();
-      await writeAll(file.fd, bytes, AppText.text($r('app.string.write_interrupted')));
-      await fileIo.truncate(file.fd, bytes.length);
+      onWriteStart();
+      fileIo.lseek(prepared.file.fd, 0);
+      await fileIo.copyFile(prepared.file.fd, file.fd);
       await fileIo.fsync(file.fd);
+      name = fileName(file);
     } finally {
       await fileIo.close(file);
     }
-    const verified = await DocumentFiles.readBytes(info.uri);
-    const actual = await fingerprintOf(verified);
-    if (actual !== expected) throw userNotice(AppText.text($r('app.string.verify_failed')));
-    const decoded = TextEncoding.decode(verified);
-    if (decoded.text !== text) throw userNotice(AppText.text($r('app.string.verify_failed')));
-    let name = '';
-    const named = await fileIo.open(info.uri, fileIo.OpenMode.READ_ONLY);
-    try {
-      name = named.name;
-    } catch {
-      name = '';
-    } finally {
-      await fileIo.close(named);
-    }
-    const result = new FileContents();
-    result.text = decoded.text;
-    result.info.uri = info.uri;
-    result.info.name = name.length > 0 ? name : info.name;
-    result.info.newline = encoded.newline;
-    result.info.lineEndings = encoded.lineEndings;
-    result.info.hasBom = decoded.hasBom;
-    result.info.encoding = decoded.encoding;
-    result.info.fingerprint = actual;
-    result.info.formatId = info.formatId;
-    result.info.writable = info.writable;
-    result.info.persistent = info.persistent;
-    return result;
+    // The encoder already checked the exact bytes round-trip to the original text.
+    const actual = await fileFingerprint(info.uri);
+    if (actual !== prepared.verified.fingerprint) throw userNotice(AppText.text($r('app.string.verify_failed')));
+    if (name.length > 0) info.name = name;
+    info.hasBom = prepared.verified.decoded.hasBom;
+    info.encoding = prepared.verified.decoded.encoding;
+    info.fingerprint = actual;
   }
 }

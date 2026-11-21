@@ -5,6 +5,7 @@ import { DraftCoordinator } from './DraftCoordinator';
 import { DocumentFormat, FormatRegistry } from './FormatRegistry';
 import { AppText } from '../i18n/AppText';
 import { userNotice } from './UserNotice';
+import { TextEncoding } from './TextEncoding';
 
 /** The one open document. DocumentView mirrors these fields into ArkUI state. */
 export class DocumentSession {
@@ -306,32 +307,26 @@ export class DocumentService {
       target.uri = uri;
       target.writable = true;
       target.persistent = access.persistent;
-      if (saveAs && target.newline === 'mixed') {
-        const parts = snapshot.split('\n');
-        if (parts.length !== target.lineEndings.length + 1) {
-          target.newline = '\n';
-          target.lineEndings = '';
-        }
+      if (saveAs && target.newline === 'mixed' && !TextEncoding.hasMatchingLineCount(snapshot, target.lineEndings)) {
+        target.newline = '\n';
+        target.lineEndings = '';
       }
-      const encoded = DocumentFiles.encodedForWrite(target, snapshot);
-      session.writeUncertain = true;
-      session.pendingWriteText = snapshot;
-      session.pendingWriteUri = uri;
-      checkpointPrepared = true;
-      await DocumentService.checkpointRecovery(session, baseline, previous);
-      if (DocumentService.session !== session || !session.editing) return result;
-      const sameTarget = previous.uri.length > 0 && uri === previous.uri;
-      const verified = await DocumentFiles.write(target, snapshot, !saveAs || sameTarget, encoded,
-        (): void => { writeStarted = true; });
+      const prepared = await DocumentFiles.prepareWrite(context.cacheDir, target, snapshot);
+      try {
+        if (DocumentService.session !== session || !session.editing) return result;
+        session.writeUncertain = true;
+        session.pendingWriteText = snapshot;
+        session.pendingWriteUri = uri;
+        checkpointPrepared = true;
+        await DocumentService.checkpointRecovery(session, baseline, previous);
+        if (DocumentService.session !== session || !session.editing) return result;
+        const sameTarget = previous.uri.length > 0 && uri === previous.uri;
+        await DocumentFiles.write(target, !saveAs || sameTarget, prepared,
+          (): void => { writeStarted = true; });
+      } finally {
+        await prepared.close();
+      }
       if (DocumentService.session !== session || !session.editing || session.fileOperation !== 'save') return result;
-      target.name = verified.info.name.length > 0 ? verified.info.name : previous.name;
-      target.fingerprint = verified.info.fingerprint;
-      target.newline = verified.info.newline;
-      target.lineEndings = verified.info.lineEndings;
-      target.hasBom = verified.info.hasBom;
-      target.encoding = verified.info.encoding;
-      target.writable = true;
-      target.persistent = access.persistent;
       const resolved = FormatRegistry.resolve(target.name, '', true);
       if (resolved !== null) target.formatId = resolved.id;
       session.info = target;

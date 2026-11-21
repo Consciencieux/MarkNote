@@ -1,4 +1,6 @@
 import type { } from 'vite/client';
+export interface ImageRequest { key: string; widthPx: number; heightPx: number }
+
 export interface PreviewUpdate {
   kind: 'markdown' | 'plain' | 'svg' | 'tex-math';
   source: string;
@@ -28,8 +30,8 @@ declare global {
   interface Window {
     MarknotePreview: {
       readonly update: (data: PreviewUpdate) => void;
-      readonly imageWindow: (top: number, height: number) => string[];
-      readonly setImage: (key: string, dataUrl: string) => void;
+      readonly release: () => void;
+      readonly imageWindow: (top: number, height: number) => ImageRequest[];
     };
   }
 }
