@@ -96,6 +96,17 @@ export class EditorSession {
       this.send({ type: 'initialized', sessionId: init.sessionId, epoch: init.epoch });
       return;
     }
+    if (message.type === 'viewport' && this.current && message.sessionId === this.current.sessionId &&
+      message.epoch === this.current.epoch) {
+      const insets = { top: message.top, bottom: message.bottom, start: message.start, end: message.end,
+        'track-top': message.trackTop, 'track-bottom': message.trackBottom };
+      if (Object.values(insets).some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) return;
+      for (const [edge, value] of Object.entries(insets)) {
+        document.documentElement.style.setProperty(`--inset-${edge}`, `${value}px`);
+      }
+      this.view.requestMeasure();
+      return;
+    }
     if (message.type === 'ack') this.queue?.acknowledge(message as unknown as EditorAck);
     if (message.type === 'conflict' && this.current && message.sessionId === this.current.sessionId &&
       message.epoch === this.current.epoch) {
@@ -175,6 +186,9 @@ export class EditorSession {
       typeof message.direction === 'string' && ['ltr', 'rtl', 'auto'].includes(message.direction)) {
       document.documentElement.lang = message.language;
       document.documentElement.dir = message.direction;
+      if (typeof message.label === 'string') {
+        document.querySelector('#source-scrollbar')?.setAttribute('aria-label', message.label);
+      }
     }
   }
 

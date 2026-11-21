@@ -29,7 +29,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 首页使用 `HdsNavigation`。文稿和设置页面使用 `HdsNavDestination`，并由同一个 `NavPathStack` 管理。`Index` 创建设置页路由，`SettingsPage` 构建各级页面；每个页面持有自己的滚动控制器。许可证页进入后再读取原文，并按段放进列表。`EntryAbility` 在加载页面前按已保存的语言偏好设置应用语言。跟随系统时解析为当前系统语言对应的资源，因此切换立即生效；下次冷启动会按当时的系统语言重新解析。
 
-`HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，预览和大纲各自保留滚动控制器；编辑与分栏复用一个编辑器及其滚动控制器。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
+`HdsMaterialStyles` 配置公共标题栏，`PageScrollPolicy` 配置原生滚动容器的公共行为。文稿预览、编辑、大纲和分栏使用 `DocumentScrollLayer`，预览和大纲各自保留滚动控制器；编辑与分栏复用一个编辑器及其滚动控制器。预览和大纲由原生 Scroll 显示滚动条。源码在有界 ArkWeb 中滚动，外层 Scroll 与标题栏联动。ArkUI 将可读区域和系统横向边距传给网页。编辑器按网页的实际滚动位置显示滑块，拖动滑块直接滚动同一份正文。两栏共用标题栏与页签避让范围，滑块布局遵循华为[滚动条设计指南](https://developer.huawei.com/consumer/cn/doc/design-guides/scrollbar-0000001956815473/)。文稿页通过 `HdsTabs` 切换视图，格式快捷操作位于导航标题栏的底部自定义区域。
 
 `DocumentView` 持有文稿编辑、查找和保存界面状态，并按页签是否可见决定预览工作方式；查找栏 `DocumentFindBar` 只绘制查询和替换控件。保存和删除后的文稿数据由 `DocumentService` 更新。`DocumentPreviewView` 管理各自的 Web 控制器，`PreviewDispatch` 保证每个实例最多一笔在途发送和一笔最新请求。`DocumentOutlineView` 管理大纲展示与展开状态。
 

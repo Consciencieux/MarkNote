@@ -21,6 +21,7 @@ export struct DocumentFindBar {
   onReplace: () => void = (): void => {};
   onClose: () => void = (): void => {};
   onHeightChange: (height: number) => void = (_height: number): void => {};
+  @State private controlsWidth: number = 80;
   private material = searchFieldMaterial();
 
   private format(resource: Resource, first: string, second: string = ''): string {
@@ -28,18 +29,56 @@ export struct DocumentFindBar {
     return AppText.format(resource, first, second);
   }
 
+  @Builder
+  private MatchButton(icon: Resource, label: Resource, action: () => void) {
+    Button({ stateEffect: false }) {
+      SymbolGlyph(icon).attributeModifier(toolbarIcon)
+    }
+    .buttonStyle(ButtonStyleMode.TEXTUAL)
+    .width(40)
+    .height(40)
+    .stateStyles({
+      normal: { .opacity(1) },
+      pressed: { .opacity($r('sys.float.alpha_secondary')) }
+    })
+    .accessibilityText(label)
+    .enabled(this.matchCount > 0)
+    .onClick(() => action())
+  }
+
   build() {
     Column() {
       Row() {
-        Search({ value: this.query, placeholder: $r('app.string.find_placeholder') })
-          .onSubmit(() => this.onNext())
-          .onChange((value: string) => this.onQueryChange(value))
-          .layoutWeight(1)
-          .cancelButton({
-            style: this.query.length > 0 ? CancelButtonStyle.CONSTANT : CancelButtonStyle.INVISIBLE
-          })
-          .systemMaterial(this.material)
-          .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
+        Stack({ alignContent: Alignment.End }) {
+          Search({ value: this.query, placeholder: $r('app.string.find_placeholder') })
+            .onSubmit(() => this.onNext())
+            .onChange((value: string) => this.onQueryChange(value))
+            .width('100%')
+            .cancelButton({
+              style: this.query.length > 0 ? CancelButtonStyle.CONSTANT : CancelButtonStyle.INVISIBLE
+            })
+            .padding({ end: LengthMetrics.vp(this.query.length > 0 ? this.controlsWidth + 40 : 0) })
+            .systemMaterial(this.material)
+          if (this.query.length > 0) {
+            Row() {
+              Text(this.matchOrdinal > 0 ? `${this.matchOrdinal}/${this.matchCount}` :
+                this.format($r('app.string.match_total'), String(this.matchCount)))
+                .fontColor($r('sys.color.font_secondary'))
+                .accessibilityText(this.matchOrdinal > 0 ?
+                  this.format($r('app.string.match_position'), String(this.matchOrdinal), String(this.matchCount)) :
+                  this.format($r('app.string.match_total'), String(this.matchCount)))
+              this.MatchButton($r('sys.symbol.chevron_up'), $r('app.string.find_previous'), this.onPrevious)
+              this.MatchButton($r('sys.symbol.chevron_down'), $r('app.string.find_next'), this.onNext)
+            }
+            .margin({ end: LengthMetrics.vp(40) })
+            .onAreaChange((_oldArea: Area, newArea: Area) => {
+              const width = parseFloat(String(newArea.width)) || 0;
+              if (width > 0 && width !== this.controlsWidth) this.controlsWidth = width;
+            })
+          }
+        }
+        .layoutWeight(1)
+        .margin({ end: LengthMetrics.resource($r('sys.float.padding_level4')) })
         Button() {
           SymbolGlyph($r('sys.symbol.xmark'))
             .attributeModifier(toolbarIcon)
@@ -51,36 +90,6 @@ export struct DocumentFindBar {
         .onClick(() => this.onClose())
       }
       .width('100%')
-      Row() {
-        Text(this.matchOrdinal > 0 ? `${this.matchOrdinal}/${this.matchCount}` :
-          this.format($r('app.string.match_total'), String(this.matchCount)))
-          .fontColor($r('sys.color.font_secondary'))
-          .accessibilityText(this.matchOrdinal > 0 ?
-            this.format($r('app.string.match_position'), String(this.matchOrdinal), String(this.matchCount)) :
-            this.format($r('app.string.match_total'), String(this.matchCount)))
-          .layoutWeight(1)
-        Button() {
-          SymbolGlyph($r('sys.symbol.chevron_up')).attributeModifier(toolbarIcon)
-        }
-        .buttonStyle(ButtonStyleMode.TEXTUAL)
-        .width(40)
-        .height(40)
-        .accessibilityText($r('app.string.find_previous'))
-        .enabled(this.matchCount > 0)
-        .onClick(() => this.onPrevious())
-        Button() {
-          SymbolGlyph($r('sys.symbol.chevron_down')).attributeModifier(toolbarIcon)
-        }
-        .buttonStyle(ButtonStyleMode.TEXTUAL)
-        .width(40)
-        .height(40)
-        .accessibilityText($r('app.string.find_next'))
-        .enabled(this.matchCount > 0)
-        .onClick(() => this.onNext())
-      }
-      .width('100%')
-      .visibility(this.query.length > 0 ? Visibility.Visible : Visibility.Hidden)
-      .margin({ top: $r('sys.float.padding_level4') })
       Row() {
         Row() {
           TextInput({ text: this.replacement, placeholder: $r('app.string.replace_placeholder') })

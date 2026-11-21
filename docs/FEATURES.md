@@ -25,7 +25,7 @@
 | 查找与替换 | 文稿菜单中的查找栏固定在顶部；编辑器获得键盘焦点时也可按 Ctrl+F 打开。查找栏打开后按字面文本统计匹配数，连续输入会合并后再更新。选择结果后显示当前位置，可在结果间前后跳转并替换单处。跳转和替换使用当时的正文。搜索词为空时隐藏结果导航；不支持正则表达式和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[DocumentAnalysis.ets](../entry/src/main/ets/document/DocumentAnalysis.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 文稿大纲 | Markdown 提取代码围栏以外的 ATX 标题，暂不解析 Setext 标题；打开大纲或停留在大纲页时按当前正文更新，输入过程中不逐字重算。LaTeX 使用预览解析得到的章节标题和源文本位置；只看大纲时不生成完整预览页面。两种格式共用分层大纲，可逐项展开、收起，并跳转到编辑位置。标题位置与当前正文不一致时不跳转 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[DocumentAnalysis.ets](../entry/src/main/ets/document/DocumentAnalysis.ets)、[tex.ts](../renderer/src/renderers/tex.ts)、[DocumentOutlineView.ets](../entry/src/main/ets/pages/DocumentOutlineView.ets) |
 | 撤销与重做 | CodeMirror 管理当前文稿的编辑历史；普通输入、工具栏插入及替换均可撤销。编辑和分栏复用同一历史，切换文稿时重置 | [editor-session.ts](../editor/src/editor-session.ts)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
-| 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。当前没有显示的预览不排版。有底部导航避让区时，页签沿用组件对安全区的扩展，不再另加底边距。避让高度为 0 时（悬浮小窗是其中一种情况），页签栏与 `HdsTabs` 底边留出应用自己设定的 `sys.float.margin_left`，这不是华为规定的底部间距。宽度达到 `WIDTH_LG` 断点时可分栏显示，预览在左、编辑在右；分栏显示时只更新这一侧的预览 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[DocumentPreviewView.ets](../entry/src/main/ets/pages/DocumentPreviewView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
+| 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。当前没有显示的预览不排版。有底部导航避让区时，页签沿用组件对安全区的扩展，不再另加底边距。避让高度为 0 时（悬浮小窗是其中一种情况），页签栏与 `HdsTabs` 底边留出应用自己设定的 `sys.float.margin_left`，这不是华为规定的底部间距。文稿区域宽度达到 `WIDTH_LG` 断点时可分栏显示，预览在左、编辑在右；分栏显示时只更新这一侧的预览 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[DocumentPreviewView.ets](../entry/src/main/ets/pages/DocumentPreviewView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
 
 预览页面随应用离线打包。ArkUI 将格式、正文、主题、修订号和当前界面语言的预览提示传给网页；LaTeX 预览通过消息端口回传解析结果，网页不能调用文件或导航接口。内容安全策略禁止网络连接。Markdown 的网页链接由系统打开，不在预览页面中加载。
 
@@ -44,7 +44,7 @@
 
 设置从首页或文稿页的更多菜单进入。外观提供跟随系统、浅色和深色三个选项，偏好保存在本机；代码高亮提供关闭、GitHub、Atom One 和 Visual Studio 配色，编辑器及 Markdown 代码预览共享语法颜色，配色不改变代码框背景与布局。设置页还提供使用帮助、问题与建议、隐私说明和关于。问题与建议通过系统邮件应用发送至 zhouyi1227@outlook.com；未安装邮件应用时可直接使用该地址。语言可跟随系统，也可指定简体中文、繁体中文、藏文、英文、日文、韩文、俄文、阿拉伯文或维吾尔文，选择后立即生效。跟随系统排在最前，其余语言按汉语拼音排列。跟随系统时，未提供的系统语言显示简体中文。阿拉伯文和维吾尔文从右向左排列；未单独指定语言时，排列方向跟随系统语言。
 
-文稿列表与文稿以双栏显示时，可通过文稿标题栏放大文稿或恢复文稿列表；文稿菜单可关闭当前文稿。放大期间窗口宽度发生变化时，恢复由系统自动选择单栏或双栏；单栏时显示返回按钮。预览和编辑并排的分栏页签另按窗口宽度提供。
+文稿列表与文稿以双栏显示时，可通过文稿标题栏放大文稿或恢复文稿列表；文稿菜单可关闭当前文稿。放大期间窗口宽度发生变化时，恢复由系统自动选择单栏或双栏；单栏时显示返回按钮。预览和编辑并排的分栏页签按文稿区域宽度提供。
 
 “关于”页显示应用名称、版本，提供 GitHub 项目主页和开源许可证入口；主页交给系统浏览器打开。开源许可证页分别提供本项目和第三方许可证全文。页面先打开，再读取并按段显示原文，不删减许可证内容。使用帮助可从设置页直接打开，支持离线查看。
 

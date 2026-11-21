@@ -4,6 +4,7 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { languageFor } from './languages.js';
 import { syntaxTheme } from './syntax-theme.js';
 import { EditorSession } from './editor-session.ts';
+import { bindSourceScrollbar } from './source-scrollbar.ts';
 import './production.css';
 
 const host = document.querySelector<HTMLElement>('#editor');
@@ -18,12 +19,17 @@ const resolvedAppearance = (appearance: string) => appearance === 'system' ? (me
 const extensions = (format: string, theme: string, appearance: string = 'light') => [
   history(), keymap.of([{ key: 'Mod-f', run: () => session?.requestFind() ?? false },
     ...defaultKeymap, ...historyKeymap]),
+  EditorView.scrollMargins.of(() => ({
+    top: parseFloat(document.documentElement.style.getPropertyValue('--inset-track-top')) || 0,
+    bottom: parseFloat(document.documentElement.style.getPropertyValue('--inset-track-bottom')) || 0
+  })),
   EditorView.lineWrapping, languageFor(format), colors.of(syntaxTheme(theme, appearance)),
   editable.of(EditorView.editable.of(true)),
   EditorView.updateListener.of((update) => session?.record(update)),
   EditorState.transactionFilter.of((transaction) => transaction.docChanged && session?.isBlocked() ? [] : transaction)
 ];
 const view = new EditorView({ parent: host, state: EditorState.create({ extensions: extensions('plain', 'off') }) });
+bindSourceScrollbar(view.dom, document.querySelector<HTMLInputElement>('#source-scrollbar')!);
 const applyTheme = (theme: string, appearance: string) => {
   currentTheme = theme;
   currentAppearance = appearance;

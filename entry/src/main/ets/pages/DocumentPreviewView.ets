@@ -235,6 +235,7 @@ export struct DocumentPreviewView {
       // 《Web组件大小自适应页面内容布局》：Web 按内容撑高，滚动交给外层 Scroll；
       // NEVER 关掉 Web 自己的过滚动，避免和 Scroll 抢边缘效果。
       .layoutMode(WebLayoutMode.FIT_CONTENT)
+      .verticalScrollBarAccess(false)
       .overScrollMode(OverScrollMode.NEVER)
   }
 
