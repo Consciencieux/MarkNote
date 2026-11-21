@@ -9,7 +9,7 @@ import {
 import { DocumentInfo, Heading } from '../model/Document';
 import { DocumentService, DocumentSession } from '../document/DocumentService';
 import { DocumentShare } from '../document/DocumentShare';
-import { DocumentFormat, InsertAction } from '../document/FormatRegistry';
+import { DocumentFormat, FormatRegistry, InsertAction } from '../document/FormatRegistry';
 import { SearchHit, TextSearch } from '../document/TextSearch';
 import { AnalysisRequest, AnalysisResult, DocumentAnalysis } from '../document/DocumentAnalysis';
 import { FormatBarView } from './FormatBarView';
@@ -87,7 +87,7 @@ export struct DocumentView {
   @State private source: string = '';
   @State private savedText: string = '';
   @State private selectedTab: number = TAB_PREVIEW;
-  /** Format id of the open document, kept as state so the format bar rebuilds on switch. */
+  /** 页签数量、分栏索引、编辑器和预览都跟随当前文稿的格式。 */
   @State private formatId: string = '';
   @State private headings: Heading[] = [];
   @State private parseRevision: number = 0;
@@ -444,7 +444,7 @@ export struct DocumentView {
   }
 
   private currentFormat(): DocumentFormat {
-    return DocumentService.formatFor(this.info);
+    return FormatRegistry.byId(this.formatId);
   }
 
   /** Bind HDS navigation effects to the shared Scroll surface(s) in the active tab. */
@@ -553,7 +553,7 @@ export struct DocumentView {
     this.sessionOwner = session;
     this.info = session.info;
     this.title = session.info.name;
-    this.formatId = session.info.formatId;
+    this.formatId = DocumentService.formatFor(session.info).id;
     this.source = session.source;
     this.savedText = session.savedText;
     this.parseRevision = session.revision;
