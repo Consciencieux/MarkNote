@@ -2,7 +2,6 @@
 
 ## 本地图片预览
 
-- [x] **SVG 误拒绝（N04）**：本地 SVG 由 ArkWeb 作为隔离图片解析。三折叠模拟器已显示含网址说明和 Inkscape 命名空间的样图。[本地图片](entry/src/main/ets/document/LocalImages.ets)、[SVG 清理](renderer/src/renderers/svg.ts)
 - [ ] **动态图缩放（N03）**：Image Kit 识别多帧后，ArkWeb 直接读取原文件播放。三折叠模拟器已显示宽幅 GIF 和 4100 × 1800 动态 WebP 的不同帧；大动图播放时的内存峰值仍待测量。[缩图实现](entry/src/main/ets/document/LocalImages.ets)
 - [ ] **图片传输（N01）**：已用 ArkWeb 文件描述符响应交付原图和缩略图，普通与分栏预览均已显示，换篇后已显示新文稿引用的图片。仍需核对解码尚未完成时换篇，以及取消后的句柄释放。[原生传输](entry/src/main/ets/pages/DocumentPreviewView.ets)、[网页接收](renderer/src/image-window.ts)
 
@@ -15,18 +14,13 @@
 
 - [ ] **混合换行保存**：混合 LF、CRLF、CR 的文稿增删行后，当前不能按原方式保存；另存为使用 LF。明确新增和删除行的换行策略及用户选择，避免静默改变原文件。[编码与换行](entry/src/main/ets/document/TextEncoding.ets)
 - [ ] **无 BOM 编码识别**：UTF-16 依赖前 64 字节的零字节比例判断，当前不能手动纠正编码。完善识别和用户纠正途径，保留现有 BOM 与编码安全处理。[编码识别](entry/src/main/ets/document/TextEncoding.ets)
-- [ ] **界面文字方向（N08）**：原生和预览已按实际界面语言使用 `i18n.isRTL`。模拟器设置页已核对跟随系统、阿拉伯语与维吾尔语；待核对 RTL 文稿的预览与编辑选区，编辑器跟随系统时仍使用自动正文方向。[应用语言](entry/src/main/ets/i18n/AppLanguage.ets)、[预览](renderer/src/main.ts)
 
 ## 界面适配待确认
 
 - [ ] **编辑器滚动条（N02）**：三折叠分栏试用 ArkWeb 原生纵向滚动条时，右栏滚动截图中未观察到可拖动滑块。现保留可读区域内的滑块；替换前须核对两端避让和鼠标拖动。[编辑器宿主](entry/src/main/ets/pages/DocumentCodeEditor.ets)、[滚动条](editor/src/source-scrollbar.ts)
-- [x] **底部避让**：悬浮页签和各文稿视图共用同一个底边距值。已在三折叠模拟器的系统悬浮窗中核对预览末段和编辑末行均可见，底部页签可点击切换。[文稿页面](entry/src/main/ets/pages/DocumentView.ets)、[滚动层](entry/src/main/ets/pages/DocumentScrollLayer.ets)
-- [x] **窄窗口查找栏**：修复大字体下匹配计数挤掉输入文字的问题。三折叠模拟器收拢并使用最大字号时，查询文字、匹配计数、上下箭头、清除按钮和替换行均可见。[查找栏](entry/src/main/ets/pages/DocumentFindBar.ets)
 - [ ] **首页分段按钮**：三折叠模拟器窄侧栏和最大字号下，俄文收藏标签已使用单行短名，完整名称仍用于无障碍播报。继续确认其他语言在更窄窗口下的显示。[首页](entry/src/main/ets/pages/Index.ets)
 - [ ] **设置行和分组标题**：CARD 内已使用 ComposeListItem 承载标题、状态、箭头和单选标记，已验证整行切换语言。三折叠模拟器开启屏幕朗读后，单选行整行聚焦，滑动进入下一项，双击后选中标记随之更新。已确认系统合成语音，仍需核对选中播报内容和大字体显示。“主题”位于代码高亮二级页的选项卡片上方，标题与选项各用一个列表组。保留这个位置，核对分组语义、对齐及无障碍朗读。[设置行](entry/src/main/ets/pages/SettingsListRow.ets)、[设置详情](entry/src/main/ets/pages/SettingsDetail.ets)
-- [x] **图标与底部距离的资源用途**：查找按钮使用工具栏图标尺寸。无系统导航指示区时，页签栏的额外间距使用系统内边距资源，避让验收见上文。[文字与图标样式](entry/src/main/ets/pages/TextRoles.ets)
 - [ ] **阅读与 Web 视觉配置**：编辑、预览与大纲已共用系统横向边距，帮助等页面使用应用选定的栅格与 24vp 侧距。核对编辑、预览及其他阅读页面的基础字号、颜色和版心，保留文稿排版与灰色代码框。[阅读版心](entry/src/main/ets/pages/SettingsReadingFrame.ets)、[预览样式](renderer/src/styles.css)、[编辑器样式](editor/src/production.css)
-- [x] **大纲行结构**：系统 List 与 Repeat.virtualScroll 按需创建行。开启三折叠模拟器的屏幕朗读后，箭头和标题分别聚焦，双击分别收起子标题和跳转编辑位置。[大纲](entry/src/main/ets/pages/DocumentOutlineView.ets)
 - [ ] **菜单宽度**：首页顶层菜单对所有窗口固定 224vp，其他菜单使用组件默认宽度。检查手机、大字体、平板和小窗口下的内容显示，并核对适用的官方设计范围。[菜单](entry/src/main/ets/pages/DocumentMenus.ets)
 
 以上界面项包含需要确认的应用自定义选择，是否修改以官方组件适用性和实际交互结果为准。
@@ -36,4 +30,4 @@
 - [ ] **持久授权 F06**：持久授权申请已延后到打开确认后，接管失败时尝试释放新增授权，已有读授权时只释放新增的写授权。验证取消、读取失败、授权升级和会话切换。
 - [ ] **分享缓存 F08**：后续分享时会清理超过七天的副本，分享准备或面板打开失败时尝试清理本次副本。验证接收方读取与清理失败重试。
 - [ ] **保存与恢复故障场景**：已修复保存和草稿恢复的主要问题；在模拟器或设备上核对文件提供方写入失败、外部修改冲突、恢复读取失败和清理失败时的结果。
-- [ ] **输入与国际化**：中文候选上屏及保存已有模拟器记录；补查日文输入法、RTL 和中英文混排下的输入、选区与定位。
+- [ ] **输入与国际化**：中文候选上屏及保存已有模拟器记录；补查日文输入法和中英文混排下的输入、选区与定位。

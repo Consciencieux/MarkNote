@@ -1,5 +1,5 @@
-import { EditorState, Compartment } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
+import { EditorState, Compartment, RangeSetBuilder } from '@codemirror/state';
+import { Decoration, EditorView, keymap, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { languageFor } from './languages.js';
 import { syntaxTheme } from './syntax-theme.js';
@@ -11,6 +11,36 @@ const host = document.querySelector<HTMLElement>('#editor');
 if (!host) throw new Error('Missing editor root');
 const editable = new Compartment();
 const colors = new Compartment();
+const automaticLineDirection = Decoration.line({ attributes: { dir: 'auto' } });
+const lineDirections = ViewPlugin.fromClass(class {
+  decorations: DecorationSet;
+
+  constructor(view: EditorView) {
+    this.decorations = this.build(view);
+  }
+
+  update(update: ViewUpdate): void {
+    if (update.docChanged || update.viewportChanged) this.decorations = this.build(update.view);
+  }
+
+  private build(view: EditorView): DecorationSet {
+    // HTML resolves the direction from each rendered line. CodeMirror reads it for bidi movement.
+    const ranges = new RangeSetBuilder<Decoration>();
+    const doc = view.state.doc;
+    let previousStart = -1;
+    for (const { from, to } of view.visibleRanges) {
+      for (let line = doc.lineAt(from); ; line = doc.line(line.number + 1)) {
+        if (line.from > previousStart) {
+          // Empty lines inherit the UI direction until they have text.
+          if (/\S/.test(line.text)) ranges.add(line.from, line.from, automaticLineDirection);
+          previousStart = line.from;
+        }
+        if (line.to >= to) break;
+      }
+    }
+    return ranges.finish();
+  }
+}, { decorations: plugin => plugin.decorations });
 let session: EditorSession | undefined;
 let currentTheme = 'github';
 let currentAppearance = 'system';
@@ -23,7 +53,8 @@ const extensions = (format: string, theme: string, appearance: string = 'light')
     top: parseFloat(document.documentElement.style.getPropertyValue('--inset-track-top')) || 0,
     bottom: parseFloat(document.documentElement.style.getPropertyValue('--inset-track-bottom')) || 0
   })),
-  EditorView.lineWrapping, languageFor(format), colors.of(syntaxTheme(theme, appearance)),
+  EditorView.lineWrapping, EditorView.perLineTextDirection.of(true), lineDirections,
+  languageFor(format), colors.of(syntaxTheme(theme, appearance)),
   editable.of(EditorView.editable.of(true)),
   EditorView.updateListener.of((update) => session?.record(update)),
   EditorState.transactionFilter.of((transaction) => transaction.docChanged && session?.isBlocked() ? [] : transaction)

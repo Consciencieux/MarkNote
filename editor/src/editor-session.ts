@@ -75,7 +75,7 @@ export class EditorSession {
       if (typeof init.sessionId !== 'string' || !init.sessionId || !Number.isSafeInteger(init.epoch) ||
         !Number.isSafeInteger(init.revision) || init.revision < 0 || typeof init.source !== 'string' ||
         !['markdown', 'latex', 'svg', 'plain'].includes(init.format) || typeof init.theme !== 'string' ||
-        typeof init.language !== 'string' || !['ltr', 'rtl', 'auto'].includes(init.direction) ||
+        typeof init.language !== 'string' || !['ltr', 'rtl'].includes(init.direction) ||
         !Number.isSafeInteger(init.anchor) || !Number.isSafeInteger(init.head) ||
         init.anchor < 0 || init.head < 0 || init.anchor > init.source.length || init.head > init.source.length) return;
       if (this.current?.sessionId === init.sessionId && this.current.epoch === init.epoch) {
@@ -183,7 +183,7 @@ export class EditorSession {
     }
     if (message.type === 'configure-locale' && this.current && message.sessionId === this.current.sessionId &&
       message.epoch === this.current.epoch && typeof message.language === 'string' &&
-      typeof message.direction === 'string' && ['ltr', 'rtl', 'auto'].includes(message.direction)) {
+      (message.direction === 'ltr' || message.direction === 'rtl')) {
       document.documentElement.lang = message.language;
       document.documentElement.dir = message.direction;
       if (typeof message.label === 'string') {

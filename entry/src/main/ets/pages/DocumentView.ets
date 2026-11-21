@@ -959,8 +959,7 @@ export struct DocumentView {
               sessionId: `document-${key}`, source: this.source, formatId: this.formatId,
               webTheme: this.theme, appearance: this.theme, theme: this.codeTheme,
               language: resourceLanguage(this.language),
-              textDirection: this.language === 'default' ? 'auto' :
-                (isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr'),
+              textDirection: isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr',
               topInset: Math.max(0, this.workspaceTop - this.editorTop),
               parentOffset: this.editorParentOffset,
               bottomInset: documentTabClearance(this.tabBarBottomMargin),
