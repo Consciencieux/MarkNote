@@ -8,6 +8,6 @@
 
 ## 文件与图片验收
 
-- [ ] **保存与草稿恢复**　核对写入中断后重启能恢复编辑正文，文件被外部修改后保存会拒绝覆盖。草稿暂时读不出时应保留原件供重试；放弃或换篇时清理失败，应保留当前文稿并提示。[文稿服务](entry/src/main/ets/document/DocumentService.ets) · [已验故障场景](https://github.com/Consciencieux/MarkNote/pull/30)
-- [ ] **分享缓存（F08）**　确认接收方能读取已分享的临时副本；分享准备或面板打开失败时检查本次副本是否清理，清理失败时检查后续分享能否回收超过七天的副本。[文稿分享](entry/src/main/ets/document/DocumentShare.ets)
-- [ ] **图片解码中途换篇（N01）**　在缩略图仍在解码时切换文稿，确认旧图不会出现在新文稿中，取消的请求会关闭尚未交给 ArkWeb 的文件描述符。[图片响应](entry/src/main/ets/pages/DocumentPreviewView.ets)
+- [x] **保存与草稿恢复**　三折叠模拟器上在写入部分正文后结束进程，重启遇到注入的草稿读取错误，重试恢复完整编辑正文。外部修改触发保存冲突且原文件未被覆盖。关闭文稿和新建换篇遇到注入的清理错误时，均保留原文稿并提示。[文稿服务](entry/src/main/ets/document/DocumentService.ets) · [此前故障场景](https://github.com/Consciencieux/MarkNote/pull/30)
+- [x] **分享缓存（F08）**　三折叠模拟器上通过系统分享面板另存为，接收文件与分享正文逐字节一致。准备失败时移除了本次目录。注入面板与清理失败后，后续分享回收了模拟超过七天的副本。[文稿分享](entry/src/main/ets/document/DocumentShare.ets)
+- [x] **图片解码中途换篇（N01）**　三折叠模拟器上在 Image Kit 解码开始后切换预览文稿，新预览只显示新正文。旧请求返回后丢弃缩略图，确认未交给 ArkWeb 的文件描述符已关闭。[图片响应](entry/src/main/ets/pages/DocumentPreviewView.ets)
