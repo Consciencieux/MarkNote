@@ -38,7 +38,6 @@ window.addEventListener('message', (event: MessageEvent) => {
   if (event.data !== '__marknote_parse_port__' || !event.ports[0]) return;
   resultPort?.close();
   resultPort = event.ports[0];
-  images.connect(resultPort, () => linkTarget?.kind === 'markdown' ? linkTarget : undefined);
   if (lastResult) resultPort.postMessage(lastResult);
 });
 
@@ -128,12 +127,12 @@ function updateWindow(theme: PreviewTheme): void {
   }
 }
 
-function imageWindow(top: number, height: number): ImageRequest[] {
+function imageWindow(top: number, height: number, generation: number): ImageRequest[] | null {
   if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) return [];
   viewport = { top, height };
   if (!markdown || !lastRendered) return [];
   updateWindow(lastRendered.theme);
-  return images.requests(host!, top, height);
+  return images.requests(host!, top, height, generation);
 }
 
 // Loading an image, drawing a diagram, or resizing a split pane can bring
@@ -184,7 +183,7 @@ function render(update: PreviewUpdate): void {
   notePreviewTarget(update);
   const textStamp = usePreviewText(update.text);
   document.documentElement.lang = previewText().lang;
-  document.documentElement.dir = /^(ar|ug)(-|$)/i.test(previewText().lang) ? 'rtl' : 'ltr';
+  document.documentElement.dir = update.text?.rtl ? 'rtl' : 'ltr';
   document.documentElement.removeAttribute('data-theme');
   if (update.theme !== 'system') document.documentElement.dataset.theme = update.theme;
   if (lastRendered && lastRendered.theme !== update.theme) refreshIsolatedSvg(host!);
@@ -251,6 +250,8 @@ function render(update: PreviewUpdate): void {
 const api = Object.freeze({
   update: (data: PreviewUpdate) => render(data),
   release: releasePreview,
-  imageWindow
+  imageWindow,
+  loadImages: (generation: number) => images.load(generation),
+  sizeImage: (id: number, width: number, height: number) => images.size(id, width, height)
 });
 Object.defineProperty(window, 'MarknotePreview', { value: api, writable: false, configurable: false });

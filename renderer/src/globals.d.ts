@@ -1,5 +1,5 @@
 import type { } from 'vite/client';
-export interface ImageRequest { key: string; widthPx: number; heightPx: number }
+export interface ImageRequest { id: number; key: string; widthPx: number; heightPx: number }
 
 export interface PreviewUpdate {
   kind: 'markdown' | 'plain' | 'svg' | 'tex-math';
@@ -13,6 +13,7 @@ export interface PreviewUpdate {
   /** Localized preview copy. Absent fields keep the base Chinese text. */
   text?: {
     lang?: string;
+    rtl?: boolean;
     empty?: string;
     failed?: string;
     unsafe?: string;
@@ -30,8 +31,10 @@ declare global {
   interface Window {
     MarknotePreview: {
       readonly update: (data: PreviewUpdate) => void;
+      readonly loadImages: (generation: number) => void;
+      readonly sizeImage: (id: number, width: number, height: number) => void;
       readonly release: () => void;
-      readonly imageWindow: (top: number, height: number) => ImageRequest[];
+      readonly imageWindow: (top: number, height: number, generation: number) => ImageRequest[] | null;
     };
   }
 }
