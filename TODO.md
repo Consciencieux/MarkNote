@@ -17,7 +17,7 @@
 - [ ] **混合换行保存**：混合 LF、CRLF、CR 的文稿增删行后，当前不能按原方式保存；另存为使用 LF。明确新增和删除行的换行策略及用户选择，避免静默改变原文件。[编码与换行](entry/src/main/ets/document/TextEncoding.ets)
 - [ ] **无 BOM 编码识别**：UTF-16 依赖前 64 字节的零字节比例判断，当前不能手动纠正编码。完善识别和用户纠正途径，保留现有 BOM 与编码安全处理。[编码识别](entry/src/main/ets/document/TextEncoding.ets)
 - [ ] **编辑器围栏语言覆盖**：编辑器当前支持 JavaScript、TypeScript、Python、XML 和 LaTeX 围栏；预览还支持 JSON、Bash、YAML、CSS、C、C++、Java 和 Markdown。按产品需求补齐编辑器语言，继续共享语言别名和语法配色。[编辑器语言](editor/src/languages.js)
-- [ ] **外部链接长度**：预览和原生打开路径均限制链接长度为 2048。核对系统接口与跨端消息的实际约束，处理合法长链接，并保持现有协议、主机和凭据校验。[预览链接](renderer/src/renderers/external-link.ts)、[原生打开](entry/src/main/ets/pages/DocumentView.ets)
+- [x] **外部链接长度**：预览、消息接收端和原生打开入口已移除 2048 字符限制。完整地址交给系统，保留协议、主机、凭据和文稿身份校验，系统拒绝打开时提示用户。[预览链接](renderer/src/renderers/external-link.ts)、[原生打开](entry/src/main/ets/pages/DocumentView.ets)
 
 ## 界面适配待确认
 
