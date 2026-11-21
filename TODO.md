@@ -24,7 +24,7 @@
 - [x] **编辑与分栏的上下模糊**：两栏的滚动内容均可进入系统标题栏和悬浮页签下方，源码与预览共用横向边距。
 - [ ] **底部避让**：在无系统导航指示区的窗口核对额外底边距、末行和悬浮页签的点击区域。[文稿页面](entry/src/main/ets/pages/DocumentView.ets)、[滚动层](entry/src/main/ets/pages/DocumentScrollLayer.ets)
 - [ ] **文末键盘避让**：已在折叠屏模拟器检查末行点按和键盘展开；继续核对长文稿末尾连续输入及换行时的光标跟随。
-- [ ] **窄窗口查找栏**：查找计数和前后跳转按钮已移出搜索框。在窄窗口及大字体下核对首次展开、计数出现和切换替换栏时的高度，确保按钮可用、正文顶部可见。[查找栏](entry/src/main/ets/pages/DocumentFindBar.ets)
+- [ ] **窄窗口查找栏**：已在三折叠收拢的窄屏确认首次展开、匹配计数和替换行均可见。仍需在窄屏叠加系统大字体时核对按钮和正文顶部。[查找栏](entry/src/main/ets/pages/DocumentFindBar.ets)
 - [ ] **首页分段按钮**：窄侧栏、大字体和长译文组合下检查“全部／收藏”是否完整可读且可点击。当前两侧有 40vp 占位，中间最大宽度为 150vp。[首页](entry/src/main/ets/pages/Index.ets)
 - [x] **顶部留白**：普通页面共用应用选取的首项间距，带分组标题的列表由 SubHeader 留出间距。已修正分栏返回页首及使用帮助首节的间距。[公共滚动策略](entry/src/main/ets/pages/PageScrollPolicy.ets)
 - [ ] **设置行和分组标题**：核对系统列表行能否承载导航和单选交互。“主题”位于代码高亮二级页的选项卡片上方，标题与选项各用一个列表组。保留这个位置，核对分组语义、对齐及无障碍朗读。[设置行](entry/src/main/ets/pages/SettingsListRow.ets)、[设置详情](entry/src/main/ets/pages/SettingsDetail.ets)
