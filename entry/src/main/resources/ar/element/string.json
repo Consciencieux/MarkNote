@@ -7,6 +7,7 @@
     { "name": "home_favorites", "value": "المفضلة" },
     { "name": "home_favorites_segment", "value": "المفضلة" },
     { "name": "home_new", "value": "مستند جديد" },
+    { "name": "home_new_button", "value": "$string:home_new" },
     { "name": "home_open", "value": "فتح ملف" },
     { "name": "home_unfavorite", "value": "إلغاء التفضيل" },
     { "name": "home_remove_record", "value": "إزالة السجل" },
