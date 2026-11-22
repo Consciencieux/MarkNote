@@ -1,18 +1,33 @@
-:root { color-scheme: light dark; --background: #fff; --foreground:#171717; --secondary:#666; --line:#dedede; --code:#f3f3f3; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme]) { --background:#000; --foreground:#fff; --secondary:#aaa; --line:#444; --code:#1c1c1c; } }
-:root[data-theme='light'] { color-scheme: light; --background:#fff; --foreground:#171717; --secondary:#666; --line:#dedede; --code:#f3f3f3; }
-:root[data-theme='dark'] { color-scheme: dark; --background:#000; --foreground:#fff; --secondary:#aaa; --line:#444; --code:#1c1c1c; }
+:root { color-scheme: light dark; --background: #fff; --foreground:#171717; --secondary:#666; --line:#dedede; --code:#f3f3f3; --hljs-keyword:#6d28d9; --hljs-string:#067647; --hljs-number:#b45309; --hljs-comment:#5c5c5c; --hljs-tag:#b42318; --hljs-attr:#9d174d; --hljs-function:#0f766e; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) { --background:#000; --foreground:#fff; --secondary:#aaa; --line:#444; --code:#1c1c1c; --hljs-keyword:#d8b4fe; --hljs-string:#86efac; --hljs-number:#fdba74; --hljs-comment:#a3a3a3; --hljs-tag:#fca5a5; --hljs-attr:#f9a8d4; --hljs-function:#5eead4; } }
+:root[data-theme='light'] { color-scheme: light; --background:#fff; --foreground:#171717; --secondary:#666; --line:#dedede; --code:#f3f3f3; --hljs-keyword:#6d28d9; --hljs-string:#067647; --hljs-number:#b45309; --hljs-comment:#5c5c5c; --hljs-tag:#b42318; --hljs-attr:#9d174d; --hljs-function:#0f766e; }
+:root[data-theme='dark'] { color-scheme: dark; --background:#000; --foreground:#fff; --secondary:#aaa; --line:#444; --code:#1c1c1c; --hljs-keyword:#d8b4fe; --hljs-string:#86efac; --hljs-number:#fdba74; --hljs-comment:#a3a3a3; --hljs-tag:#fca5a5; --hljs-attr:#f9a8d4; --hljs-function:#5eead4; }
 * { box-sizing: border-box; }
 html, body { width:100%; margin:0; padding:0; background:var(--background); color:var(--foreground); }
 body { font: 16px/1.72 system-ui,-apple-system,'HarmonyOS Sans',sans-serif; -webkit-text-size-adjust:100%; overflow-x:hidden; }
 /* ArkWeb guide bpta-web-adaptation documents CSS px as visually equivalent to HarmonyOS vp. */
-.preview { padding:0 18px 36px; overflow-wrap:break-word; }
-.preview > :first-child { margin-top:0; }
-.placeholder { color:var(--secondary); padding:22px 0; }
+.preview { display:flow-root; overflow-wrap:break-word; }
+.placeholder { color:var(--secondary); }
 h1,h2,h3,h4,h5,h6 { line-height:1.35; margin:1.4em 0 .7em; }
 h1{font-size:1.75em} h2{font-size:1.4em} h3{font-size:1.18em}
 pre,code{font-family:ui-monospace,monospace;} code { overflow-wrap:anywhere; }
 pre { max-width:100%; overflow:auto; background:var(--code); border-radius:10px; padding:14px; }
+.preview pre code { white-space:pre; overflow-wrap:normal; }
+.preview pre code .hljs-keyword,
+.preview pre code .hljs-selector-tag,
+.preview pre code .hljs-type,
+.preview pre code .hljs-literal { color:var(--hljs-keyword); }
+.preview pre code .hljs-built_in,
+.preview pre code .hljs-title { color:var(--hljs-function); }
+.preview pre code .hljs-string { color:var(--hljs-string); }
+.preview pre code .hljs-number { color:var(--hljs-number); }
+.preview pre code .hljs-comment { color:var(--hljs-comment); }
+.preview pre code .hljs-tag,
+.preview pre code .hljs-name,
+.preview pre code .hljs-section { color:var(--hljs-tag); }
+.preview pre code .hljs-attr,
+.preview pre code .hljs-attribute { color:var(--hljs-attr); }
+:root[data-code-theme='off'] .preview pre code span[class*='hljs-'] { color:inherit; }
 pre.plain { white-space:pre-wrap; background:transparent; border-radius:0; padding:0; margin:0; }
 :not(pre)>code { background:var(--code); padding:.12em .3em; border-radius:4px; }
 blockquote { border-inline-start:3px solid var(--line); color:var(--secondary); margin:1.2em 0; padding-inline-start:1em; }
@@ -20,6 +35,9 @@ table{display:block;overflow-x:auto;border-collapse:collapse;width:100%;}
 td,th { border:1px solid var(--line);padding:6px 10px;text-align:start; }
 hr { border:none; border-top:1px solid var(--line); }
 a { color:inherit; text-decoration:underline; }
+a[data-mn-external-url] { cursor:pointer; }
+li.task-list-item { list-style:none; }
+.task-list-item-checkbox { margin-inline-end:.45em; vertical-align:-.15em; }
 .preview img { display:block; max-width:100%; height:auto; margin:1em 0; }
 .missing-image { color:var(--secondary); }
 .image-slot-loaded { display:block; }
@@ -30,3 +48,13 @@ a { color:inherit; text-decoration:underline; }
 .math-canvas { width:100%; overflow-x:auto; }
 .katex-display { overflow:auto hidden; padding:5px 0; }
 .error { color:#c43d3d; white-space:pre-wrap; }
+/* The native Scroll reserves the page edges. Keep margins between document blocks. */
+.preview > :first-child { margin-block-start:0; }
+.preview > :last-child { margin-block-end:0; }
+
+.markdown-page { display:flow-root; }
+.markdown-page > :first-child { margin-block-start:0; }
+.markdown-page-last > :last-child { margin-block-end:0; }
+
+.markdown-spacer-before { position:relative; overflow:clip; }
+.markdown-metrics { position:absolute; inset:0 auto auto 0; width:max-content; white-space:pre; visibility:hidden; pointer-events:none; }

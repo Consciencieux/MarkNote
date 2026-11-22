@@ -1,20 +1,29 @@
-import { PageScrollPolicy } from './PageScrollPolicy';
-import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
+import { pageScroll } from './PageScrollPolicy';
+import { SettingsActionRow, SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { LANGUAGE_VALUES } from '../i18n/AppLanguage';
 
 export const THEME_VALUES: string[] = ['system', 'light', 'dark'];
+export const CODE_THEME_VALUES: string[] = ['off', 'github', 'atom', 'vs'];
 export { LANGUAGE_VALUES };
 
 /** 二级页标题，和设置首页的行名一致。返回资源，标题栏会随语言刷新。 */
 export function settingTitle(section: string): Resource {
   if (section === 'language') return $r('app.string.settings_language');
   if (section === 'appearance') return $r('app.string.settings_appearance');
+  if (section === 'code-theme') return $r('app.string.settings_code_theme');
   if (section === 'privacy') return $r('app.string.settings_privacy');
   if (section === 'license-list') return $r('app.string.settings_licenses');
   if (section === 'project-license') return $r('app.string.settings_project_license');
   if (section === 'licenses') return $r('app.string.settings_third_party');
   if (section === 'help') return $r('app.string.settings_help');
   return $r('app.string.settings_about');
+}
+
+export function codeThemeLabel(choice: string): Resource {
+  if (choice === 'off') return $r('app.string.code_theme_off');
+  if (choice === 'atom') return $r('app.string.code_theme_atom');
+  if (choice === 'vs') return $r('app.string.code_theme_vs');
+  return $r('app.string.code_theme_github');
 }
 
 /** 把保存的主题取值翻成设置行右侧的资源。 */
@@ -47,22 +56,14 @@ export function languageLabel(choice: string): Resource {
 @Component
 export struct SettingsView {
   scroller: Scroller = new Scroller();
-  private scrollPolicy: PageScrollPolicy<ListAttribute> = new PageScrollPolicy<ListAttribute>();
   private groupStyle: SettingsGroupStyle = new SettingsGroupStyle();
   /** @Link keeps the displayed theme in sync with the owner when returning from a detail page. */
   @Link theme: string;
   /** 导航页不会跟着首页的 @Link 重建，语言从 AppStorage 取。 */
   @StorageLink('marknote_language') language: string = 'default';
+  @StorageLink('marknote_code_theme') codeTheme: string = 'github';
   onOpen: (section: string) => void = (_section: string): void => {};
   onFeedback: () => void = (): void => {};
-
-  @Builder
-  private LinkRow(title: ResourceStr, section: string) {
-    ListItem({ style: ListItemStyle.CARD }) {
-      SettingsListRow({ title: title, showArrow: true })
-    }
-    .onClick(() => this.onOpen(section))
-  }
 
   build() {
     List({ spaceWidth: $r('sys.float.padding_level6'), scroller: this.scroller }) {
@@ -92,17 +93,32 @@ export struct SettingsView {
         }, (choice: string) => choice)
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow($r('app.string.settings_help'), 'help')
+        ListItem({ style: ListItemStyle.CARD }) {
+          SettingsListRow({ title: $r('app.string.settings_code_theme'), value: codeThemeLabel(this.codeTheme), showArrow: true })
+        }
+        .onClick(() => this.onOpen('code-theme'))
+      }.attributeModifier(this.groupStyle)
+      ListItemGroup({ style: ListItemGroupStyle.CARD }) {
+        SettingsActionRow({
+          title: $r('app.string.settings_help'),
+          onSelect: (): void => this.onOpen('help')
+        })
         ListItem({ style: ListItemStyle.CARD }) {
           SettingsListRow({ title: $r('app.string.settings_feedback'), showArrow: true })
         }.onClick(() => this.onFeedback())
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        this.LinkRow($r('app.string.settings_privacy'), 'privacy')
-        this.LinkRow($r('app.string.settings_about'), 'about')
+        SettingsActionRow({
+          title: $r('app.string.settings_privacy'),
+          onSelect: (): void => this.onOpen('privacy')
+        })
+        SettingsActionRow({
+          title: $r('app.string.settings_about'),
+          onSelect: (): void => this.onOpen('about')
+        })
       }.attributeModifier(this.groupStyle)
     }
-    .attributeModifier(this.scrollPolicy)
+    .attributeModifier(pageScroll)
     .width('100%')
     .height('100%')
   }

@@ -1,6 +1,10 @@
 import { uiMaterial } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 
+// 华为菜单设计指南规定的泛手机菜单宽度（vp）。
+// https://developer.huawei.com/consumer/cn/doc/design-guides/menu-0000001957001877/
+export const MOBILE_MENU_WIDTH: number = 224;
+
 /**
  * 菜单在 SMOOTH 档位实测可能失去背板；仅对菜单关闭应用级材质，使用系统默认背板。
  * 这是针对菜单透明问题的兼容处理，不表示低算力设备不支持沉浸材质。

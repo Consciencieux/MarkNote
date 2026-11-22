@@ -1,23 +1,49 @@
 import { common } from '@kit.AbilityKit';
-import { copyInfo, DocumentInfo, Heading, RecoveryData, documentOutline } from '../model/Document';
+import { copyInfo, DocumentInfo, DraftSnapshot, Heading, RecoveryData, documentOutline } from '../model/Document';
 import { DocumentFiles, FileContents } from '../storage/DocumentFiles';
-import { LocalState } from '../storage/LocalState';
+import { DraftCoordinator } from './DraftCoordinator';
 import { DocumentFormat, FormatRegistry } from './FormatRegistry';
 import { AppText } from '../i18n/AppText';
 import { userNotice } from './UserNotice';
+import { TextEncoding } from './TextEncoding';
 
 /** The one open document. DocumentView mirrors these fields into ArkUI state. */
 export class DocumentSession {
+  id: number = 0;
+  revision: number = 0;
+  /** 'idle', 'save', or 'delete'. A second file operation waits until this returns to idle. */
+  fileOperation: string = 'idle';
   info: DocumentInfo = new DocumentInfo();
   source: string = '';
   savedText: string = '';
+  lineEndings: string = '';
+
   editing: boolean = false;
+  writeUncertain: boolean = false;
+  pendingWriteText: string = '';
+  pendingWriteUri: string = '';
+
+  isDirty(): boolean {
+    return this.source !== this.savedText || this.lineEndings !== this.info.lineEndings;
+  }
+
+  constructor(id: number) {
+    this.id = id;
+  }
 }
 
 export class SaveResult {
+  sessionId: number = 0;
   saved: boolean = false;
   stillDirty: boolean = false;
   message: string = '';
+}
+
+export class DeleteResult {
+  sessionId: number = 0;
+  deleted: boolean = false;
+  retainedEdits: boolean = false;
+  recoveryCleanupFailed: boolean = false;
 }
 
 function fileNameFromUri(uri: string): string {
@@ -33,10 +59,47 @@ function fileNameFromUri(uri: string): string {
 }
 
 export class DocumentService {
-  private static session: DocumentSession = new DocumentSession();
+  private static nextId: number = 1;
+  private static session: DocumentSession = new DocumentSession(DocumentService.allocateId());
+  private static drafts: DraftCoordinator | null = null;
+  private static recoveryError: (sessionId: number, error: Error) => void =
+    (_sessionId: number, _error: Error): void => {};
+
+  private static allocateId(): number {
+    const id = DocumentService.nextId;
+    DocumentService.nextId++;
+    return id;
+  }
 
   static current(): DocumentSession {
     return DocumentService.session;
+  }
+
+  static initializeRecovery(context: common.UIAbilityContext): void {
+    if (DocumentService.drafts !== null) return;
+    const coordinator = new DraftCoordinator(context);
+    coordinator.onError = (sessionId: number, error: Error): void => {
+      DocumentService.recoveryError(sessionId, error);
+    };
+    coordinator.activate(DocumentService.session.id);
+    DocumentService.drafts = coordinator;
+  }
+
+  static bindRecoveryError(handler: (sessionId: number, error: Error) => void): void {
+    DocumentService.recoveryError = handler;
+  }
+
+  static unbindRecoveryError(): void {
+    DocumentService.recoveryError = (_sessionId: number, _error: Error): void => {};
+  }
+
+  static activateSession(session: DocumentSession): void {
+    if (DocumentService.drafts !== null) DocumentService.drafts.activate(session.id);
+  }
+
+  static flushRecovery(): Promise<void> {
+    if (DocumentService.drafts === null) return Promise.resolve();
+    return DocumentService.drafts.flush();
   }
 
   static formatFor(info: DocumentInfo): DocumentFormat {
@@ -50,25 +113,39 @@ export class DocumentService {
     return documentOutline(source);
   }
 
-  static edit(text: string): void {
-    DocumentService.session.source = text;
+  /** Returns false when the text did not change, so callers can skip analysis and history. */
+  static edit(text: string, endings: string = ''): boolean {
+    const session = DocumentService.session;
+    if (!session.editing || (session.source === text && session.lineEndings === endings)) return false;
+    session.lineEndings = endings;
+    session.source = text;
+    session.revision++;
+    if (!session.isDirty() && !session.writeUncertain) DocumentService.releaseDraft(session);
+    else DocumentService.scheduleDraft(session);
+    return true;
   }
 
   static close(): void {
     DocumentService.session.editing = false;
   }
 
-  static startNew(id: string): void {
+  /** Drop the previous recovery file before publishing another session. */
+  static async startNew(id: string): Promise<boolean> {
+    if (DocumentService.session.fileOperation !== 'idle') return false;
+    if (!await DocumentService.abandonCurrentRecovery()) return false;
+    if (DocumentService.session.fileOperation !== 'idle') return false;
     const format = FormatRegistry.byId(id);
     const info = new DocumentInfo();
     info.name = FormatRegistry.defaultName(format);
     info.formatId = format.id;
-    const session = new DocumentSession();
+    const session = new DocumentSession(DocumentService.allocateId());
     session.info = info;
     session.source = format.starter;
     session.savedText = '';
     session.editing = true;
     DocumentService.session = session;
+    DocumentService.activateSession(session);
+    return true;
   }
 
   /**
@@ -76,34 +153,55 @@ export class DocumentService {
    * strictType rejects system requests whose filename and declared type are both unknown.
    */
   static async openUri(uri: string, declaredType: string, writeRequested: boolean,
-    strictType: boolean, beforeAdopt: (() => Promise<boolean>) | null = null): Promise<boolean> {
+    strictType: boolean, beforeAdopt: (() => Promise<boolean>) | null = null, encoding: string = ''): Promise<boolean> {
+    if (DocumentService.session.fileOperation !== 'idle') return false;
     const hinted = FormatRegistry.resolve(fileNameFromUri(uri), declaredType, !strictType);
-    const access = await DocumentFiles.prepare(uri, writeRequested);
-    const loaded = DocumentFiles.read(uri);
-    if (loaded.info.name.length === 0) {
-      if (hinted === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
-      loaded.info.name = FormatRegistry.defaultName(hinted);
+    let access = await DocumentFiles.prepare(uri, writeRequested, false);
+    let adopted = false;
+    try {
+      const loaded = await DocumentFiles.read(uri, encoding);
+      if (loaded.info.name.length === 0) {
+        if (hinted === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
+        loaded.info.name = FormatRegistry.defaultName(hinted);
+      }
+      const resolved = FormatRegistry.resolve(loaded.info.name, declaredType, !strictType);
+      if (resolved === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
+      loaded.info.formatId = resolved.id;
+      if (DocumentService.session.fileOperation !== 'idle') return false;
+      if (beforeAdopt !== null && !await beforeAdopt()) return false;
+      if (DocumentService.session.fileOperation !== 'idle') return false;
+      access = await DocumentFiles.prepare(uri, writeRequested);
+      loaded.info.writable = access.writable;
+      loaded.info.persistent = access.persistent;
+      if (DocumentService.session.fileOperation !== 'idle') return false;
+      if (beforeAdopt !== null && !await beforeAdopt()) return false;
+      if (DocumentService.session.fileOperation !== 'idle') return false;
+      adopted = await DocumentService.adopt(loaded);
+      return adopted;
+    } finally {
+      if (!adopted && DocumentService.current().info.uri !== uri) {
+        await DocumentFiles.releaseNew(uri, access);
+      }
     }
-    const resolved = FormatRegistry.resolve(loaded.info.name, declaredType, !strictType);
-    if (resolved === null) throw userNotice(AppText.text($r('app.string.unsupported_format')));
-    loaded.info.formatId = resolved.id;
-    loaded.info.writable = access.writable;
-    loaded.info.persistent = access.persistent;
-    if (beforeAdopt !== null && !await beforeAdopt()) return false;
-    DocumentService.adopt(loaded);
-    return true;
   }
 
-  static adopt(opened: FileContents): void {
-    const session = new DocumentSession();
+  static async adopt(opened: FileContents): Promise<boolean> {
+    if (DocumentService.session.fileOperation !== 'idle') return false;
+    if (!await DocumentService.abandonCurrentRecovery()) return false;
+    if (DocumentService.session.fileOperation !== 'idle') return false;
+    const session = new DocumentSession(DocumentService.allocateId());
     session.info = opened.info;
     session.source = opened.text;
     session.savedText = opened.text;
+    session.lineEndings = opened.info.lineEndings;
     session.editing = true;
     DocumentService.session = session;
+    DocumentService.activateSession(session);
+    return true;
   }
 
   static async restore(draft: RecoveryData, canAdopt: (() => boolean) | null = null): Promise<boolean> {
+    if (DocumentService.session.fileOperation !== 'idle') return false;
     const previous = DocumentService.session;
     const previousSource = previous.source;
     const previousEditing = previous.editing;
@@ -118,15 +216,49 @@ export class DocumentService {
     info.formatId = draft.formatId;
     info.writable = false;
     info.persistent = false;
-    if (draft.uri.length > 0) {
+    let restoredBaseline = draft.savedText;
+    let restoredUncertain = draft.writeUncertain === true;
+    let restoredPendingText = typeof draft.pendingWriteText === 'string' ? draft.pendingWriteText : '';
+    let restoredPendingUri = typeof draft.pendingWriteUri === 'string' ? draft.pendingWriteUri : '';
+    const pendingSaveAs = restoredUncertain && restoredPendingUri.length > 0 && restoredPendingUri !== draft.uri;
+    let confirmedTarget = false;
+    if (pendingSaveAs) {
+      try {
+        const access = await DocumentFiles.prepare(restoredPendingUri, true);
+        const target = await DocumentFiles.read(restoredPendingUri, info.encoding);
+        if (target.text === restoredPendingText) {
+          info.uri = restoredPendingUri;
+          info.name = target.info.name;
+          info.newline = target.info.newline;
+          info.lineEndings = target.info.lineEndings;
+          if (draft.newline === 'mixed' && info.newline !== 'mixed') {
+            const mark = info.newline === '\r' ? 'c' : info.newline === '\r\n' ? 'r' : 'n';
+            info.lineEndings = mark.repeat(TextEncoding.lineBreakCount(target.text));
+            info.newline = 'mixed';
+          }
+          info.encoding = target.info.encoding;
+          info.hasBom = target.info.hasBom;
+          info.fingerprint = target.info.fingerprint;
+          info.formatId = FormatRegistry.byFilename(target.info.name).id;
+          info.writable = access.writable;
+          info.persistent = access.persistent;
+          restoredBaseline = restoredPendingText;
+          restoredUncertain = false;
+          restoredPendingText = '';
+          restoredPendingUri = '';
+          confirmedTarget = true;
+        }
+      } catch { /* Keep the old checkpoint, but do not overwrite its original file. */ }
+    }
+    if (!confirmedTarget && draft.uri.length > 0) {
       try {
         const access = await DocumentFiles.prepare(draft.uri, true);
-        const disk = DocumentFiles.read(draft.uri);
+        const disk = await DocumentFiles.read(draft.uri, info.encoding);
         const changed = draft.fingerprint.length > 0
           ? disk.info.fingerprint !== draft.fingerprint
           : disk.text !== draft.savedText;
         info.persistent = access.persistent;
-        info.writable = access.writable && !changed;
+        info.writable = access.writable && !changed && !pendingSaveAs;
         if (!changed) info.fingerprint = disk.info.fingerprint;
         if (info.formatId.length === 0) info.formatId = FormatRegistry.byFilename(disk.info.name).id;
       } catch {
@@ -134,82 +266,282 @@ export class DocumentService {
         info.persistent = false;
       }
     }
-    const session = new DocumentSession();
+    const session = new DocumentSession(DocumentService.allocateId());
     session.info = info;
     session.source = draft.text;
-    session.savedText = draft.savedText;
+    session.savedText = restoredBaseline;
+    if (info.newline === 'mixed') {
+      session.lineEndings = draft.editedEndings ?? (session.source === restoredBaseline ? info.lineEndings : draft.lineEndings);
+      if (TextEncoding.lineBreakCount(session.source) !== session.lineEndings.length) {
+        // Old drafts had only the saved line map. Recover the text as a separate LF copy.
+        if (draft.editedEndings !== undefined) throw userNotice(AppText.text($r('app.string.encoding_lossy')));
+        info.writable = false;
+        info.persistent = false;
+        info.uri = '';
+        info.fingerprint = '';
+        restoredPendingText = '';
+        restoredPendingUri = '';
+        info.newline = '\n';
+        info.lineEndings = '';
+        session.lineEndings = '';
+      }
+    }
+    session.writeUncertain = restoredUncertain;
+    session.pendingWriteText = restoredPendingText;
+    session.pendingWriteUri = restoredPendingUri;
     session.editing = true;
     if (DocumentService.session !== previous || previous.source !== previousSource ||
-      previous.editing !== previousEditing || (canAdopt !== null && !canAdopt())) return false;
+      previous.editing !== previousEditing || DocumentService.session.fileOperation !== 'idle' ||
+      (canAdopt !== null && !canAdopt())) return false;
     DocumentService.session = session;
+    DocumentService.activateSession(session);
+    DocumentService.scheduleDraft(session);
     return true;
   }
 
   static async save(context: common.UIAbilityContext, asNewFile: boolean): Promise<SaveResult> {
     const result = new SaveResult();
     const session = DocumentService.session;
-    if (!session.editing) return result;
+    result.sessionId = session.id;
+    if (!session.editing || session.fileOperation !== 'idle') return result;
+    session.fileOperation = 'save';
     const snapshot = session.source;
+    const snapshotEndings = session.lineEndings;
+    const baseline = session.savedText;
     const previous = session.info;
     const readOnly = !asNewFile && previous.uri.length > 0 && !previous.writable;
-    let saveAs = asNewFile || previous.uri.length === 0 || !previous.writable;
-    let uri = saveAs ? '' : previous.uri;
-    if (uri.length === 0) {
-      uri = await DocumentFiles.chooseSave(context, previous.name);
-      if (uri.length === 0) return result;
-      saveAs = true;
+    if (!asNewFile && previous.uri.length > 0 && previous.writable && !session.isDirty() && !session.writeUncertain) {
+      session.fileOperation = 'idle';
+      result.saved = true;
+      result.message = AppText.text($r('app.string.saved'));
+      return result;
     }
-    if (DocumentService.session !== session || !session.editing) return result;
-    const access = await DocumentFiles.prepare(uri, true);
-    if (DocumentService.session !== session || !session.editing) return result;
-    if (!access.writable) throw userNotice(AppText.text($r('app.string.no_write_permission')));
-    const target = copyInfo(previous);
-    target.uri = uri;
-    target.writable = true;
-    target.persistent = access.persistent;
-    if (saveAs && target.newline === 'mixed') {
-      const parts = snapshot.split('\n');
-      if (parts.length !== target.lineEndings.length + 1) {
-        target.newline = '\n';
-        target.lineEndings = '';
+    let writeStarted = false;
+    let checkpointPrepared = false;
+    const oldUncertain = session.writeUncertain;
+    const oldPendingText = session.pendingWriteText;
+    const oldPendingUri = session.pendingWriteUri;
+    try {
+      let saveAs = asNewFile || previous.uri.length === 0 || !previous.writable;
+      let uri = saveAs ? '' : previous.uri;
+      if (uri.length === 0) {
+        uri = await DocumentFiles.chooseSave(context, previous.name);
+        if (uri.length === 0 || DocumentService.session !== session || !session.editing) return result;
+        saveAs = true;
       }
-    }
-    if (session.source !== session.savedText) {
-      const draft = new RecoveryData();
-      draft.name = previous.name;
-      draft.uri = previous.uri;
-      draft.text = session.source;
-      draft.savedText = session.savedText;
-      draft.newline = previous.newline;
-      draft.lineEndings = previous.lineEndings;
-      draft.encoding = previous.encoding;
-      draft.hasBom = previous.hasBom;
-      draft.fingerprint = previous.fingerprint;
-      draft.formatId = previous.formatId;
-      draft.writable = previous.writable;
-      draft.persistent = previous.persistent;
-      // Failure here aborts before the provider's file is changed.
-      LocalState.writeDraft(context, draft);
-    }
-    const sameTarget = previous.uri.length > 0 && uri === previous.uri;
-    DocumentFiles.write(target, snapshot, !saveAs || sameTarget);
-    if (saveAs) {
-      const reopened = DocumentFiles.read(uri);
-      target.name = reopened.info.name.length > 0 ? reopened.info.name : previous.name;
-      target.fingerprint = reopened.info.fingerprint;
+      if (DocumentService.session !== session || !session.editing) return result;
+      const access = await DocumentFiles.prepare(uri, true);
+      if (DocumentService.session !== session || !session.editing) return result;
+      if (!access.writable) throw userNotice(AppText.text($r('app.string.no_write_permission')));
+      const target = copyInfo(previous);
+      target.uri = uri;
       target.writable = true;
       target.persistent = access.persistent;
+      target.lineEndings = snapshotEndings;
+      const prepared = await DocumentFiles.prepareWrite(context.cacheDir, target, snapshot);
+      try {
+        if (DocumentService.session !== session || !session.editing) return result;
+        session.writeUncertain = true;
+        session.pendingWriteText = snapshot;
+        session.pendingWriteUri = uri;
+        checkpointPrepared = true;
+        await DocumentService.checkpointRecovery(session, baseline, previous);
+        if (DocumentService.session !== session || !session.editing) return result;
+        const sameTarget = previous.uri.length > 0 && uri === previous.uri;
+        await DocumentFiles.write(target, !saveAs || sameTarget, prepared,
+          (): void => { writeStarted = true; });
+      } finally {
+        await prepared.close();
+      }
+      if (DocumentService.session !== session || !session.editing || session.fileOperation !== 'save') return result;
       const resolved = FormatRegistry.resolve(target.name, '', true);
       if (resolved !== null) target.formatId = resolved.id;
+      session.info = target;
+      session.savedText = snapshot;
+      session.writeUncertain = false;
+      session.pendingWriteText = '';
+      session.pendingWriteUri = '';
+      result.saved = true;
+      result.sessionId = session.id;
+      let recoveryCommitted = false;
+      try {
+        // The pre-write checkpoint still points at the old baseline and possibly an old URI.
+        // Publish the verified target before attempting to remove that checkpoint.
+        await DocumentService.checkpointRecovery(session, session.savedText, session.info);
+        recoveryCommitted = true;
+      } catch (error) {
+        DocumentService.reportRecovery(session.id, error);
+        // Even a clean session must replace the stale pre-write checkpoint on retry.
+        if (DocumentService.drafts !== null) DocumentService.drafts.schedule(DocumentService.makeSnapshot(session));
+      }
+      if (recoveryCommitted && !session.isDirty()) {
+        try {
+          const cleared = await DocumentService.clearRecovery(session, 'saved');
+          if (!cleared) DocumentService.scheduleDraft(session);
+        } catch (error) {
+          DocumentService.reportRecovery(session.id, error);
+        }
+      }
+      result.stillDirty = session.isDirty();
+      if (result.stillDirty) {
+        DocumentService.scheduleDraft(session);
+        result.message = AppText.text($r('app.string.saved_dirty'));
+      } else if (readOnly) result.message = AppText.text($r('app.string.saved_readonly'));
+      else result.message = AppText.text($r('app.string.saved'));
+      if (!recoveryCommitted) {
+        const warning = AppText.text($r('app.string.saved_recovery_pending'));
+        result.message = result.stillDirty ? `${result.message}\n${warning}` : warning;
+      }
+      return result;
+    } catch (error) {
+      if (checkpointPrepared && !writeStarted) {
+        session.writeUncertain = oldUncertain;
+        session.pendingWriteText = oldPendingText;
+        session.pendingWriteUri = oldPendingUri;
+      }
+      if (checkpointPrepared && DocumentService.session === session && session.editing) {
+        if (writeStarted) {
+          try {
+            await DocumentService.checkpointRecovery(session, session.savedText, session.info);
+          } catch (recoveryError) {
+            DocumentService.reportRecovery(session.id, recoveryError);
+            DocumentService.scheduleDraft(session);
+          }
+        } else if (session.isDirty() || session.writeUncertain) DocumentService.scheduleDraft(session);
+        else DocumentService.releaseDraft(session);
+      }
+      if (error instanceof Error) throw error;
+      const detail = error as Error;
+      const wrapped = new Error(detail && typeof detail.message === 'string' ? detail.message : 'save failed');
+      if (detail && detail.name === 'UserNotice') wrapped.name = 'UserNotice';
+      throw wrapped;
+    } finally {
+      if (session.fileOperation === 'save') session.fileOperation = 'idle';
     }
-    session.info = target;
-    session.savedText = snapshot;
-    session.editing = true;
-    result.saved = true;
-    result.stillDirty = session.source !== snapshot;
-    if (result.stillDirty) result.message = AppText.text($r('app.string.saved_dirty'));
-    else if (readOnly) result.message = AppText.text($r('app.string.saved_readonly'));
-    else result.message = AppText.text($r('app.string.saved'));
-    return result;
+  }
+
+  static async moveToTrash(): Promise<DeleteResult> {
+    const result = new DeleteResult();
+    const session = DocumentService.session;
+    result.sessionId = session.id;
+    if (!session.editing || session.fileOperation !== 'idle') return result;
+    const sourceBefore = session.source;
+    const uri = session.info.uri;
+    session.fileOperation = 'delete';
+    try {
+      await DocumentFiles.moveToTrash(session.info);
+      if (DocumentService.session !== session || session.info.uri !== uri) return result;
+      result.deleted = true;
+      let keepSession = session.source !== sourceBefore;
+      if (!keepSession) {
+        try {
+          const cleared = await DocumentService.clearRecovery(session, 'discarded');
+          if (!cleared || session.source !== sourceBefore) keepSession = true;
+        } catch (error) {
+          DocumentService.reportRecovery(session.id, error);
+          result.recoveryCleanupFailed = true;
+          keepSession = true;
+        }
+      }
+      if (keepSession) {
+        result.retainedEdits = true;
+        session.info.uri = '';
+        session.info.writable = false;
+        session.info.persistent = false;
+        session.info.fingerprint = '';
+        session.savedText = '';
+        if (result.recoveryCleanupFailed && DocumentService.drafts !== null) {
+          try {
+            await DocumentService.drafts.checkpoint(DocumentService.makeSnapshot(session));
+          } catch (error) {
+            DocumentService.reportRecovery(session.id, error);
+            DocumentService.scheduleDraft(session);
+          }
+        } else {
+          DocumentService.scheduleDraft(session);
+        }
+      } else {
+        session.editing = false;
+      }
+      return result;
+    } finally {
+      if (session.fileOperation === 'delete') session.fileOperation = 'idle';
+    }
+  }
+
+  static async clearRecovery(owner: DocumentSession, _reason: string): Promise<boolean> {
+    if (DocumentService.drafts === null) return true;
+    return DocumentService.drafts.clear(DocumentService.makeSnapshot(owner));
+  }
+
+  private static reportRecovery(sessionId: number, error: Object): void {
+    const wrapped = error instanceof Error ? error : new Error('draft failed');
+    DocumentService.recoveryError(sessionId, wrapped);
+  }
+
+  /** Clear a recovery file before another document takes its place. A busy or newer edit keeps the current session. */
+  private static async abandonCurrentRecovery(): Promise<boolean> {
+    const owner = DocumentService.session;
+    if (!owner.editing) return true;
+    const source = owner.source;
+    const cleared = await DocumentService.clearRecovery(owner, 'discarded');
+    if (DocumentService.session !== owner || owner.fileOperation !== 'idle' || owner.source !== source) return false;
+    return cleared;
+  }
+
+  private static releaseDraft(session: DocumentSession): void {
+    if (DocumentService.drafts === null) return;
+    DocumentService.drafts.clear(DocumentService.makeSnapshot(session)).catch((error: Object): void => {
+      DocumentService.reportRecovery(session.id, error);
+    });
+  }
+
+  private static scheduleDraft(session: DocumentSession): void {
+    if (DocumentService.drafts === null || !session.editing) return;
+    if (!session.isDirty() && !session.writeUncertain) return;
+    DocumentService.drafts.schedule(DocumentService.makeSnapshot(session));
+  }
+
+  private static async checkpointRecovery(owner: DocumentSession, savedBaseline: string, info: DocumentInfo): Promise<void> {
+    if (DocumentService.drafts === null) throw new Error('recovery unavailable');
+    const shot = DocumentService.makeSnapshot(owner);
+    shot.data.text = owner.source;
+    shot.data.savedText = savedBaseline;
+    shot.data.name = info.name;
+    shot.data.uri = info.uri;
+    shot.data.newline = info.newline;
+    shot.data.lineEndings = info.lineEndings;
+    shot.data.encoding = info.encoding;
+    shot.data.hasBom = info.hasBom;
+    shot.data.fingerprint = info.fingerprint;
+    shot.data.formatId = info.formatId;
+    shot.data.writable = info.writable;
+    shot.data.persistent = info.persistent;
+    await DocumentService.drafts.checkpoint(shot);
+  }
+
+  private static makeSnapshot(session: DocumentSession): DraftSnapshot {
+    const data = new RecoveryData();
+    data.name = session.info.name;
+    data.uri = session.info.uri;
+    data.text = session.source;
+    data.savedText = session.savedText;
+    data.newline = session.info.newline;
+    data.lineEndings = session.info.lineEndings;
+    data.editedEndings = session.lineEndings;
+    data.encoding = session.info.encoding;
+    data.hasBom = session.info.hasBom;
+    data.fingerprint = session.info.fingerprint;
+    data.formatId = session.info.formatId;
+    data.writable = session.info.writable;
+    data.persistent = session.info.persistent;
+    data.writeUncertain = session.writeUncertain;
+    data.pendingWriteText = session.pendingWriteText;
+    data.pendingWriteUri = session.pendingWriteUri;
+    const shot = new DraftSnapshot();
+    shot.sessionId = session.id;
+    shot.revision = session.revision;
+    shot.data = data;
+    return shot;
   }
 }

@@ -11,19 +11,21 @@ marknote/
 │       ├── ets/
 │       │   ├── entryability/         应用启动及系统文件打开入口
 │       │   ├── pages/                首页、文稿、设置及公共界面组件
-│       │   ├── document/             文稿会话、格式、编辑历史、查找和编码
+│       │   ├── document/             文稿会话、格式、编辑桥接、查找和编码
 │       │   ├── i18n/                 界面文字资源读取
 │       │   ├── model/                文稿及大纲数据结构
-│       │   └── storage/              文件访问和本机状态
-│       └── resources/rawfile/        构建生成的预览页与许可证文本
+│       │   └── storage/              分块文件读写、草稿存储和本机状态
+│       └── resources/rawfile/        构建生成的编辑器、预览页与许可证文本
 ├── renderer/                         离线预览源码及构建脚本
 │   ├── package.json、package-lock.json  npm 依赖声明与锁定版本
 │   ├── src/renderers/                各文稿格式的渲染器
 │   ├── src/styles.css                预览样式
-│   ├── scripts/                      安装依赖修复、打包资源及生成许可证声明
-│   └── tests/                        预览、依赖安装及许可证收集测试
+│   ├── scripts/                      安装依赖修复与打包资源
+│   └── tests/                        启动恢复和编辑同步回归检查
+├── editor/                           CodeMirror 离线编辑器源码、测试和构建脚本
+├── shared/                           预览与编辑器共用的语言标识、配色与编辑消息类型
 ├── docs/                             功能、架构、隐私及发布文档
-├── tools/                            资源键、占位符及依赖元数据检查
+├── tools/                            资源检查与许可证声明生成
 ├── examples/                         Markdown、SVG 和 TeX 示例文稿
 ├── third_party/                      第三方依赖说明与补充许可证原文
 │   └── upstream-licenses/            按依赖版本核验的上游许可证及声明
@@ -43,16 +45,17 @@ marknote/
 | 修改内容 | 主要位置 |
 | --- | --- |
 | 首页列表和新建菜单 | `pages/HomeView.ets`、`pages/Index.ets` |
-| 文稿编辑、查找和保存 | `pages/DocumentView.ets` |
-| 文稿预览和大纲界面 | `pages/DocumentPreviewView.ets`、`pages/DocumentOutlineView.ets` |
-| 编辑工具栏 | `pages/FormatBarView.ets`、`document/FormatRegistry.ets`、`document/EditorActions.ts` |
+| 文稿编辑、查找和保存 | `pages/DocumentView.ets`、`pages/DocumentFindBar.ets` |
+| 文稿预览和大纲界面 | `pages/DocumentPreviewView.ets`、`pages/PreviewDispatch.ts`、`pages/DocumentOutlineView.ets` |
+| 编辑工具栏 | `pages/FormatBarView.ets`、`document/FormatRegistry.ets`、`editor/src/editor-actions.ts` |
 | 标题栏与滚动 | `pages/HdsMaterialStyles.ets`、`pages/PageScrollPolicy.ets`、`pages/DocumentScrollLayer.ets` |
 | 搜索框、分段按钮与编辑工具栏材质 | `pages/ImmersiveMaterials.ets` |
-| 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets`、`pages/LicenseText.ts` |
+| 设置页面 | `pages/SettingsPage.ets`、`pages/SettingsView.ets`、`pages/SettingsDetail.ets`、`pages/SettingsListRow.ets`、`pages/SettingsReadingFrame.ets`、`pages/LicenseText.ts` |
 | 界面语言 | `i18n/AppText.ets`、`i18n/AppLanguage.ets`，以及 `entry/src/main/resources/` 下 `base`（简体中文）、`zh_Hant`、`bo`、`en_US`、`ja`、`ko`、`ru`、`ar`、`ug` 的 `element/string.json` |
 | 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
-| 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/LocalState.ets` |
+| 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/DraftCoordinator.ets`、`document/StartupRecovery.ts`、`document/DocumentAnalysis.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/DocumentStream.ets`、`storage/DraftFile.ets`、`storage/LocalState.ets` |
 | Markdown 本地图片 | `document/LocalImages.ets`、`pages/DocumentPreviewView.ets`，以及仓库根目录下的 `renderer/src/renderers/markdown.ts` |
+| Markdown 网页链接 | `pages/DocumentPreviewView.ets`、`pages/DocumentView.ets`，以及仓库根目录下的 `renderer/src/renderers/external-link.ts`、`renderer/src/preview-link-message.ts` |
 | 文稿分享 | `document/DocumentShare.ets`、`pages/DocumentMenus.ets` |
 | 文件编码与换行 | `document/TextEncoding.ets` |
 | 格式注册与文件关联 | `document/FormatRegistry.ets`，仓库根目录下的 `entry/src/main/module.json5` 和 `renderer/src/renderers/` |

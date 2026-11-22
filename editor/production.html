@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
+  <title>MarkNote Editor</title>
+</head>
+<body>
+  <main id="editor"></main>
+  <div id="source-rail" hidden>
+    <input id="source-scrollbar" type="range" role="scrollbar" aria-controls="editor" aria-orientation="vertical"
+      min="0" max="0" value="0" step="any">
+  </div>
+  <script type="module" src="/src/production.ts"></script>
+</body>
+</html>

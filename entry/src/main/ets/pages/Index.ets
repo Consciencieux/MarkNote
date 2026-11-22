@@ -1,29 +1,48 @@
 import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
 import {
-  ColorMetrics, ComponentContent, LengthMetrics, mediaquery, SegmentButtonV2Items, TabSegmentButtonV2
+  ColorMetrics, ComponentContent, ItemState, LengthMetrics, SegmentButtonV2Items, SymbolGlyphModifier,
+  TabSegmentButtonV2, ToolBar, ToolBarOptions
 } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationTitleMode,
-  HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleBarOptions, TitleBarContentOptions
 } from '@kit.UIDesignKit';
-import { RecentDocument } from '../model/Document';
+import { RecentDocument, RecoveryData } from '../model/Document';
 import { DocumentService, DocumentSession } from '../document/DocumentService';
+import { StartupRecovery } from '../document/StartupRecovery';
 import { sortRecentDocuments } from '../document/RecentOrder';
 import { LaunchRequests, OpenRequest } from '../document/LaunchRequests';
 import { HomeView } from './HomeView';
 import { DocumentView } from './DocumentView';
 import { SettingsPage } from './SettingsPage';
-import { scrollingTitleBar } from './HdsMaterialStyles';
+import { scrollingTitleBar, navigationMenuIcon } from './HdsMaterialStyles';
 import { segmentButtonMaterial } from './ImmersiveMaterials';
 import { menuMaterialOptions } from './MenuMaterialOptions';
-import { DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
+import { chooseDocumentEncoding, DocumentMenuContent, HomeMenuContent, menuBridge } from './DocumentMenus';
 import { documentBridge } from './DocumentBridge';
+import { UnknownEncodingError } from '../storage/DocumentStream';
 import { DocumentFiles } from '../storage/DocumentFiles';
+import { DocumentShare, SharedFile } from '../document/DocumentShare';
 import { LocalState } from '../storage/LocalState';
 import { AppText } from '../i18n/AppText';
 import { shownDetail } from '../document/UserNotice';
 import { applyAppLanguage, isRightToLeftLanguage, normalizeAppLanguage, publishAppLanguage } from '../i18n/AppLanguage';
+
+const SELECTION_MORE_ID = 'marknote-selection-more';
+
+interface SelectionMoreOptions {
+  onDelete: () => void;
+}
+
+@Builder
+function SelectionMoreMenu(options: SelectionMoreOptions) {
+  Menu() {
+    MenuItem({ content: $r('app.string.delete_title'),
+      symbolEndIcon: new SymbolGlyphModifier($r('sys.symbol.trash')).fontColor([$r('sys.color.warning')]) })
+      .contentFontColor($r('sys.color.warning'))
+      .onClick(options.onDelete)
+  }
+}
 
 /**
  * 首页外壳：导航栈、主题、设置与关于，以及新建/打开/恢复的编排。
@@ -32,20 +51,22 @@ import { applyAppLanguage, isRightToLeftLanguage, normalizeAppLanguage, publishA
 @Entry
 @Component
 struct Index {
-  @State private recents: RecentDocument[] = [];
+  @State @Watch('refreshSelectionToolbar') private recents: RecentDocument[] = [];
   @State private sortOrder: string = 'modified';
   @State private theme: string = 'system';
   @State private language: string = 'default';
   @State private version: string = '';
-  @State private wide: boolean = false;
   @State private navigationMode: NavigationMode = NavigationMode.Stack;
   @State private documentExpanded: boolean = false;
   @State private documentOpen: boolean = false;
   /** 首页分段按钮：0 是全部，1 是收藏。 */
   @State private librarySegment: number = 0;
+  @State private selecting: boolean = false;
+  @State @Watch('refreshSelectionToolbar') private selectedUris: string[] = [];
+  @State private selectionToolbarItems: ToolBarOptions = new ToolBarOptions();
   private readonly librarySegmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
     { text: $r('app.string.home_all') },
-    { text: $r('app.string.home_favorites') }
+    { text: $r('app.string.home_favorites_segment'), accessibilityText: $r('app.string.home_favorites') }
   ]);
   /** 用户改过语言后，启动时尚未返回的读取不能把选择盖回去。 */
   private languageEpoch: number = 0;
@@ -57,13 +78,16 @@ struct Index {
   private context: common.UIAbilityContext | null = null;
   private routes: NavPathStack = new NavPathStack();
   private libraryScroller: Scroller = new Scroller();
-  private wideQuery: mediaquery.MediaQueryListener | null = null;
   private homeMenu: ComponentContent<Object> | null = null;
   private documentMenu: ComponentContent<Object> | null = null;
   private recentTask: Promise<void> = Promise.resolve();
   /** 草稿恢复先入队，外部打开接在后面，避免两边同时替换会话。 */
   private openQueue: Promise<void> = Promise.resolve();
   private startupTask: Promise<void> = Promise.resolve();
+  private recovery: StartupRecovery = new StartupRecovery((): Promise<boolean> => this.resumeDraft(),
+    (_error: Error): void => {
+      if (!this.disposed) this.toast($r('app.string.draft_read_failed'));
+    });
   private externalWaiting: number = 0;
   private disposed: boolean = false;
 
@@ -90,8 +114,8 @@ struct Index {
     menuBridge.dismiss = (next: () => void): void => this.afterMenu(next);
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     if (this.context) this.language = LocalState.readLanguageSync(this.context);
+    AppStorage.setOrCreate('marknote_code_theme', this.context ? LocalState.readCodeThemeSync(this.context) : 'github');
     publishAppLanguage(this.language);
-    this.bindWideBreakpoint();
     this.startupTask = this.initialize();
   }
 
@@ -100,13 +124,13 @@ struct Index {
     LaunchRequests.unbind();
     documentBridge.cancelWait();
     this.releaseMenus();
-    if (this.wideQuery !== null) {
-      this.wideQuery.off('change');
-      this.wideQuery = null;
-    }
   }
 
   onBackPress(): boolean {
+    if (this.selecting && this.routes.size() === 0) {
+      this.clearSelection();
+      return true;
+    }
     if (this.routes.size() > 0) {
       const names = this.routes.getAllPathName();
       const top = names.length > 0 ? names[names.length - 1] : '';
@@ -123,6 +147,7 @@ struct Index {
 
   private async initialize(): Promise<void> {
     if (!this.context) return;
+    DocumentService.initializeRecovery(this.context);
     this.readVersion();
     const sortEpoch = this.sortEpoch;
     const themeEpoch = this.themeEpoch;
@@ -144,7 +169,7 @@ struct Index {
     }
     if (this.disposed) return;
     // 先开始恢复草稿，再接入外部打开。绑定若立刻交出暂存请求，也会排到恢复之后。
-    this.openQueue = this.resumeDraft();
+    this.openQueue = this.recovery.ensure().then((): void => {});
     LaunchRequests.bind((request: OpenRequest): void => this.enqueueExternal(request));
     await this.openQueue;
   }
@@ -171,18 +196,13 @@ struct Index {
    */
   private async openAfterReady(request: OpenRequest): Promise<void> {
     if (this.disposed) return;
-    if (this.documentOpen) {
-      this.revealDocumentRoute();
-      const visible = await documentBridge.whenVisible();
-      if (this.disposed) return;
-      if (!visible) {
-        this.toast($r('app.string.document_not_visible'));
-        return;
-      }
-      const accepted = await documentBridge.saveBeforeLeaving();
-      if (!accepted) return;
+    if (!await this.recovery.ensure()) return;
+    if (!await this.confirmLeaveIfOpen(true)) return;
+    try {
+      if (!this.disposed) await this.openExternal(request);
+    } finally {
+      documentBridge.resumeEditing();
     }
-    if (!this.disposed) await this.openExternal(request);
   }
 
   /** 版本号只读一次，供「关于」页显示；读取失败时由页面显示提示。 */
@@ -199,29 +219,54 @@ struct Index {
    * 正常离开会清掉草稿，所以启动时还存在的草稿只可能是上次异常退出留下的。
    * 直接接着编辑，不再让用户去首页找一张恢复卡片。
    */
-  private async resumeDraft(): Promise<void> {
-    if (!this.context || this.routes.size() > 0) return;
-    const draft = LocalState.readDraft(this.context);
-    if (draft === null) return;
+  private async resumeDraft(): Promise<boolean> {
+    if (!this.context || this.disposed) return false;
+    let draft: RecoveryData | null;
     try {
-      if (!await DocumentService.restore(draft, (): boolean => !this.disposed) || this.disposed) return;
-      this.presentOpened();
-      if (this.externalWaiting === 0) this.toast($r('app.string.draft_restored'));
+      draft = await LocalState.readDraft(this.context);
     } catch (error) {
-      // A failure to restore is not consent to destroy the only recovery copy.
-      this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
+      if (!LocalState.isInvalidDraft(error as Object)) throw error instanceof Error ? error : new Error('draft read failed');
+      if (!await this.confirmDamagedDraft() || !this.context || this.disposed) return false;
+      await LocalState.quarantineDraft(this.context);
+      if (!this.disposed) this.toast($r('app.string.draft_corrupt_saved'));
+      return !this.disposed;
     }
+    if (draft === null) return true;
+    if (!await DocumentService.restore(draft, (): boolean => !this.disposed)) {
+      if (!this.disposed) throw new Error('draft restore blocked');
+      return false;
+    }
+    if (this.disposed) return false;
+    this.presentOpened();
+    if (this.externalWaiting === 0) this.toast($r('app.string.draft_restored'));
+    return true;
   }
 
-  /**
-   * 分栏阈值使用 ArkUI 典型 WIDTH_LG 断点（API 枚举文档 ts-appendix-enums）：窗口宽度达到 840vp。
-   * 监听仍由官方媒体查询 API 完成，避免在页面区域变化事件里自行计算宽度。
-   */
-  private bindWideBreakpoint(): void {
-    this.wideQuery = this.getUIContext().getMediaQuery().matchMediaSync('(width >= 840vp)');
-    this.wide = this.wideQuery.matches;
-    this.wideQuery.on('change', (result: mediaquery.MediaQueryResult) => {
-      this.wide = result.matches;
+  /** A damaged copy is kept separately only after the user chooses to continue. */
+  private confirmDamagedDraft(): Promise<boolean> {
+    return new Promise<boolean>((resolve: (accepted: boolean) => void): void => {
+      let settled = false;
+      const finish = (accepted: boolean): void => {
+        if (settled) return;
+        settled = true;
+        resolve(accepted);
+      };
+      this.getUIContext().showAlertDialog({
+        message: AppText.text($r('app.string.draft_corrupt_message')),
+        autoCancel: true,
+        buttonDirection: DialogButtonDirection.HORIZONTAL,
+        buttons: [
+          { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => finish(false) },
+          { value: AppText.text($r('app.string.draft_corrupt_keep')), primary: true, action: (): void => finish(true) }
+        ],
+        cancel: (): void => finish(false),
+        onWillDismiss: (action: DismissDialogAction): void => {
+          if (action.reason === DismissReason.PRESS_BACK || action.reason === DismissReason.TOUCH_OUTSIDE) {
+            action.dismiss();
+            finish(false);
+          }
+        }
+      });
     });
   }
 
@@ -272,20 +317,6 @@ struct Index {
     }
   }
 
-  private menuIcon(label: ResourceStr, symbol: Resource, id: string,
-    action: () => void): HdsNavigationMenuItemOptions {
-    // 只配必要的字段；isEnabled 默认 true、type 默认 IconStyleMode.NORMAL，不再重复写。
-    // componentId 是 openMenu 的锚点 id（见《不依赖UI组件的全局菜单》），必须保留。
-    const content: HdsNavigationIconOptions = {
-      label: label,
-      icon: symbol,
-      action: action,
-      componentId: id
-    };
-    const item: HdsNavigationMenuItemOptions = { content: content };
-    return item;
-  }
-
   @Builder
   private HomeSegment() {
     // 标题栏自定义区域按官方示例给两侧操作保留空间。
@@ -297,8 +328,19 @@ struct Index {
         Row() {
           TabSegmentButtonV2({
             items: this.librarySegmentItems,
+            itemPadding: {
+              top: LengthMetrics.resource($r('sys.float.padding_level2')),
+              bottom: LengthMetrics.resource($r('sys.float.padding_level2')),
+              start: LengthMetrics.resource($r('sys.float.padding_level2')),
+              end: LengthMetrics.resource($r('sys.float.padding_level2'))
+            },
             selectedIndex: this.librarySegment,
-            $selectedIndex: (index: number): void => { this.librarySegment = index; },
+            $selectedIndex: (index: number): void => {
+              if (this.librarySegment === index) return;
+              this.clearSelection();
+              this.librarySegment = index;
+              this.libraryScroller.scrollTo({ xOffset: 0, yOffset: 0 });
+            },
             itemSelectedFontColor: ColorMetrics.resourceColor($r('sys.color.font_emphasize')),
             // 默认选中背景与强调文字在深色模式下对比不足；使用随主题变化的系统强调背景。
             // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ohos-arkui-advanced-segmentbuttonv2/
@@ -325,6 +367,21 @@ struct Index {
   }
 
   private homeTitle(): HdsNavigationTitleBarOptions {
+    if (this.selecting) {
+      const selected: TitleBarContentOptions = {
+        title: {
+          mainTitle: this.language.length >= 0 ?
+            AppText.format($r('app.string.home_selected'), String(this.selectedUris.length)) : ''
+        }
+      };
+      selected.menu = {
+        value: [
+          navigationMenuIcon($r('app.string.dialog_cancel'), $r('sys.symbol.xmark'), 'marknote-select-cancel',
+            (): void => this.clearSelection())
+        ]
+      };
+      return scrollingTitleBar(selected);
+    }
     // 《设置自定义区域》要求自定义节点不要挡住标题文字和菜单。
     const content: TitleBarContentOptions = {
       title: { mainTitle: '' },
@@ -332,7 +389,7 @@ struct Index {
     };
     content.menu = {
       value: [
-        this.menuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
+        navigationMenuIcon($r('app.string.menu_more'), $r('sys.symbol.dot_grid_2x2'), 'marknote-home-more',
           (): void => this.openHomeMenu())
       ]
     };
@@ -434,18 +491,32 @@ struct Index {
     void this.startupTask.then((): void => {
       this.openQueue = this.openQueue.catch((): void => {}).then(async (): Promise<void> => {
         if (this.disposed) return;
-        if (this.documentOpen) {
-          this.revealDocumentRoute();
-          if (!await documentBridge.whenVisible() || this.disposed) return;
-          if (!await documentBridge.saveBeforeLeaving()) return;
+        if (!await this.recovery.ensure()) return;
+        if (!await this.confirmLeaveIfOpen(false)) return;
+        try {
+          if (!this.disposed) await proceed();
+        } finally {
+          documentBridge.resumeEditing();
         }
-        if (!this.disposed) await proceed();
       }).catch((error: Error): void => {
         if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
       });
     }).catch((error: Error): void => {
       if (!this.disposed) this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
     });
+  }
+
+  /** 已打开文稿时先显示文稿页，再按离开规则确认。外部打开在页面不可见时提示；普通切换只停止。 */
+  private async confirmLeaveIfOpen(requireVisible: boolean): Promise<boolean> {
+    if (!this.documentOpen) return true;
+    this.revealDocumentRoute();
+    const visible = await documentBridge.whenVisible();
+    if (this.disposed) return false;
+    if (!visible) {
+      if (requireVisible) this.toast($r('app.string.document_not_visible'));
+      return false;
+    }
+    return documentBridge.saveBeforeLeaving();
   }
 
   private showDocumentRoute(): void {
@@ -482,7 +553,7 @@ struct Index {
   }
 
   private async startNew(kind: string): Promise<void> {
-    DocumentService.startNew(kind);
+    if (!await DocumentService.startNew(kind)) return;
     this.presentOpened();
   }
 
@@ -493,8 +564,7 @@ struct Index {
     try {
       const uri = await DocumentFiles.chooseOpen(this.context);
       if (uri.length === 0) return;
-      if (!await DocumentService.openUri(uri, '', true, false,
-        (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource))) return;
+      if (!await this.openApproved(uri, '', true, false, owner, approvedSource)) return;
       this.presentOpened();
     } catch (error) {
       this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
@@ -506,11 +576,8 @@ struct Index {
   }
 
   private async openStored(item: RecentDocument): Promise<void> {
-    const owner = DocumentService.current();
-    const approvedSource = owner.source;
     try {
-      if (!await DocumentService.openUri(item.uri, '', true, false,
-        (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource))) return;
+      if (!await this.openCurrent(item.uri, '', true, false)) return;
       this.presentOpened();
     } catch {
       // 华为《固定样式弹出框》：需要用户决定后续操作时使用警告弹窗。
@@ -539,16 +606,34 @@ struct Index {
 
   private async openExternal(request: OpenRequest): Promise<void> {
     const writeRequested = request.writeGranted || !request.readGranted;
-    const owner = DocumentService.current();
-    const approvedSource = owner.source;
     try {
-      if (!await DocumentService.openUri(request.uri, request.declaredType, writeRequested, true,
-        (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource))) return;
+      if (!await this.openCurrent(request.uri, request.declaredType, writeRequested, true)) return;
       // 没有现有文稿时，不能把设置页留在新文稿的返回路径下面。
       if (!this.documentOpen) this.routes.clear();
       this.presentOpened();
     } catch (error) {
       this.toast(AppText.format($r('app.string.open_failed'), shownDetail(error)));
+    }
+  }
+
+  /** 读取前记下用户同意离开时的会话和正文。读取期间正文变了，仍由 confirmPreparedOpen 再确认。 */
+  private openCurrent(uri: string, declaredType: string, writeRequested: boolean,
+    external: boolean): Promise<boolean> {
+    const owner = DocumentService.current();
+    return this.openApproved(uri, declaredType, writeRequested, external, owner, owner.source);
+  }
+
+  private async openApproved(uri: string, declaredType: string, writeRequested: boolean, external: boolean,
+    owner: DocumentSession, approvedSource: string): Promise<boolean> {
+    const confirm = (): Promise<boolean> => this.confirmPreparedOpen(owner, approvedSource);
+    try {
+      return await DocumentService.openUri(uri, declaredType, writeRequested, external, confirm);
+    } catch (error) {
+      if (!(error instanceof UnknownEncodingError)) throw error instanceof Error ? error : new Error('open failed');
+      if (this.disposed || DocumentService.current() !== owner) return false;
+      const encoding = await chooseDocumentEncoding(this.getUIContext());
+      if (!encoding || this.disposed || DocumentService.current() !== owner) return false;
+      return DocumentService.openUri(uri, declaredType, writeRequested, external, confirm, encoding);
     }
   }
 
@@ -566,21 +651,23 @@ struct Index {
     return false;
   }
 
-  private async forgetRecent(uri: string, deleted: boolean = false): Promise<void> {
-    if (!this.context || uri.length === 0) return;
+  private async forgetRecent(uri: string, deleted: boolean = false): Promise<boolean> {
+    if (!this.context || uri.length === 0) return false;
     try {
       const context = this.context;
-      this.recentTask = this.recentTask.then(async (): Promise<void> => {
+      const task = this.recentTask.then(async (): Promise<void> => {
         this.recents = await LocalState.removeRecent(context, uri, this.recents, deleted);
         const retained = this.recents.some((item: RecentDocument): boolean => item.uri === uri);
         if (!retained && (!this.documentOpen || DocumentService.current().info.uri !== uri)) {
           await DocumentFiles.release(uri);
         }
       });
-      await this.recentTask;
+      this.recentTask = task.catch((): void => {});
+      await task;
+      return true;
     } catch {
-      this.recentTask = Promise.resolve();
       this.toast($r('app.string.recent_update_failed'));
+      return false;
     }
   }
 
@@ -606,6 +693,154 @@ struct Index {
         await DocumentFiles.release(uri);
       }
     }).catch((): void => this.toast($r('app.string.favorite_save_failed')));
+  }
+
+  private listedRecents(): RecentDocument[] {
+    return sortRecentDocuments(this.recents.filter((item: RecentDocument): boolean =>
+      this.librarySegment === 1 ? item.favorite === true : item.recent !== false), this.sortOrder) as RecentDocument[];
+  }
+
+  private clearSelection(): void {
+    this.selecting = false;
+    this.selectedUris = [];
+  }
+
+  private beginSelection(item: RecentDocument): void {
+    this.selecting = true;
+    this.selectedUris = [item.uri];
+  }
+
+  private setSelectionMode(enabled: boolean): void {
+    if (enabled) {
+      this.selecting = true;
+    } else {
+      this.clearSelection();
+    }
+  }
+
+  private setSelected(item: RecentDocument, selected: boolean): void {
+    if (!this.selecting || this.selectedUris.includes(item.uri) === selected) return;
+    this.selectedUris = selected ? [...this.selectedUris, item.uri] :
+      this.selectedUris.filter((uri: string): boolean => uri !== item.uri);
+  }
+
+  private selectedItems(): RecentDocument[] {
+    const visible = this.listedRecents();
+    const picked: RecentDocument[] = [];
+    for (let index = 0; index < this.selectedUris.length; index++) {
+      const uri = this.selectedUris[index];
+      for (let itemIndex = 0; itemIndex < visible.length; itemIndex++) {
+        if (visible[itemIndex].uri === uri) picked.push(visible[itemIndex]);
+      }
+    }
+    return picked;
+  }
+
+  private async shareRecents(items: RecentDocument[]): Promise<void> {
+    if (!this.context || items.length === 0) return;
+    const files: SharedFile[] = [];
+    for (let index = 0; index < items.length; index++) {
+      const file = new SharedFile();
+      file.uri = items[index].uri;
+      file.name = items[index].name;
+      files.push(file);
+    }
+    try {
+      await DocumentShare.showFiles(this.context, files, this.selecting ? 'marknote-home-share' : 'marknote-home-more');
+    } catch (error) {
+      this.toast(shownDetail(error));
+    }
+  }
+
+  private async copyRecent(item: RecentDocument): Promise<void> {
+    if (!this.context) return;
+    try {
+      const target = await DocumentFiles.chooseSave(this.context, item.name);
+      if (target.length === 0 || this.disposed) return;
+      if (target === item.uri) {
+        this.toast($r('app.string.copy_same_file'));
+        return;
+      }
+      await DocumentFiles.writeCopy(item.uri, target);
+      const access = await DocumentFiles.prepare(target, true);
+      if (access.persistent) this.rememberRecent(target, item.name, true);
+      this.toast(access.persistent ? $r('app.string.copy_saved') : $r('app.string.save_not_persistent'));
+    } catch (error) {
+      this.toast(AppText.format($r('app.string.copy_failed'), shownDetail(error)));
+    }
+  }
+
+  private confirmRemoveRecent(items: RecentDocument[]): void {
+    if (items.length === 0) return;
+    const message = items.length === 1 ?
+      AppText.format($r('app.string.remove_recent_message'), items[0].name) :
+      AppText.format($r('app.string.home_remove_many'), String(items.length));
+    this.getUIContext().showAlertDialog({
+      title: AppText.text($r('app.string.home_remove_record')),
+      message: message,
+      buttons: [
+        { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
+        {
+          value: AppText.text($r('app.string.dialog_remove')),
+          action: (): void => { void this.removeRecents(items); }
+        }
+      ]
+    });
+  }
+
+  private async removeRecents(items: RecentDocument[]): Promise<void> {
+    for (const item of items) {
+      if (await this.forgetRecent(item.uri)) this.setSelected(item, false);
+    }
+    if (this.selectedUris.length === 0) this.clearSelection();
+  }
+
+  private async confirmDeleteRecent(items: RecentDocument[]): Promise<void> {
+    if (items.length === 0) return;
+    const session = DocumentService.current();
+    const uri = session.info.uri;
+    if (this.documentOpen && session.editing && items.some((item: RecentDocument): boolean => item.uri === uri)) {
+      if (await documentBridge.confirmDelete(uri, items.length)) {
+        await this.deleteRecents(items.filter((item: RecentDocument): boolean => item.uri !== uri));
+      }
+      return;
+    }
+    const message = items.length === 1 ? AppText.text($r('app.string.delete_clean')) :
+      AppText.format($r('app.string.home_delete_many'), String(items.length));
+    this.getUIContext().showAlertDialog({
+      title: AppText.text($r('app.string.delete_title')),
+      message: message,
+      buttons: [
+        { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
+        {
+          value: AppText.text($r('app.string.menu_delete')),
+          action: (): void => { void this.deleteRecents(items); }
+        }
+      ]
+    });
+  }
+
+  private async deleteRecents(items: RecentDocument[]): Promise<void> {
+    let failed = false;
+    let deleted = 0;
+    for (const item of items) {
+      // A document opened after the dialog appeared needs its own editor confirmation.
+      const session = DocumentService.current();
+      if (session.editing && session.info.uri === item.uri) {
+        failed = true;
+        continue;
+      }
+      try {
+        await DocumentFiles.deleteStored(item.uri);
+        await this.forgetRecent(item.uri, true);
+        deleted++;
+      } catch (error) {
+        failed = true;
+        this.toast(AppText.format($r('app.string.delete_failed'), shownDetail(error)));
+      }
+    }
+    if (deleted > 0) this.toast($r('app.string.delete_trashed'));
+    if (!failed) this.clearSelection();
   }
 
   private async refreshRecentTimes(items: RecentDocument[]): Promise<void> {
@@ -634,30 +869,83 @@ struct Index {
     this.recents = merged;
   }
 
+  private refreshSelectionToolbar(): void {
+    const actions = new ToolBarOptions();
+    const state = this.selectedItems().length > 0 ? ItemState.ENABLE : ItemState.DISABLE;
+    actions.push(
+      {
+        content: $r('app.string.menu_share'),
+        toolBarSymbolOptions: {
+          normal: new SymbolGlyphModifier($r('sys.symbol.share')).fontColor([$r('sys.color.icon_primary')])
+        },
+        state,
+        action: (): void => { void this.shareRecents(this.selectedItems()); }
+      },
+      {
+        content: $r('app.string.home_remove_record'),
+        toolBarSymbolOptions: {
+          normal: new SymbolGlyphModifier($r('sys.symbol.minus_circle')).fontColor([$r('sys.color.icon_primary')])
+        },
+        state,
+        action: (): void => this.confirmRemoveRecent(this.selectedItems())
+      },
+      {
+        content: $r('app.string.menu_more'),
+        toolBarSymbolOptions: {
+          normal: new SymbolGlyphModifier($r('sys.symbol.dot_grid_2x2'))
+            .fontColor([$r('sys.color.icon_primary')])
+            .id(SELECTION_MORE_ID)
+        },
+        state,
+        action: (): void => this.openSelectionMoreMenu()
+      }
+    );
+    this.selectionToolbarItems = actions;
+  }
+
+  private openSelectionMoreMenu(): void {
+    if (this.disposed || this.homeMenu !== null || !this.selecting) return;
+    const items = this.selectedItems();
+    if (items.length === 0) return;
+    const uiContext = this.getUIContext();
+    const content = new ComponentContent<SelectionMoreOptions>(uiContext, wrapBuilder(SelectionMoreMenu), {
+      onDelete: (): void => this.afterMenu(() => { void this.confirmDeleteRecent(items); })
+    });
+    this.homeMenu = content;
+    const options = menuMaterialOptions();
+    options.placement = Placement.Top;
+    options.onDidDisappear = (): void => this.disposeMenu(content, true);
+    uiContext.getPromptAction().openMenu(content, { id: SELECTION_MORE_ID }, options)
+      .catch((): void => this.disposeMenu(content, true));
+  }
+
+  @Builder
+  private SelectionToolbar() {
+    Column() {
+      ToolBar({ toolBarList: this.selectionToolbarItems })
+    }
+    .id('marknote-home-share')
+  }
+
   @Builder
   private LibraryPage() {
     HomeView({
       favoritesOnly: this.librarySegment === 1,
-      recents: sortRecentDocuments(this.recents.filter((item: RecentDocument): boolean =>
-        this.librarySegment === 1 ? item.favorite === true : item.recent !== false), this.sortOrder) as RecentDocument[],
+      recents: this.listedRecents(),
       scroller: this.libraryScroller,
+      selecting: this.selecting,
+      selectedUris: this.selectedUris,
       onNew: (id: string): void => { this.confirmSwitch(() => this.startNew(id)); },
       onOpen: (): void => this.confirmSwitch(() => this.pickOpen()),
       onRecent: (item: RecentDocument): void => this.openRecent(item),
-      onRemoveRecent: (item: RecentDocument): void => {
-        if (this.librarySegment === 1) {
-          this.toggleFavorite(item.uri, item.name);
-          return;
-        }
-        this.getUIContext().showAlertDialog({
-          title: AppText.text($r('app.string.home_remove_record')),
-          message: AppText.format($r('app.string.remove_recent_message'), item.name),
-          buttons: [
-            { value: AppText.text($r('app.string.dialog_cancel')), action: (): void => {} },
-            { value: AppText.text($r('app.string.dialog_remove')), action: (): void => { void this.forgetRecent(item.uri); } }
-          ]
-        });
-      }
+      onShare: (item: RecentDocument): void => { void this.shareRecents([item]); },
+      onCopy: (item: RecentDocument): void => { void this.copyRecent(item); },
+      onFavorite: (item: RecentDocument): void => this.toggleFavorite(item.uri, item.name),
+      onRemove: (item: RecentDocument): void => this.confirmRemoveRecent([item]),
+      onDelete: (item: RecentDocument): void => { void this.confirmDeleteRecent([item]); },
+      onMultiSelect: (item: RecentDocument): void => this.beginSelection(item),
+      onSelectionChange: (item: RecentDocument, selected: boolean): void => this.setSelected(item, selected),
+      onEditModeChange: (enabled: boolean): void => this.setSelectionMode(enabled)
     })
   }
 
@@ -675,7 +963,6 @@ struct Index {
     if (name === 'document') {
       DocumentView({
         theme: this.theme,
-        wide: this.wide,
         canExpand: this.navigationMode === NavigationMode.Split || this.documentExpanded,
         expanded: this.documentExpanded,
         favorite: this.recents.some((item: RecentDocument): boolean =>
@@ -686,7 +973,7 @@ struct Index {
           const closed = DocumentService.current().info;
           this.documentExpanded = false;
           this.documentOpen = false;
-          if (this.routes.size() > 0) this.routes.pop();
+          this.routes.removeByName('document');
           // A removed record may still be in use by the open document until it is closed.
           if (closed.persistent && closed.uri.length > 0) {
             const uri = closed.uri;
@@ -741,6 +1028,8 @@ struct Index {
       }
       .navDestination(this.Destination)
       .titleBar(this.homeTitle())
+      .toolbarConfiguration(this.SelectionToolbar)
+      .hideToolBar(!this.selecting)
       // HdsNavigationTitleMode.MINI 固定为 56vp（ui-design-hdsnavigation）。
       .titleMode(HdsNavigationTitleMode.MINI)
       // The official multi-device office example changes navigation mode to expand the content page.

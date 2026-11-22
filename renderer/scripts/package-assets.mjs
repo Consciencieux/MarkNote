@@ -7,7 +7,7 @@ const text = readFileSync(built, 'utf8');
 if (!text.includes('MarknotePreview') || !text.includes('katex')) {
   throw new Error('Preview bundle incomplete: do not package an empty or partial renderer');
 }
-const result = spawnSync(process.execPath, [join(root, 'scripts', 'generate-notices.mjs')], {
+const result = spawnSync(process.execPath, [join(root, '..', 'tools', 'generate-notices.mjs')], {
   cwd: root, stdio: 'inherit'
 });
 if (result.status !== 0) throw new Error('Dependency notices generation failed: release build blocked');

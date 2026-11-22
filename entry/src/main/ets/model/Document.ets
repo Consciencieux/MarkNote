@@ -50,6 +50,7 @@ export class RecentDocument {
 }
 
 export class RecoveryData {
+  editedEndings?: string;
   name: string = AppText.text($r('app.string.file_untitled_md'));
   uri: string = '';
   text: string = '';
@@ -62,6 +63,17 @@ export class RecoveryData {
   formatId: string = '';
   writable: boolean = false;
   persistent: boolean = false;
+  /** A provider write began but has not been verified. */
+  writeUncertain: boolean = false;
+  pendingWriteText: string = '';
+  pendingWriteUri: string = '';
+}
+
+/** Process-only handle for one recovery write. The disk record stays RecoveryData. */
+export class DraftSnapshot {
+  sessionId: number = 0;
+  revision: number = 0;
+  data: RecoveryData = new RecoveryData();
 }
 
 export class Heading {
@@ -76,14 +88,15 @@ export class Heading {
   }
 }
 
-/** ATX headings, ignoring fenced code. Offsets use UTF-16 positions (TextArea's model). */
+/** ATX headings, ignoring fenced code. Offsets use the editor's UTF-16 positions. */
 export function documentOutline(source: string): Heading[] {
   const result: Heading[] = [];
-  const rows = source.split('\n');
   let offset = 0;
   let fence = '';
-  for (let index = 0; index < rows.length; index++) {
-    const row = rows[index];
+  while (offset < source.length) {
+    const next = source.indexOf('\n', offset);
+    const end = next < 0 ? source.length : next;
+    const row = source.slice(offset, end);
     const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(row);
     if (fence.length > 0) {
       if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length &&
@@ -98,7 +111,7 @@ export function documentOutline(source: string): Heading[] {
         if (name.length > 0) result.push(new Heading(match[1].length, name, offset));
       }
     }
-    offset += row.length + 1;
+    offset = end + 1;
   }
   return result;
 }

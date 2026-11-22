@@ -77,8 +77,7 @@ function languageTag(value: string): string {
 
 /** 阿拉伯语和维吾尔语从右向左。跟随系统时不在这里判断，交给 Direction.Auto。 */
 export function isRightToLeftLanguage(choice: string): boolean {
-  const kind = languageKind(normalizeAppLanguage(choice));
-  return kind === 'ar' || kind === 'ug';
+  return i18n.isRTL(resourceLanguage(choice));
 }
 
 function sameLanguage(left: string, right: string): boolean {
@@ -100,21 +99,4 @@ function languageKind(value: string): string {
   if (language === 'bo' || language === 'en' || language === 'ja' || language === 'ko' ||
     language === 'ru' || language === 'ar' || language === 'ug') return language;
   return tag;
-}
-
-/**
- * 网页 `lang` 使用当前界面语言。
- * `getAppPreferredLanguage` 的返回值文档只写“应用偏好语言”，没有写会返回 `default`；
- * 跟随系统时改读系统语言。单选项仍以本地记录为准，避免把已解析的系统语言误当成用户指定语言。
- */
-export function previewLanguageTag(): string {
-  try {
-    const preferred = i18n.System.getAppPreferredLanguage();
-    if (preferred.length > 0 && preferred !== 'default') return preferred;
-  } catch { /* 读取失败时继续使用系统语言。 */ }
-  try {
-    const system = i18n.System.getSystemLanguage();
-    if (system.length > 0) return system;
-  } catch { /* 下面使用与 base 资源一致的简体中文。 */ }
-  return 'zh-Hans';
 }

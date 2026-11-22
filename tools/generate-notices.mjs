@@ -4,8 +4,9 @@ import { createHash } from 'node:crypto';
 
 // Produce the notices shipped inside the HAP from *installed production packages*.
 // Unknown / missing licenses abort the build instead of silently omitting a grant.
-const root = resolve(import.meta.dirname, '..');
+const root = join(resolve(import.meta.dirname, '..'), 'renderer');
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const editorRoot = join(root, '..', 'editor');
 const packages = new Map();
 // Some upstream packages publish no LICENSE in their npm archive, or omit the license field.
 // These entries point to original license texts and version-specific declarations, verified
@@ -92,13 +93,17 @@ function visit(from, name) {
   for (const child of Object.keys(pkg.dependencies || {})) visit(dir, child);
 }
 for (const name of Object.keys(manifest.dependencies)) visit(root, name);
+if (existsSync(join(editorRoot, 'package.json'))) {
+  const editorManifest = JSON.parse(readFileSync(join(editorRoot, 'package.json'), 'utf8'));
+  for (const name of Object.keys(editorManifest.dependencies || {})) visit(editorRoot, name);
+}
 const all = [...packages.values()].sort((a, b) => a.name.localeCompare(b.name));
 // KaTeX's official katex-fonts source distributes the fonts under MIT. The KaTeX package's
 // complete MIT LICENSE is already collected as its production dependency notice; do not invent
 // a separate OFL requirement for a package that does not ship one.
 const sections = [
   'MarkNote — Third-party software notices',
-  'For software and font assets incorporated into the offline renderer.',
+  'For software and font assets incorporated into the offline renderer and editor.',
   'DOMPurify is distributed under the Apache License 2.0 branch of its dual license.',
   'KaTeX and its bundled fonts are covered by the package MIT notice.',
   'The rights to MarkNote-owned code are separate from the following third-party grants.',

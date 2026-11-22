@@ -1,25 +1,39 @@
 import { HdsTabsAttribute } from '@kit.UIDesignKit';
-import { TITLE_BLUR_EXTENSION } from './HdsMaterialStyles';
+
+export const pageContentTop = $r('sys.float.padding_level8');
 
 /**
  * Shared by native Scroll and List; controllers remain local to each page/tab.
- * safeAreaPadding lays out the first item below the extra titlebar mask. SAFE_AREA lets moving
- * content paint back into that area and the surrounding HDS component safe area.
+ * SAFE_AREA lets scrolling content paint through the initial spacing and into the HDS titlebar.
  * Sources: arkts-develop-apply-immersive-effects (滚动类场景),
  * ts-container-scrollable-common (clipContent / edgeEffect / autoAdjustScrollBarMargin),
  * faqs-arkui-271 (cross-file AttributeModifier reuse).
  */
-export class PageScrollPolicy<T extends ScrollAttribute | ListAttribute> implements AttributeModifier<T> {
-  applyNormalAttribute(instance: T): void {
+export class PageScrollPolicy implements AttributeModifier<ScrollAttribute | ListAttribute> {
+  private readonly hasSectionHeader: boolean;
+  private readonly bottomInset: number;
+
+  constructor(hasSectionHeader: boolean = false, bottomInset: number = 0) {
+    this.bottomInset = bottomInset;
+    this.hasSectionHeader = hasSectionHeader;
+  }
+
+  applyNormalAttribute(instance: ScrollAttribute | ListAttribute): void {
     instance
-      .safeAreaPadding({ top: TITLE_BLUR_EXTENSION })
+      // MarkNote uses the settings list's initial spacing. SubHeader supplies its own.
+      .safeAreaPadding({
+        top: this.hasSectionHeader ? $r('sys.float.padding_level0') : pageContentTop,
+        bottom: this.bottomInset
+      })
       .clipContent(ContentClipMode.SAFE_AREA)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .scrollBar(BarState.Auto)
       // API 26: keep the indicator out of padding and component safe areas without measuring them.
       .autoAdjustScrollBarMargin(true);
   }
 }
+
+export const pageScroll = new PageScrollPolicy();
+export const pageScrollWithSectionHeader = new PageScrollPolicy(true);
 
 /**
  * TabContent clips by default. Release the ancestor clip as well as configuring Scroll's

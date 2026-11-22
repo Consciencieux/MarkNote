@@ -1,7 +1,11 @@
 import { util } from '@kit.ArkTS';
+import { i18n } from '@kit.LocalizationKit';
 import { DocumentInfo } from '../model/Document';
 import { AppText } from '../i18n/AppText';
 import { userNotice } from './UserNotice';
+
+export const ENCODING_SAMPLE_BYTES: number = 64 * 1024;
+const ENCODE_CHARS: number = 32 * 1024;
 
 export class DecodedText {
   text: string = '';
@@ -11,122 +15,9 @@ export class DecodedText {
   lineEndings: string = '';
 }
 
-export class EncodedText {
-  bytes: Uint8Array = new Uint8Array(0);
-  newline: string = '\n';
-  lineEndings: string = '';
-}
-
-function decodeAs(encoding: string, bytes: Uint8Array): string | null {
-  try {
-    const decoder = util.TextDecoder.create(encoding, { fatal: true, ignoreBOM: true });
-    const value = decoder.decodeToString(bytes);
-    return value === undefined ? null : value;
-  } catch {
-    return null;
-  }
-}
-
-function utf16Encoding(bytes: Uint8Array): string {
-  if (bytes.length < 4 || bytes.length % 2 !== 0) return '';
-  let evenZero = 0;
-  let oddZero = 0;
-  const samples = Math.min(bytes.length, 64);
-  for (let index = 0; index + 1 < samples; index += 2) {
-    if (bytes[index] === 0) evenZero++;
-    if (bytes[index + 1] === 0) oddZero++;
-  }
-  const pairs = samples / 2;
-  if (oddZero > pairs * 0.8 && evenZero < pairs * 0.2) return 'utf-16le';
-  if (evenZero > pairs * 0.8 && oddZero < pairs * 0.2) return 'utf-16be';
-  return '';
-}
-
-/** Editor text uses '\n'. LF, CR and CRLF are restored on save. */
-function normalizeNewlines(raw: string): DecodedText {
-  const decoded = new DecodedText();
-  // Most documents use LF only; avoid constructing a new string one character at a time.
-  if (raw.indexOf('\r') < 0) {
-    decoded.text = raw;
-    return decoded;
-  }
-  let sawLf = false;
-  let sawCr = false;
-  let sawCrLf = false;
-  for (let index = 0; index < raw.length; index++) {
-    const code = raw.charCodeAt(index);
-    if (code === 13) {
-      decoded.text += '\n';
-      if (index + 1 < raw.length && raw.charCodeAt(index + 1) === 10) {
-        index++;
-        decoded.lineEndings += 'r';
-        sawCrLf = true;
-      } else {
-        decoded.lineEndings += 'c';
-        sawCr = true;
-      }
-    } else if (code === 10) {
-      decoded.text += '\n';
-      decoded.lineEndings += 'n';
-      sawLf = true;
-    } else {
-      decoded.text += raw[index];
-    }
-  }
-  const kinds = (sawLf ? 1 : 0) + (sawCr ? 1 : 0) + (sawCrLf ? 1 : 0);
-  if (kinds > 1) {
-    decoded.newline = 'mixed';
-  } else if (sawCrLf) {
-    decoded.newline = '\r\n';
-    decoded.lineEndings = '';
-  } else if (sawCr) {
-    decoded.newline = '\r';
-    decoded.lineEndings = '';
-  } else {
-    decoded.newline = '\n';
-    decoded.lineEndings = '';
-  }
-  return decoded;
-}
-
-function endingMark(mark: string): string {
-  if (mark === 'r') return '\r\n';
-  if (mark === 'c') return '\r';
-  return '\n';
-}
-
-function serialize(text: string, newline: string, lineEndings: string, encoding: string): EncodedText {
-  const result = new EncodedText();
-  const parts = text.split('\n');
-  if (newline === 'mixed' && parts.length === lineEndings.length + 1) {
-    let mixed = parts[0];
-    for (let index = 0; index < lineEndings.length; index++) {
-      mixed += endingMark(lineEndings[index]) + parts[index + 1];
-    }
-    result.newline = 'mixed';
-    result.lineEndings = lineEndings;
-    result.bytes = encodeBody(mixed, encoding);
-    return result;
-  }
-  if (newline === '\r\n') {
-    result.newline = '\r\n';
-    result.bytes = encodeBody(text.replace(/\n/g, '\r\n'), encoding);
-    return result;
-  }
-  if (newline === '\r') {
-    result.newline = '\r';
-    result.bytes = encodeBody(text.replace(/\n/g, '\r'), encoding);
-    return result;
-  }
-  result.newline = '\n';
-  result.bytes = encodeBody(text, encoding);
-  return result;
-}
-
-function encodeBody(value: string, encoding: string): Uint8Array {
-  const encoder = util.TextEncoder.create(encoding);
-  const encoded = encoder.encodeInto(value);
-  return encoded === undefined ? new Uint8Array(0) : encoded;
+export class EncodingProbe {
+  encodings: string[] = [];
+  bomLength: number = 0;
 }
 
 function bomPrefix(encoding: string): Uint8Array {
@@ -136,68 +27,174 @@ function bomPrefix(encoding: string): Uint8Array {
   return new Uint8Array(0);
 }
 
-function startsWithBytes(bytes: Uint8Array, prefix: Uint8Array): boolean {
-  if (prefix.length === 0 || bytes.length < prefix.length) return false;
-  for (let index = 0; index < prefix.length; index++) {
-    if (bytes[index] !== prefix[index]) return false;
+function endingMark(mark: string): string {
+  if (mark === 'r') return '\r\n';
+  if (mark === 'c') return '\r';
+  return '\n';
+}
+
+/** One strict decoding attempt. During save verification, only the comparison cursor is retained. */
+export class DocumentDecoder {
+  private decoder: util.TextDecoder;
+  private pendingCr: boolean = false;
+  private textParts: string[] = [];
+  private firstMark: string = '';
+  private endingCount: number = 0;
+  private mixed: boolean = false;
+  private endingParts: string[] = [];
+  private compared: number = 0;
+  private matches: boolean = true;
+  private expected: string | null;
+
+  constructor(encoding: string, expected: string | null) {
+    // HarmonyOS ignoreBOM=false keeps payload U+FEFF. The file marker is removed by the caller.
+    this.decoder = util.TextDecoder.create(encoding, { fatal: true, ignoreBOM: false });
+    this.expected = expected;
   }
-  return true;
+
+  /** A decoding failure allows the caller to try the next encoding. */
+  push(bytes: Uint8Array, last: boolean): boolean {
+    if (bytes.length === 0) return true;
+    let raw: string;
+    try {
+      raw = this.decoder.decodeToString(bytes, { stream: !last });
+    } catch {
+      return false;
+    }
+    if (raw === undefined) return false;
+    if (this.pendingCr) raw = '\r' + raw;
+    this.pendingCr = !last && raw.endsWith('\r');
+    if (this.pendingCr) raw = raw.slice(0, -1);
+    const text = raw.indexOf('\r') < 0 ? raw : raw.replace(/\r\n?/g, '\n');
+    if (this.expected !== null) {
+      if (this.matches && !this.expected.startsWith(text, this.compared)) this.matches = false;
+      this.compared += text.length;
+    } else {
+      this.textParts.push(text);
+      this.recordEndings(raw);
+    }
+    return true;
+  }
+
+  private recordEndings(raw: string): void {
+    if (raw.indexOf('\n') < 0 && raw.indexOf('\r') < 0) return;
+    // Remember only a count while all line endings agree.
+    if (!this.mixed) {
+      let count = 0;
+      for (let index = 0; index < raw.length; index++) {
+        const code = raw.charCodeAt(index);
+        let mark: string;
+        if (code === 10) mark = 'n';
+        else if (code === 13) {
+          if (raw.charCodeAt(index + 1) === 10) {
+            mark = 'r';
+            index++;
+          } else mark = 'c';
+        } else continue;
+        if (this.firstMark === '') this.firstMark = mark;
+        if (this.firstMark !== mark) {
+          this.mixed = true;
+          this.endingParts.push(this.firstMark.repeat(this.endingCount));
+          break;
+        }
+        count++;
+      }
+      if (!this.mixed) {
+        this.endingCount += count;
+        return;
+      }
+    }
+    // Build one compact mark string per block, including the prefix of the first mixed block.
+    this.endingParts.push(raw.replace(/[^\r\n]+|\r\n|[\r\n]/g, (value: string): string => {
+      if (value === '\r\n') return 'r';
+      if (value === '\r') return 'c';
+      if (value === '\n') return 'n';
+      return '';
+    }));
+  }
+
+  finish(encoding: string, hasBom: boolean): DecodedText {
+    if (this.expected !== null && (!this.matches || this.compared !== this.expected.length)) {
+      throw userNotice(AppText.text($r('app.string.encoding_lossy')));
+    }
+    const result = new DecodedText();
+    result.encoding = encoding;
+    result.hasBom = hasBom;
+    result.text = this.textParts.join('');
+    result.newline = this.mixed ? 'mixed' : endingMark(this.firstMark);
+    if (this.mixed) result.lineEndings = this.endingParts.join('');
+    return result;
+  }
 }
 
 export class TextEncoding {
-  static decode(bytes: Uint8Array): DecodedText {
-    if (bytes.length === 0) return new DecodedText();
-    let encoding = 'utf-8';
-    let hasBom = false;
-    let payload = bytes;
-    if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
-      hasBom = true;
-      payload = bytes.slice(3);
-    } else if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
-      encoding = 'utf-16le';
-      hasBom = true;
-      payload = bytes.slice(2);
-    } else if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
-      encoding = 'utf-16be';
-      hasBom = true;
-      payload = bytes.slice(2);
+  static probe(sample: Uint8Array, size: number, requested: string = ''): EncodingProbe {
+    const result = new EncodingProbe();
+    if (sample.length >= 3 && sample[0] === 0xEF && sample[1] === 0xBB && sample[2] === 0xBF) {
+      result.encodings.push('utf-8');
+      result.bomLength = 3;
+    } else if (sample.length >= 2 && sample[0] === 0xFF && sample[1] === 0xFE) {
+      result.encodings.push('utf-16le');
+      result.bomLength = 2;
+    } else if (sample.length >= 2 && sample[0] === 0xFE && sample[1] === 0xFF) {
+      result.encodings.push('utf-16be');
+      result.bomLength = 2;
+    } else if (requested) {
+      result.encodings.push(requested);
     } else {
-      const hinted = utf16Encoding(bytes);
-      if (hinted.length > 0 && decodeAs(hinted, bytes) !== null) encoding = hinted;
+      // UTF-16 may also form valid UTF-8 bytes. Try the system's UTF-16 hint first.
+      // Prefer strict UTF-8 to GB18030 when both can decode the same unmarked bytes.
+      if (sample.length > 0 && size % 2 === 0) {
+        try {
+          const detected = i18n.Unicode.detectEncoding(sample).encodingName.toLowerCase();
+          if (detected === 'utf-16le' || detected === 'utf-16be') result.encodings.push(detected);
+        } catch { /* Continue with strict decoding. */ }
+      }
+      result.encodings.push('utf-8', 'gb18030');
     }
-    let text: string | null = decodeAs(encoding, payload);
-    // A BOM declares the encoding. Malformed payloads must not silently become another encoding.
-    if (text === null && !hasBom && encoding !== 'utf-8') {
-      encoding = 'utf-8';
-      text = decodeAs(encoding, payload);
-    }
-    if (text === null && !hasBom) {
-      encoding = 'gb18030';
-      text = decodeAs(encoding, payload);
-    }
-    if (text === null) throw userNotice(AppText.text($r('app.string.encoding_unknown')));
-    const decoded = normalizeNewlines(text);
-    decoded.encoding = encoding;
-    decoded.hasBom = hasBom;
-    return decoded;
+    return result;
   }
 
-  static encode(text: string, info: DocumentInfo): EncodedText {
-    const encoding = info.encoding.length === 0 ? 'utf-8' : info.encoding;
-    const applied = serialize(text, info.newline, info.lineEndings, encoding);
-    if (info.hasBom) {
-      const prefix = bomPrefix(encoding);
-      if (prefix.length > 0 && !startsWithBytes(applied.bytes, prefix)) {
-        const bytes = new Uint8Array(prefix.length + applied.bytes.length);
-        bytes.set(prefix, 0);
-        bytes.set(applied.bytes, prefix.length);
-        applied.bytes = bytes;
+  static async encode(text: string, info: DocumentInfo, consume: (bytes: Uint8Array) => Promise<void>): Promise<void> {
+    const encoding = info.encoding || 'utf-8';
+    const encoder = util.TextEncoder.create(encoding);
+    const prefix = bomPrefix(encoding);
+    if (info.hasBom && prefix.length > 0) await consume(prefix);
+    let line = 0;
+    let previousWasCr: boolean = false;
+    let offset = 0;
+    while (offset < text.length) {
+      let end = Math.min(text.length, offset + ENCODE_CHARS);
+      const tail = text.charCodeAt(end - 1);
+      if (end < text.length && tail >= 0xD800 && tail <= 0xDBFF) end--;
+      let part = text.substring(offset, end);
+      if (info.newline === 'mixed') {
+        const input = part;
+        let lastCr: boolean = previousWasCr;
+        part = input.replace(/\n/g, (_break: string, index: number): string => {
+          const mark = info.lineEndings.charAt(line++);
+          const adjacentCr: boolean = index === 0 ? previousWasCr : input[index - 1] === '\n' && lastCr;
+          lastCr = mark === 'c';
+          // After a join, adjacent CR and LF would decode as a single separator.
+          return adjacentCr && mark === 'n' ? '\r\n' : endingMark(mark);
+        });
+        previousWasCr = input.endsWith('\n') && lastCr;
+      } else if (info.newline === '\r' || info.newline === '\r\n') {
+        part = part.replace(/\n/g, info.newline);
       }
+      const bytes = encoder.encodeInto(part);
+      if (bytes === undefined || bytes.length === 0) throw userNotice(AppText.text($r('app.string.encoding_lossy')));
+      await consume(bytes);
+      offset = end;
     }
-    const decoded = TextEncoding.decode(applied.bytes);
-    if (decoded.text !== text) {
+    if (info.newline === 'mixed' && line !== info.lineEndings.length) {
       throw userNotice(AppText.text($r('app.string.encoding_lossy')));
     }
-    return applied;
+  }
+
+  static lineBreakCount(text: string): number {
+    let count = 0;
+    for (let index = text.indexOf('\n'); index >= 0; index = text.indexOf('\n', index + 1)) count++;
+    return count;
   }
 }
