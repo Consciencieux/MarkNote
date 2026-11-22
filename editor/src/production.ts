@@ -5,8 +5,6 @@ import { languageFor } from './languages.js';
 import { syntaxTheme } from './syntax-theme.js';
 import { trackMixedEndings } from './mixed-endings.ts';
 import { EditorSession } from './editor-session.ts';
-import { bindDocumentScrollbar } from '../../shared/document-scrollbar.ts';
-import '../../shared/document-scrollbar.css';
 import './production.css';
 
 const host = document.querySelector<HTMLElement>('#editor');
@@ -52,8 +50,8 @@ const extensions = (format: string, theme: string, appearance: string = 'light')
   history(), keymap.of([{ key: 'Mod-f', run: () => session?.requestFind() ?? false },
     ...defaultKeymap, ...historyKeymap]),
   EditorView.scrollMargins.of(() => ({
-    top: parseFloat(document.documentElement.style.getPropertyValue('--inset-track-top')) || 0,
-    bottom: parseFloat(document.documentElement.style.getPropertyValue('--inset-track-bottom')) || 0
+    top: parseFloat(document.documentElement.style.getPropertyValue('--inset-caret-top')) || 0,
+    bottom: parseFloat(document.documentElement.style.getPropertyValue('--inset-caret-bottom')) || 0
   })),
   EditorView.lineWrapping, EditorView.perLineTextDirection.of(true), lineDirections,
   languageFor(format), colors.of(syntaxTheme(theme, appearance)),
@@ -62,7 +60,6 @@ const extensions = (format: string, theme: string, appearance: string = 'light')
   EditorState.transactionFilter.of((transaction) => transaction.docChanged && session?.isBlocked() ? [] : transaction)
 ];
 const view = new EditorView({ parent: host, state: EditorState.create({ extensions: extensions('plain', 'off') }) });
-bindDocumentScrollbar(view.dom, host.id);
 const applyTheme = (theme: string, appearance: string) => {
   currentTheme = theme;
   currentAppearance = appearance;

@@ -1,6 +1,5 @@
 import { webview } from '@kit.ArkWeb';
 import { DocumentWebViewport, documentWebScroll, emptyDocumentViewport } from './DocumentScrollLayer';
-import { AppText } from '../i18n/AppText';
 import { EditorBridge } from '../document/EditorBridge';
 import type { EditorChangeRange, EditorSelection } from '../../../../../shared/editor-protocol';
 
@@ -145,15 +144,15 @@ export struct DocumentCodeEditor {
   private updateViewport(): void {
     if (this.ready) {
       this.send(JSON.stringify({ type: 'viewport', sessionId: this.sessionId, epoch: this.activeEpoch,
-        top: this.viewport.top, bottom: this.viewport.bottom, trackTop: this.viewport.trackTop,
-        trackBottom: this.viewport.trackBottom, start: this.viewport.start, end: this.viewport.end }));
+        top: this.viewport.top, bottom: this.viewport.bottom, caretTop: this.viewport.caretTop,
+        caretBottom: this.viewport.caretBottom, start: this.viewport.start, end: this.viewport.end }));
     }
   }
 
   private updateLocale(): void {
     if (!this.ready) return;
     this.send(JSON.stringify({ type: 'configure-locale', sessionId: this.sessionId, epoch: this.activeEpoch,
-      language: this.language, direction: this.textDirection, label: AppText.text($r('app.string.tab_edit')) }));
+      language: this.language, direction: this.textDirection }));
   }
 
   private connect(): void {

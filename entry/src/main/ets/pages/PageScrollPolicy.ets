@@ -12,12 +12,10 @@ export const pageContentTop = $r('sys.float.padding_level8');
 export class PageScrollPolicy implements AttributeModifier<ScrollAttribute | ListAttribute> {
   private readonly hasSectionHeader: boolean;
   private readonly bottomInset: number;
-  private readonly effectEdge?: EffectEdge;
 
-  constructor(hasSectionHeader: boolean = false, bottomInset: number = 0, effectEdge?: EffectEdge) {
+  constructor(hasSectionHeader: boolean = false, bottomInset: number = 0) {
     this.bottomInset = bottomInset;
     this.hasSectionHeader = hasSectionHeader;
-    this.effectEdge = effectEdge;
   }
 
   applyNormalAttribute(instance: ScrollAttribute | ListAttribute): void {
@@ -28,7 +26,7 @@ export class PageScrollPolicy implements AttributeModifier<ScrollAttribute | Lis
         bottom: this.bottomInset
       })
       .clipContent(ContentClipMode.SAFE_AREA)
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true, effectEdge: this.effectEdge })
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       // API 26: keep the indicator out of padding and component safe areas without measuring them.
       .autoAdjustScrollBarMargin(true);
   }

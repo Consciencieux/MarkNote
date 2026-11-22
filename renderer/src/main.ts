@@ -14,9 +14,7 @@ import { encodePreviewLinkRequest } from './preview-link-message';
 import { previewText, usePreviewText } from './preview-text';
 import katex from 'katex';
 import { syntaxColors } from '../../shared/syntax-colors.ts';
-import { bindDocumentScrollbar } from '../../shared/document-scrollbar.ts';
 import { applyDocumentViewport } from '../../shared/document-viewport.ts';
-import '../../shared/document-scrollbar.css';
 
 type Kind = PreviewUpdate['kind'];
 let resultPort: MessagePort | undefined;
@@ -46,7 +44,6 @@ window.addEventListener('message', (event: MessageEvent) => {
 
 const host = document.getElementById('preview');
 if (!host) throw new Error('missing preview root');
-const scrollbar = bindDocumentScrollbar(host, host.id);
 
 function notePreviewTarget(update: PreviewUpdate): void {
   const revision = update.revision;
@@ -192,7 +189,6 @@ function render(update: PreviewUpdate): void {
   applyCodeColors();
   notePreviewTarget(update);
   const textStamp = usePreviewText(update.text);
-  if (typeof update.text?.scrollbarLabel === 'string') scrollbar.setAttribute('aria-label', update.text.scrollbarLabel);
   document.documentElement.lang = previewText().lang;
   document.documentElement.dir = update.text?.rtl ? 'rtl' : 'ltr';
   document.documentElement.removeAttribute('data-theme');

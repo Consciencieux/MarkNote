@@ -27,7 +27,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 `HdsMaterialStyles` 配置滚动标题栏。首页和各级设置页通过 `bindToScrollable` 绑定本页列表，文稿页绑定当前页签的控制器，分栏时同时绑定预览和编辑两侧。`PageScrollPolicy` 统一原生列表和滚动容器的边缘回弹、安全区裁切与滚动条避让。文稿页签及其父容器放开裁切，使正文能滚入标题栏和底部页签的渐变区。
 
-预览和编辑通过 `DocumentScrollLayer` 使用有界 ArkWeb。网页负责正文滚动和页内回弹，外层 `Scroll` 负责标题栏联动。两栏共用[文稿滑块](../shared/document-scrollbar.ts)，按标题栏和页签的布局计算轨道，样式参考华为[滚动条设计指南](https://developer.huawei.com/consumer/cn/doc/design-guides/scrollbar-0000001956815473/)。编辑与分栏复用同一编辑器和控制器。大纲使用有界 `List`、`Repeat.virtualScroll` 和原生滚动条。
+预览和编辑通过 `DocumentScrollLayer` 使用有界 ArkWeb，由 ArkWeb 负责正文滚动和纵向滚动条，外层 `Scroll` 负责标题栏联动和文稿两端的弹簧回弹。文稿的正文边距和编辑光标避让由 `DocumentScrollLayer` 提供。大纲使用有界 `List`、`Repeat.virtualScroll` 和原生滚动条。[ArkWeb 滚动条模式](https://developer.huawei.com/consumer/cn/doc/harmonyos-references/arkts-apis-webview-e/) · [ArkWeb 嵌套滚动](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/web-nested-scrolling/)
 
 `DocumentView` 持有文稿编辑、查找和保存界面状态，并按页签是否可见决定预览工作方式；查找栏 `DocumentFindBar` 只绘制查询和替换控件。保存和删除后的文稿数据由 `DocumentService` 更新。`DocumentPreviewView` 管理各自的 Web 控制器，`PreviewDispatch` 保证每个实例最多一笔在途发送和一笔最新请求。`DocumentOutlineView` 管理大纲展示与展开状态。
 

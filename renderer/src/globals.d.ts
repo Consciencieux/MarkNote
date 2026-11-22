@@ -24,7 +24,6 @@ export interface PreviewUpdate {
     mathFailed?: string;
     imageName?: string;
     imageSlot?: string;
-    scrollbarLabel?: string;
   };
 }
 

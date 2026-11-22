@@ -12,7 +12,6 @@ export interface PreviewCopy {
   mathFailed: string;
   imageName: string;
   imageSlot: string;
-  scrollbarLabel?: string;
 }
 
 /** One preview request. Identity is the session id plus the text revision, not the route counter. */

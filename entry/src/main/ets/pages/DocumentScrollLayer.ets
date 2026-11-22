@@ -1,14 +1,13 @@
 import { LengthMetrics } from '@kit.ArkUI';
-import { pageContentTop, PageScrollPolicy } from './PageScrollPolicy';
-
-// The outer Scroll only moves the title bar gap. The inner Web owns the end of the document.
-const documentScroll = new PageScrollPolicy(false, 0, EffectEdge.START);
+import { pageContentTop, pageScroll } from './PageScrollPolicy';
 
 export class DocumentWebScroll implements AttributeModifier<WebAttribute> {
   applyNormalAttribute(web: WebAttribute): void {
     web.width('100%').height('100%')
-      .verticalScrollBarAccess(false)
-      .overScrollMode(OverScrollMode.ALWAYS)
+      .verticalScrollBarAccess(true)
+      // ArkWeb hands both document edges to the parent Scroll's spring.
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/arkts-basic-components-web-attributes/#nestedscroll
+      .overScrollMode(OverScrollMode.NEVER)
       .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST });
   }
 }
@@ -18,14 +17,14 @@ export const documentWebScroll = new DocumentWebScroll();
 export interface DocumentWebViewport {
   top: number;
   bottom: number;
-  trackTop: number;
-  trackBottom: number;
+  caretTop: number;
+  caretBottom: number;
   start: number;
   end: number;
 }
 
 export const emptyDocumentViewport: DocumentWebViewport = {
-  top: 0, bottom: 0, trackTop: 0, trackBottom: 0, start: 0, end: 0
+  top: 0, bottom: 0, caretTop: 0, caretBottom: 0, start: 0, end: 0
 };
 
 export function documentTabClearance(tabBarBottomMargin: number): number {
@@ -59,8 +58,8 @@ export struct DocumentScrollLayer {
     const gap = LengthMetrics.resource(pageContentTop).value;
     this.onViewportChange({
       top, bottom,
-      trackTop: Math.max(0, top + this.parentOffset),
-      trackBottom: Math.max(0, bottom + gap - this.parentOffset),
+      caretTop: Math.max(0, top + this.parentOffset),
+      caretBottom: Math.max(0, bottom + gap - this.parentOffset),
       start: LengthMetrics.resource($r('sys.float.margin_left')).value,
       end: LengthMetrics.resource($r('sys.float.margin_right')).value
     });
@@ -78,7 +77,7 @@ export struct DocumentScrollLayer {
       // faqs-arkui-725: bounded Scroll centers short content unless aligned to the top.
       .align(Alignment.Top)
       .scrollable(ScrollDirection.Vertical)
-      .attributeModifier(documentScroll)
+      .attributeModifier(pageScroll)
       .scrollBar(BarState.Off)
       .onDidScroll(() => {
         this.parentOffset = this.scroller.currentOffset().yOffset;

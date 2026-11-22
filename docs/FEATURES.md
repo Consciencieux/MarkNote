@@ -67,6 +67,6 @@
 
 - **首页与设置。** 列表在起点时，首项位于标题栏下方。向上滚动后，内容可进入标题栏的渐变模糊区，滚到边缘时有回弹。切换首页“全部”和“收藏”会回到对应列表顶部。代码高亮设置页由“主题”分组标题提供首项间距。
 - **文稿页。** 预览、编辑和大纲也随滚动显示标题栏模糊。正文可滚入底部悬浮页签的渐变区，滚到末尾时最后一行可移到页签上方。编辑时键盘弹出或在文末连续换行，视口随光标滚动。
-- **分栏。** 左侧预览和右侧源码独立滚动，两侧的页首和文末按同一标题栏与页签留出空间。每侧按需显示自己的滚动条，滑块只在该侧可读区域内移动。拖动源码滑块可定位正文，行尾文字留在滑块内侧。
+- **分栏。** 左侧预览和右侧源码独立滚动，两侧的页首和文末按同一标题栏与页签留出空间。每侧都按需显示系统滚动条，正文两侧留有边距。
 
 主要代码：[PageScrollPolicy.ets](../entry/src/main/ets/pages/PageScrollPolicy.ets)、[HdsMaterialStyles.ets](../entry/src/main/ets/pages/HdsMaterialStyles.ets)、[DocumentScrollLayer.ets](../entry/src/main/ets/pages/DocumentScrollLayer.ets)。

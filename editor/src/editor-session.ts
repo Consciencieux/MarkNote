@@ -184,9 +184,6 @@ export class EditorSession {
       (message.direction === 'ltr' || message.direction === 'rtl')) {
       document.documentElement.lang = message.language;
       document.documentElement.dir = message.direction;
-      if (typeof message.label === 'string') {
-        document.querySelector('#document-scrollbar')?.setAttribute('aria-label', message.label);
-      }
     }
   }
 

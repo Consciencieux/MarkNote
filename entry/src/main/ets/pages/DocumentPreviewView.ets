@@ -145,8 +145,7 @@ export struct DocumentPreviewView {
       svgRejected: AppText.text($r('app.string.preview_svg_rejected')),
       mathFailed: AppText.text($r('app.string.preview_math_failed')),
       imageName: AppText.text($r('app.string.preview_image_name')),
-      imageSlot: AppText.text($r('app.string.preview_image_slot')),
-      scrollbarLabel: AppText.text($r('app.string.tab_preview'))
+      imageSlot: AppText.text($r('app.string.preview_image_slot'))
     };
     const payload: PreviewCommand = {
       kind: this.kind,
