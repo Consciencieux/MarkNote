@@ -2,7 +2,7 @@ import { pageScroll } from './PageScrollPolicy';
 import { ComposeListItem, IconType, LengthMetrics, SymbolGlyphModifier } from '@kit.ArkUI';
 import { RecentDocument } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
-import { menuMaterialOptions } from './MenuMaterialOptions';
+import { MOBILE_MENU_WIDTH, menuMaterialOptions } from './MenuMaterialOptions';
 import { pageTitle } from './TextRoles';
 
 /**
@@ -22,7 +22,17 @@ export struct HomeView {
   onNew: (id: string) => void = (_id: string): void => {};
   onOpen: () => void = (): void => {};
   onRecent: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
-  onRemoveRecent: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
+  @Prop selecting: boolean = false;
+  @Prop selectedUris: string[] = [];
+  onShare: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
+  onCopy: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
+  onFavorite: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
+  onRemove: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
+  onDelete: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
+  onMultiSelect: (item: RecentDocument) => void = (_item: RecentDocument): void => {};
+  onSelectionChange: (item: RecentDocument, selected: boolean) => void =
+    (_item: RecentDocument, _selected: boolean): void => {};
+  onEditModeChange: (enabled: boolean) => void = (_enabled: boolean): void => {};
 
   /** 新建菜单的条目来自文稿格式注册表，新增格式不用改这里。 */
   private newDocumentMenu(): MenuElement[] {
@@ -46,70 +56,120 @@ export struct HomeView {
    * 不再手写 Row + SymbolGlyph + 两行 Text 和自行计算的 padding。
    */
   @Builder
-  private DocumentRow(title: string, detail: string, symbol: Resource) {
+  private RecentDocumentContent(item: RecentDocument) {
     ComposeListItem({
       contentItem: {
         iconStyle: IconType.SYSTEM_ICON,
-        symbolStyle: new SymbolGlyphModifier(symbol),
-        primaryText: title,
-        secondaryText: detail
+        symbolStyle: new SymbolGlyphModifier($r('sys.symbol.doc_text')),
+        primaryText: item.name,
+        secondaryText: FormatRegistry.displayTitle(FormatRegistry.byFilename(item.name))
       }
     })
+  }
+
+  private selected(uri: string): boolean {
+    return this.selectedUris.indexOf(uri) >= 0;
+  }
+
+  private recentMenuOptions(): ContextMenuOptions {
+    const material = menuMaterialOptions();
+    return {
+      preview: MenuPreviewMode.IMAGE,
+      hapticFeedbackMode: HapticFeedbackMode.ENABLED,
+      backgroundBlurStyle: material.backgroundBlurStyle,
+      systemMaterial: material.systemMaterial
+    };
   }
 
   @Builder
   private RecentMenu(item: RecentDocument) {
     Menu() {
-      MenuItem({
-        content: this.favoritesOnly ? $r('app.string.home_unfavorite') : $r('app.string.home_remove_record')
-      })
-        .onClick(() => this.onRemoveRecent(item))
+      MenuItemGroup() {
+        MenuItem({ content: $r('app.string.menu_share'),
+          symbolEndIcon: new SymbolGlyphModifier($r('sys.symbol.share')) })
+          .onClick(() => this.onShare(item))
+        MenuItem({ content: $r('app.string.menu_save_as'),
+          symbolEndIcon: new SymbolGlyphModifier($r('sys.symbol.save')) })
+          .onClick(() => this.onCopy(item))
+      }
+      MenuItemGroup() {
+        MenuItem({ content: $r('app.string.home_multi_select'),
+          symbolEndIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')) })
+          .onClick(() => this.onMultiSelect(item))
+        MenuItem({ content: item.favorite === true ? $r('app.string.menu_unfavorite') : $r('app.string.menu_favorite'),
+          symbolEndIcon: new SymbolGlyphModifier(item.favorite === true ? $r('sys.symbol.star_fill') : $r('sys.symbol.star')) })
+          .onClick(() => this.onFavorite(item))
+        MenuItem({ content: $r('app.string.home_remove_record'),
+          symbolEndIcon: new SymbolGlyphModifier($r('sys.symbol.minus_circle')) })
+          .onClick(() => this.onRemove(item))
+      }
+      MenuItemGroup() {
+        MenuItem({ content: $r('app.string.delete_title'),
+          symbolEndIcon: new SymbolGlyphModifier($r('sys.symbol.trash')).fontColor([$r('sys.color.warning')]) })
+          .contentFontColor($r('sys.color.warning'))
+          .onClick(() => this.onDelete(item))
+      }
     }
+    .width(MOBILE_MENU_WIDTH)
   }
 
   @Builder
   private RecentRow(item: RecentDocument) {
-    ListItem() {
-      this.DocumentRow(item.name, FormatRegistry.displayTitle(FormatRegistry.byFilename(item.name)),
-        $r('sys.symbol.doc_text'))
+    if (this.selecting) {
+      ListItem() {
+        this.RecentDocumentContent(item)
+      }
+      .selected(this.selected(item.uri))
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-container-listitem/
+      .stateStyles({
+        normal: { .backgroundColor(Color.Transparent) },
+        selected: { .backgroundColor(Color.Transparent) }
+      })
+      .onSelect((selected: boolean) => this.onSelectionChange(item, selected))
+    } else {
+      ListItem() {
+        this.RecentDocumentContent(item)
+      }
+      .onClick(() => this.onRecent(item))
+      .bindContextMenu(this.RecentMenu(item), ResponseType.LongPress, this.recentMenuOptions())
     }
-    .onClick(() => this.onRecent(item))
-    .bindContextMenu(this.RecentMenu(item), ResponseType.LongPress, menuMaterialOptions())
   }
 
   build() {
-    // 首页只承担两件事：开始一篇新文稿/打开已有文件，和回到最近打开过的文稿。
-    // 标题位于内容区，避免占用标题栏中分段按钮的空间。
-    // List keeps its native row layout; the shared policy owns safe areas and scrolling behavior.
     List({ scroller: this.scroller, spaceWidth: $r('sys.float.padding_level6') }) {
-      ListItem() {
-        Text(this.favoritesOnly ? $r('app.string.home_favorites') : $r('app.string.home_all'))
-          .attributeModifier(pageTitle)
-      }
-
-      ListItem() {
-        Row() {
-          Button($r('app.string.home_new_button'))
-            .accessibilityText($r('app.string.home_new'))
-            .bindMenu(this.newDocumentMenu(), menuMaterialOptions())
-            .layoutWeight(1)
-            .margin({ end: LengthMetrics.resource($r('sys.float.padding_level6')) })
-          Button($r('app.string.home_open'))
-            .accessibilityText($r('app.string.menu_open'))
-            // Button API (ts-basic-components-button)：打开文件采用普通操作的 NORMAL 样式。
-            .buttonStyle(ButtonStyleMode.NORMAL)
-            .layoutWeight(1)
-            .onClick(() => this.onOpen())
+      if (!this.selecting) {
+        ListItem() {
+          Text(this.favoritesOnly ? $r('app.string.home_favorites') : $r('app.string.home_all'))
+            .attributeModifier(pageTitle)
         }
-        .width('100%')
+        .selectable(false)
+
+        ListItem() {
+          Row() {
+            Button($r('app.string.home_new_button'))
+              .accessibilityText($r('app.string.home_new'))
+              .bindMenu(this.newDocumentMenu(), menuMaterialOptions())
+              .layoutWeight(1)
+              .margin({ end: LengthMetrics.resource($r('sys.float.padding_level6')) })
+            Button($r('app.string.home_open'))
+              .accessibilityText($r('app.string.menu_open'))
+              .buttonStyle(ButtonStyleMode.NORMAL)
+              .layoutWeight(1)
+              .onClick(() => this.onOpen())
+          }
+          .width('100%')
+        }
+        .selectable(false)
       }
 
       ForEach(this.recents, (item: RecentDocument) => {
         this.RecentRow(item)
-      }, (item: RecentDocument) => JSON.stringify([this.language, item.uri, item.name, this.favoritesOnly]))
+      }, (item: RecentDocument) => JSON.stringify([this.language, item.uri, item.name, item.favorite === true]))
     }
-    // Keep the list at the available width and use system margin resources for its edges.
-    .layoutWeight(1)
+    // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-layout-development-create-list/
+    .enableEditMode(this.selecting)
+    .onEditModeChange((enabled: boolean) => this.onEditModeChange(enabled))
+    .height('100%')
     .margin({
       start: LengthMetrics.resource($r('sys.float.margin_left')),
       end: LengthMetrics.resource($r('sys.float.margin_right'))

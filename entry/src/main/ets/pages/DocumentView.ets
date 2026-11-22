@@ -166,6 +166,7 @@ export struct DocumentView {
     menuBridge.closeDocument = (): void => menuBridge.dismiss((): void => this.requestLeave());
     // 首页在换篇、返回列表前都要先问这里能否离开。
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => this.saveBeforeLeaving();
+    documentBridge.confirmDelete = (uri: string, count: number): Promise<boolean> => this.deleteWithConfirmation(uri, count);
     documentBridge.resumeEditing = (): void => { this.editor.command({ action: 'resume' }); };
     documentBridge.requestLeave = (): void => this.requestLeave();
     this.loadSession();
@@ -264,6 +265,7 @@ export struct DocumentView {
     menuBridge.find = (): void => {};
     menuBridge.closeDocument = (): void => {};
     documentBridge.markDetached();
+    documentBridge.confirmDelete = () => Promise.resolve(false);
     documentBridge.saveBeforeLeaving = (): Promise<boolean> => Promise.resolve(true);
     documentBridge.resumeEditing = (): void => {};
     documentBridge.requestLeave = (): void => {};
@@ -401,41 +403,46 @@ export struct DocumentView {
   }
 
   private confirmDelete(): void {
-    void this.showDeleteConfirmation();
+    void this.deleteWithConfirmation(this.info.uri, 1);
   }
 
-  private async showDeleteConfirmation(): Promise<void> {
-    if (this.saving || this.deleting || this.info.uri.length === 0) return;
-    if (!await this.editor.flush()) return;
-    const uri = this.info.uri;
-    const confirmedSource = this.source;
-    this.getUIContext().showAlertDialog({
-      title: this.uiText($r('app.string.delete_title')),
-      message: this.uiText(this.isDirty() || DocumentService.current().writeUncertain ?
-        $r('app.string.delete_dirty') : $r('app.string.delete_clean')),
-      buttons: [
-        { value: this.uiText($r('app.string.dialog_cancel')), action: (): void => {} },
-        { value: this.uiText($r('app.string.menu_delete')), action: (): void => { void this.deleteDocument(uri, confirmedSource); } }
-      ]
+  private askDelete(count: number, dirty: boolean): Promise<boolean> {
+    let message = this.uiText(dirty ? $r('app.string.delete_dirty') : $r('app.string.delete_clean'));
+    if (count > 1) {
+      const batch = this.uiFormat($r('app.string.home_delete_many'), String(count));
+      message = dirty ? batch + '\n' + message : batch;
+    }
+    return new Promise<boolean>((resolve: (confirmed: boolean) => void) => {
+      this.getUIContext().showAlertDialog({
+        title: this.uiText($r('app.string.delete_title')),
+        message: message,
+        buttons: [
+          { value: this.uiText($r('app.string.dialog_cancel')), action: (): void => resolve(false) },
+          { value: this.uiText($r('app.string.menu_delete')), action: (): void => resolve(true) }
+        ],
+        cancel: (): void => resolve(false)
+      });
     });
   }
 
-  private async deleteDocument(uri: string, confirmedSource: string): Promise<void> {
+  private async deleteWithConfirmation(uri: string, count: number): Promise<boolean> {
     const session = DocumentService.current();
-    if (this.deleting || this.saving || !session.editing || session.info.uri !== uri) return;
-    if (!await this.editor.flush(true) || DocumentService.current() !== session || !session.editing) {
-      this.editor.command({ action: 'resume' });
-      return;
-    }
-    if (this.source !== confirmedSource) {
-      this.editor.command({ action: 'resume' });
-      this.confirmDelete();
-      return;
-    }
+    const current = (): boolean => this.sessionOwner === session && DocumentService.current() === session &&
+      session.editing && session.info.uri === uri;
+    if (this.saving || this.deleting || !uri || !current()) return false;
     this.deleting = true;
     try {
+      if (!await this.editor.flush() || !current()) return false;
+      while (current()) {
+        const revision = session.revision;
+        if (!await this.askDelete(count, session.isDirty() || session.writeUncertain) || !current()) return false;
+        if (!await this.editor.flush(true) || !current()) return false;
+        if (session.revision === revision) break;
+        this.editor.command({ action: 'resume' });
+      }
+      if (!current()) return false;
       const result = await DocumentService.moveToTrash();
-      if (!result.deleted || DocumentService.current() !== session) return;
+      if (!result.deleted || DocumentService.current() !== session) return false;
       this.onDeleted(uri);
       if (result.retainedEdits) {
         this.syncFromService();
@@ -445,11 +452,13 @@ export struct DocumentView {
         this.onLeave();
         this.toast($r('app.string.delete_trashed'));
       }
+      return true;
     } catch (error) {
       this.toast(this.uiFormat($r('app.string.delete_failed'), shownDetail(error)));
+      return false;
     } finally {
       this.deleting = false;
-      this.editor.command({ action: 'resume' });
+      if (this.sessionOwner === session) this.editor.command({ action: 'resume' });
     }
   }
 

@@ -7,6 +7,7 @@
 export class DocumentBridge {
   /** 处理未保存的改动，true 表示可以继续。 */
   saveBeforeLeaving: () => Promise<boolean> = (): Promise<boolean> => Promise.resolve(true);
+  confirmDelete: (uri: string, count: number) => Promise<boolean> = () => Promise.resolve(false);
   resumeEditing: () => void = (): void => {};
   /** 保存后关闭会话并请首页弹栈。 */
   requestLeave: () => void = (): void => {};
