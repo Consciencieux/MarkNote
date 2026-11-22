@@ -63,7 +63,9 @@ export struct DocumentView {
   @StorageLink('marknote_code_theme') codeTheme: string = 'github';
   @State private wide: boolean = false;
   @State private workspaceTop: number = 0;
+  @State private workspaceBottom: number = 0;
   @State private editorTop: number = 0;
+  @State private editorBottom: number = 0;
   @State private editorParentOffset: number = 0;
   @State private splitEditorWidth: number = 0;
   @Prop canExpand: boolean = false;
@@ -1007,7 +1009,8 @@ export struct DocumentView {
               textDirection: isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr',
               topInset: Math.max(0, this.workspaceTop - this.editorTop),
               parentOffset: this.editorParentOffset,
-              bottomInset: documentTabClearance(this.tabBarBottomMargin),
+              bottomInset: documentTabClearance(this.tabBarBottomMargin) +
+                (this.workspaceBottom > 0 ? Math.max(0, this.editorBottom - this.workspaceBottom) : 0),
               controller: this.editor,
               onChange: (expected: string, source: string, anchor: number, head: number, endings?: string): boolean => {
                 return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head, endings);
@@ -1029,12 +1032,14 @@ export struct DocumentView {
         }, (key: number): string => key.toString())
       }
       .width(this.wide && this.selectedTab === this.splitTab() ? this.splitEditorWidth : '100%')
-      // ArkUI 安全区域（ts-universal-attributes-expand-safe-area）：matchParent 同时扩展位置和高度。
-      // 首行的避让放进可滚动正文，滚动后文字才能进入标题栏下方。
+      // 预览由原生 Scroll 扩展绘制区域。有界的编辑 Web 还需要扩展布局，才能在底部渐变区内绘制正文。
+      // 按实际扩展量避让首末行。SYSTEM 不包括键盘避让区。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-universal-attributes-expand-safe-area
       .height(LayoutPolicy.matchParent)
-      .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP])
+      .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.VERTICAL])
       .onAreaChange((_oldArea: Area, area: Area): void => {
         this.editorTop = Number(area.globalPosition.y);
+        this.editorBottom = this.editorTop + Number(area.height);
       })
       .visibility(this.inEditTab() ? Visibility.Visible : Visibility.Hidden)
     }
@@ -1042,6 +1047,7 @@ export struct DocumentView {
     .height('100%')
     .onAreaChange((_oldArea: Area, newArea: Area): void => {
       this.workspaceTop = Number(newArea.globalPosition.y);
+      this.workspaceBottom = this.workspaceTop + Number(newArea.height);
       const wide = Number(newArea.width) >= 840;
       if (wide !== this.wide) {
         this.wide = wide;
