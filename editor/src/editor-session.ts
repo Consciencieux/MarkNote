@@ -5,6 +5,7 @@ import { insertEditorAction } from './editor-actions.ts';
 import type { EditorAck, EditorChangeRange, EditorConflict } from '../../shared/editor-protocol.ts';
 import { changedEndings, mixedEndings } from './mixed-endings.ts';
 import { EditorChangeQueue } from './bridge.ts';
+import { applyDocumentViewport } from '../../shared/document-viewport.ts';
 
 interface InitMessage {
   type: 'init'; sessionId: string; epoch: number; revision: number; source: string;
@@ -101,13 +102,7 @@ export class EditorSession {
     }
     if (message.type === 'viewport' && this.current && message.sessionId === this.current.sessionId &&
       message.epoch === this.current.epoch) {
-      const insets = { top: message.top, bottom: message.bottom, start: message.start, end: message.end,
-        'track-top': message.trackTop, 'track-bottom': message.trackBottom };
-      if (Object.values(insets).some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) return;
-      for (const [edge, value] of Object.entries(insets)) {
-        document.documentElement.style.setProperty(`--inset-${edge}`, `${value}px`);
-      }
-      this.view.requestMeasure();
+      if (applyDocumentViewport(message)) this.view.requestMeasure();
       return;
     }
     if (message.type === 'ack') this.queue?.acknowledge(message as unknown as EditorAck);
@@ -190,7 +185,7 @@ export class EditorSession {
       document.documentElement.lang = message.language;
       document.documentElement.dir = message.direction;
       if (typeof message.label === 'string') {
-        document.querySelector('#source-scrollbar')?.setAttribute('aria-label', message.label);
+        document.querySelector('#document-scrollbar')?.setAttribute('aria-label', message.label);
       }
     }
   }

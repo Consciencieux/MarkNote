@@ -16,7 +16,7 @@ import { FormatBarView } from './FormatBarView';
 import { DocumentFindBar } from './DocumentFindBar';
 import { DocumentOutlineView } from './DocumentOutlineView';
 import { DocumentPreviewView } from './DocumentPreviewView';
-import { DocumentScrollLayer, documentTabClearance } from './DocumentScrollLayer';
+import { DocumentScrollLayer, DocumentWebViewport, emptyDocumentViewport } from './DocumentScrollLayer';
 import { DocumentCodeEditor, DocumentCodeEditorController } from './DocumentCodeEditor';
 import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { chooseDocumentEncoding, menuBridge } from './DocumentMenus';
@@ -62,11 +62,11 @@ export struct DocumentView {
   @StorageLink('marknote_language') language: string = 'default';
   @StorageLink('marknote_code_theme') codeTheme: string = 'github';
   @State private wide: boolean = false;
-  @State private workspaceTop: number = 0;
-  @State private workspaceBottom: number = 0;
-  @State private editorTop: number = 0;
-  @State private editorBottom: number = 0;
-  @State private editorParentOffset: number = 0;
+  @Provide('documentWorkspaceTop') private workspaceTop: number = 0;
+  @Provide('documentWorkspaceBottom') private workspaceBottom: number = 0;
+  @State private previewViewport: DocumentWebViewport = emptyDocumentViewport;
+  @State private splitPreviewViewport: DocumentWebViewport = emptyDocumentViewport;
+  @State private editViewport: DocumentWebViewport = emptyDocumentViewport;
   @State private splitEditorWidth: number = 0;
   @Prop canExpand: boolean = false;
   @Prop expanded: boolean = false;
@@ -891,14 +891,18 @@ export struct DocumentView {
   private SplitPage() {
     Row() {
       Column() {
-        DocumentPreviewView({
-          scroller: this.splitPreviewScroller, theme: this.theme, source: this.source,
-          kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
-          documentId: this.documentSessionId, workMode: this.splitWorkMode(),
-          onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
-            this.acceptTexOutline(documentId, revision, headings),
-          onOpenExternalLink: (link: string): void => { void this.openExternalLink(link); }
-        })
+        DocumentScrollLayer({ scroller: this.splitPreviewScroller,
+          onViewportChange: (viewport: DocumentWebViewport): void => { this.splitPreviewViewport = viewport; } }) {
+          DocumentPreviewView({
+            viewport: this.splitPreviewViewport,
+            theme: this.theme, source: this.source,
+            kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
+            documentId: this.documentSessionId, workMode: this.splitWorkMode(),
+            onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
+              this.acceptTexOutline(documentId, revision, headings),
+            onOpenExternalLink: (link: string): void => { void this.openExternalLink(link); }
+          })
+        }
       }
         .layoutWeight(1)
         .height('100%')
@@ -931,14 +935,18 @@ export struct DocumentView {
       HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
         // Preview is first so a newly opened document lands on its rendered content.
         TabContent() {
-          DocumentPreviewView({
-            scroller: this.previewScroller, theme: this.theme, source: this.source,
-            kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
-            documentId: this.documentSessionId, workMode: this.mainWorkMode(),
-            onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
-              this.acceptTexOutline(documentId, revision, headings),
-            onOpenExternalLink: (link: string): void => { void this.openExternalLink(link); }
-          })
+          DocumentScrollLayer({ scroller: this.previewScroller,
+            onViewportChange: (viewport: DocumentWebViewport): void => { this.previewViewport = viewport; } }) {
+            DocumentPreviewView({
+              viewport: this.previewViewport,
+              theme: this.theme, source: this.source,
+              kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
+              documentId: this.documentSessionId, workMode: this.mainWorkMode(),
+              onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
+                this.acceptTexOutline(documentId, revision, headings),
+              onOpenExternalLink: (link: string): void => { void this.openExternalLink(link); }
+            })
+          }
         }
           .onWillShow((): void => { this.previewShown = true; })
           .onWillHide((): void => { this.previewShown = false; })
@@ -999,18 +1007,15 @@ export struct DocumentView {
       // One Web instance remains mounted while editing and split tabs change.
       Column() {
         ForEach([this.editorSessionKey], (key: number) => {
-          DocumentScrollLayer({ scroller: this.editScroller, boundedEditor: true,
-            onViewportChange: (offset: number): void => { this.editorParentOffset = offset; } }) {
+          DocumentScrollLayer({ scroller: this.editScroller,
+            onViewportChange: (viewport: DocumentWebViewport): void => { this.editViewport = viewport; } }) {
             DocumentCodeEditor({
+              viewport: this.editViewport,
               sessionId: `document-${key}`, source: this.source, formatId: this.formatId,
               initialEndings: this.info.newline === 'mixed' ? DocumentService.current().lineEndings : undefined,
               webTheme: this.theme, appearance: this.theme, theme: this.codeTheme,
               language: resourceLanguage(this.language),
               textDirection: isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr',
-              topInset: Math.max(0, this.workspaceTop - this.editorTop),
-              parentOffset: this.editorParentOffset,
-              bottomInset: documentTabClearance(this.tabBarBottomMargin) +
-                (this.workspaceBottom > 0 ? Math.max(0, this.editorBottom - this.workspaceBottom) : 0),
               controller: this.editor,
               onChange: (expected: string, source: string, anchor: number, head: number, endings?: string): boolean => {
                 return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head, endings);
@@ -1032,15 +1037,7 @@ export struct DocumentView {
         }, (key: number): string => key.toString())
       }
       .width(this.wide && this.selectedTab === this.splitTab() ? this.splitEditorWidth : '100%')
-      // 预览由原生 Scroll 扩展绘制区域。有界的编辑 Web 还需要扩展布局，才能在底部渐变区内绘制正文。
-      // 按实际扩展量避让首末行。SYSTEM 不包括键盘避让区。
-      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-universal-attributes-expand-safe-area
-      .height(LayoutPolicy.matchParent)
-      .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.VERTICAL])
-      .onAreaChange((_oldArea: Area, area: Area): void => {
-        this.editorTop = Number(area.globalPosition.y);
-        this.editorBottom = this.editorTop + Number(area.height);
-      })
+      .height('100%')
       .visibility(this.inEditTab() ? Visibility.Visible : Visibility.Hidden)
     }
     .width('100%')

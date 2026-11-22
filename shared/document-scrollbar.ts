@@ -1,7 +1,19 @@
 /** ArkWeb scrolls the whole immersive surface. Place its navigation control in the readable part of the pane. */
-export function bindSourceScrollbar(content: HTMLElement, control: HTMLInputElement): void {
+export function bindDocumentScrollbar(content: HTMLElement, targetId: string): HTMLInputElement {
   const page = document.scrollingElement!;
-  const rail = control.parentElement!;
+  const rail = document.createElement('div');
+  rail.className = 'document-scrollbar';
+  const control = document.createElement('input');
+  control.id = 'document-scrollbar';
+  control.type = 'range';
+  control.min = '0';
+  control.max = '0';
+  control.step = 'any';
+  control.setAttribute('role', 'scrollbar');
+  control.setAttribute('aria-controls', targetId);
+  control.setAttribute('aria-orientation', 'vertical');
+  rail.append(control);
+  document.body.append(rail);
   let idleTimer = 0;
   let travel = 0;
 
@@ -38,4 +50,5 @@ export function bindSourceScrollbar(content: HTMLElement, control: HTMLInputElem
   control.addEventListener('input', () => { page.scrollTop = control.valueAsNumber; });
   control.addEventListener('pointerdown', reveal);
   updateRange();
+  return control;
 }

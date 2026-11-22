@@ -14,6 +14,9 @@ import { encodePreviewLinkRequest } from './preview-link-message';
 import { previewText, usePreviewText } from './preview-text';
 import katex from 'katex';
 import { syntaxColors } from '../../shared/syntax-colors.ts';
+import { bindDocumentScrollbar } from '../../shared/document-scrollbar.ts';
+import { applyDocumentViewport } from '../../shared/document-viewport.ts';
+import '../../shared/document-scrollbar.css';
 
 type Kind = PreviewUpdate['kind'];
 let resultPort: MessagePort | undefined;
@@ -43,6 +46,7 @@ window.addEventListener('message', (event: MessageEvent) => {
 
 const host = document.getElementById('preview');
 if (!host) throw new Error('missing preview root');
+const scrollbar = bindDocumentScrollbar(host, host.id);
 
 function notePreviewTarget(update: PreviewUpdate): void {
   const revision = update.revision;
@@ -100,7 +104,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 const images = new PreviewImages();
 let markdown: MarkdownWindow | undefined;
-let viewport = { top: 0, height: window.screen.height || 800 };
+let renderedDocumentId: number | undefined;
 
 function clearRender(): void {
   cancelCodeHighlight();
@@ -115,24 +119,22 @@ function clearRender(): void {
 
 function releasePreview(): void {
   linkTarget = undefined;
-  // Retain the native Scroll offset while the hidden DOM is released.
+  // Retain the page scroll offset while the hidden DOM is released.
   if (host!.firstChild) host!.style.minHeight = `${host!.offsetHeight}px`;
   clearRender();
 }
 
-function updateWindow(theme: PreviewTheme): void {
-  if (markdown?.update(viewport.top, viewport.height)) {
+function updateWindow(theme: PreviewTheme, scrollTop: number = window.scrollY): void {
+  if (markdown?.update(Math.max(0, scrollTop - host!.offsetTop), window.innerHeight)) {
     paintCodeHighlight(host!, markdown.pendingCode());
     paintDiagrams(theme);
   }
 }
 
-function imageWindow(top: number, height: number, generation: number): ImageRequest[] | null {
-  if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) return [];
-  viewport = { top, height };
-  if (!markdown || !lastRendered) return [];
+function imageWindow(generation: number): ImageRequest[] | null {
+  if (!markdown || !lastRendered || window.innerHeight <= 0) return [];
   updateWindow(lastRendered.theme);
-  return images.requests(host!, top, height, generation);
+  return images.requests(host!, window.innerHeight, generation);
 }
 
 // Loading an image, drawing a diagram, or resizing a split pane can bring
@@ -182,12 +184,15 @@ function render(update: PreviewUpdate): void {
     postTexOutline(update, renderTexDocument(update.source, false));
     return;
   }
+  const scrollTop = renderedDocumentId === update.documentId ? window.scrollY : 0;
+  renderedDocumentId = update.documentId;
   host!.style.minHeight = '';
   codeTheme = ['off', 'github', 'atom', 'vs'].includes(update.codeTheme || '') ? update.codeTheme! : 'github';
   appearance = update.theme;
   applyCodeColors();
   notePreviewTarget(update);
   const textStamp = usePreviewText(update.text);
+  if (typeof update.text?.scrollbarLabel === 'string') scrollbar.setAttribute('aria-label', update.text.scrollbarLabel);
   document.documentElement.lang = previewText().lang;
   document.documentElement.dir = update.text?.rtl ? 'rtl' : 'ltr';
   document.documentElement.removeAttribute('data-theme');
@@ -203,7 +208,6 @@ function render(update: PreviewUpdate): void {
     }
     return;
   }
-  if (lastRendered && lastRendered.documentId !== update.documentId) viewport.top = 0;
   clearRender();
   if (!DOMPurify.isSupported) {
     host!.textContent = previewText().unsafe;
@@ -228,7 +232,7 @@ function render(update: PreviewUpdate): void {
   try {
     if (update.kind === 'markdown') {
       markdown = new MarkdownWindow(host!, markdownPages(update.source), sanitizedFragment);
-      updateWindow(update.theme);
+      updateWindow(update.theme, scrollTop);
     } else {
       tex = update.kind === 'tex-math' ? renderTexDocument(update.source, true) : undefined;
       host!.append(sanitizedFragment(tex ? tex.html : renderBody(update.kind, update.source)));
@@ -251,11 +255,13 @@ function render(update: PreviewUpdate): void {
     }
     postTexOutline(update, tex);
   }
+  window.scrollTo(0, scrollTop);
 }
 
 const api = Object.freeze({
   update: (data: PreviewUpdate) => render(data),
   release: releasePreview,
+  setViewport: applyDocumentViewport,
   imageWindow,
   loadImages: (generation: number) => images.load(generation),
   sizeImage: (id: number, width: number, height: number) => images.size(id, width, height)

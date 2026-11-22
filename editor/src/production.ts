@@ -5,7 +5,8 @@ import { languageFor } from './languages.js';
 import { syntaxTheme } from './syntax-theme.js';
 import { trackMixedEndings } from './mixed-endings.ts';
 import { EditorSession } from './editor-session.ts';
-import { bindSourceScrollbar } from './source-scrollbar.ts';
+import { bindDocumentScrollbar } from '../../shared/document-scrollbar.ts';
+import '../../shared/document-scrollbar.css';
 import './production.css';
 
 const host = document.querySelector<HTMLElement>('#editor');
@@ -61,7 +62,7 @@ const extensions = (format: string, theme: string, appearance: string = 'light')
   EditorState.transactionFilter.of((transaction) => transaction.docChanged && session?.isBlocked() ? [] : transaction)
 ];
 const view = new EditorView({ parent: host, state: EditorState.create({ extensions: extensions('plain', 'off') }) });
-bindSourceScrollbar(view.dom, document.querySelector<HTMLInputElement>('#source-scrollbar')!);
+bindDocumentScrollbar(view.dom, host.id);
 const applyTheme = (theme: string, appearance: string) => {
   currentTheme = theme;
   currentAppearance = appearance;

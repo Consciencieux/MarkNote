@@ -27,7 +27,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 `HdsMaterialStyles` 配置滚动标题栏。首页和各级设置页通过 `bindToScrollable` 绑定本页列表，文稿页绑定当前页签的控制器，分栏时同时绑定预览和编辑两侧。`PageScrollPolicy` 统一原生列表和滚动容器的边缘回弹、安全区裁切与滚动条避让。文稿页签及其父容器放开裁切，使正文能滚入标题栏和底部页签的渐变区。
 
-预览的 ArkWeb 随内容展开，交由 `DocumentScrollLayer` 的原生 `Scroll` 滚动。大纲直接使用有界 `List` 和 `Repeat.virtualScroll`，两者各用自己的原生滚动条。编辑器在有界 ArkWeb 中滚动，通过嵌套滚动与外层 `Scroll` 衔接。两层自带的纵向滚动条均关闭，由[源码滑块](../editor/src/source-scrollbar.ts)读取和设置网页滚动位置。编辑与分栏复用同一编辑器和控制器。两栏按相同的标题栏与页签范围计算可读区域，滑块布局参考华为[滚动条设计指南](https://developer.huawei.com/consumer/cn/doc/design-guides/scrollbar-0000001956815473/)。
+预览和编辑通过 `DocumentScrollLayer` 使用有界 ArkWeb。网页负责正文滚动和页内回弹，外层 `Scroll` 负责标题栏联动。两栏共用[文稿滑块](../shared/document-scrollbar.ts)，按标题栏和页签的布局计算轨道，样式参考华为[滚动条设计指南](https://developer.huawei.com/consumer/cn/doc/design-guides/scrollbar-0000001956815473/)。编辑与分栏复用同一编辑器和控制器。大纲使用有界 `List`、`Repeat.virtualScroll` 和原生滚动条。
 
 `DocumentView` 持有文稿编辑、查找和保存界面状态，并按页签是否可见决定预览工作方式；查找栏 `DocumentFindBar` 只绘制查询和替换控件。保存和删除后的文稿数据由 `DocumentService` 更新。`DocumentPreviewView` 管理各自的 Web 控制器，`PreviewDispatch` 保证每个实例最多一笔在途发送和一笔最新请求。`DocumentOutlineView` 管理大纲展示与展开状态。
 
@@ -35,7 +35,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 ## 离线预览
 
-`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号、工作模式，以及当前界面语言的预览提示。工作模式为关闭时不发送；LaTeX 大纲模式只解析并回传标题，不生成页面。隐藏的预览释放页面节点并停止着色，保留正文之前的高度供原生滚动容器维持位置。预览根据原生滚动容器报告的位置挂载附近的 Markdown 内容，用 markdown-it 解析块、引用、列表和围栏。每个挂载区的 HTML 经 DOMPurify 清理后插入。文内公式定义了跨公式复用的全局宏时，整篇按源码顺序排版，以保留定义和重定义的语义。
+`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号、工作模式，以及当前界面语言的预览提示。工作模式为关闭时不发送；LaTeX 大纲模式只解析并回传标题，不生成页面。隐藏的预览释放页面节点并停止着色，保留正文高度以维持页内滚动位置。预览按 ArkWeb 的实际视口挂载附近的 Markdown 内容，用 markdown-it 解析块、引用、列表和围栏。每个挂载区的 HTML 经 DOMPurify 清理后插入。文内公式定义了跨公式复用的全局宏时，整篇按源码顺序排版，以保留定义和重定义的语义。
 
 应用根据当前文稿的 URI 和已有授权，逐张读取阅读位置附近的本地图片。ArkWeb 提供栏宽、视口高度和像素密度，原生用 Image Kit 读取图像格式和尺寸。需要缩小的静态位图通过 ImagePacker 编码到私有临时文件，多帧 GIF 和 WebP 保留原图。ArkWeb 只为当前阅读范围内的图片分配临时地址。应用在 onInterceptRequest 中核对文稿和图片身份，用 WebResourceResponse 交付文件描述符，交付后由 ArkWeb 关闭。文稿 URI、路径校验和文件授权由原生侧处理，本地 SVG 仅在隔离的图片上下文显示。网页不注册文件或导航接口，也不加载网络图片。
 

@@ -16,13 +16,13 @@ export class PreviewImages {
     this.slots.clear();
   }
 
-  requests(root: HTMLElement, top: number, height: number, generation: number): ImageRequest[] | null {
+  requests(root: HTMLElement, height: number, generation: number): ImageRequest[] | null {
     const next = new Map<HTMLElement, Slot>();
     const ratio = window.devicePixelRatio || 1;
     for (const element of root.querySelectorAll<HTMLElement>('.image-slot')) {
       const rect = element.getBoundingClientRect();
       const key = element.dataset.mnSrc;
-      if (!key || rect.bottom <= Math.max(0, top - height) || rect.top >= top + 2 * height) {
+      if (!key || rect.bottom <= -height || rect.top >= 2 * height) {
         if (this.slots.has(element)) {
           element.style.minHeight = `${rect.height}px`;
           element.textContent = imageLabel(element.dataset.mnAlt || '');

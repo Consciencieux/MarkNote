@@ -1,54 +1,100 @@
 import { LengthMetrics } from '@kit.ArkUI';
-import { pageScroll, PageScrollPolicy } from './PageScrollPolicy';
+import { pageContentTop, PageScrollPolicy } from './PageScrollPolicy';
+
+// The outer Scroll only moves the title bar gap. The inner Web owns the end of the document.
+const documentScroll = new PageScrollPolicy(false, 0, EffectEdge.START);
+
+export class DocumentWebScroll implements AttributeModifier<WebAttribute> {
+  applyNormalAttribute(web: WebAttribute): void {
+    web.width('100%').height('100%')
+      .verticalScrollBarAccess(false)
+      .overScrollMode(OverScrollMode.ALWAYS)
+      .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST });
+  }
+}
+
+export const documentWebScroll = new DocumentWebScroll();
+
+export interface DocumentWebViewport {
+  top: number;
+  bottom: number;
+  trackTop: number;
+  trackBottom: number;
+  start: number;
+  end: number;
+}
+
+export const emptyDocumentViewport: DocumentWebViewport = {
+  top: 0, bottom: 0, trackTop: 0, trackBottom: 0, start: 0, end: 0
+};
 
 export function documentTabClearance(tabBarBottomMargin: number): number {
+  // HdsTabs uses its default floating height (56vp). The content shares the bar's bottom margin.
+  // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ui-design-hdstabs#barheight
   const bar = LengthMetrics.resource($r('sys.float.tab_bar_default_height')).value;
   return bar + tabBarBottomMargin;
 }
 
-/**
- * Preview and outline content scroll with this container. The bounded editor has its own
- * viewport and coordinates scrolling with this container through nested scrolling.
- */
+/** Shares the bounded, immersive Web viewport between preview and editing. */
 @Component
 export struct DocumentScrollLayer {
-  @Consume('documentTabBarBottomMargin') tabBarBottomMargin: number;
+  @Consume('documentTabBarBottomMargin') @Watch('updateViewport') tabBarBottomMargin: number;
+  @Consume('documentWorkspaceTop') @Watch('updateViewport') workspaceTop: number;
+  @Consume('documentWorkspaceBottom') @Watch('updateViewport') workspaceBottom: number;
   scroller: Scroller = new Scroller();
-  boundedEditor: boolean = false;
-  onViewportChange: (top: number, height: number) => void = (_top: number, _height: number): void => {};
+  onViewportChange: (viewport: DocumentWebViewport) => void = (_viewport: DocumentWebViewport): void => {};
   @State private viewportHeight: number = 0;
+  private viewportTop: number = 0;
+  private parentOffset: number = 0;
   @BuilderParam content: () => void = this.EmptyContent;
 
   @Builder
   private EmptyContent() {}
 
+  private updateViewport(): void {
+    if (this.viewportHeight <= 0 || this.workspaceBottom <= 0) return;
+    const top = Math.max(0, this.workspaceTop - this.viewportTop);
+    const bottom = documentTabClearance(this.tabBarBottomMargin) +
+      Math.max(0, this.viewportTop + this.viewportHeight - this.workspaceBottom);
+    const gap = LengthMetrics.resource(pageContentTop).value;
+    this.onViewportChange({
+      top, bottom,
+      trackTop: Math.max(0, top + this.parentOffset),
+      trackBottom: Math.max(0, bottom + gap - this.parentOffset),
+      start: LengthMetrics.resource($r('sys.float.margin_left')).value,
+      end: LengthMetrics.resource($r('sys.float.margin_right')).value
+    });
+  }
+
   build() {
-    Scroll(this.scroller) {
-      Column() {
-        this.content()
+    Column() {
+      Scroll(this.scroller) {
+        Column() {
+          this.content()
+        }
+        .width('100%')
+        .height(this.viewportHeight > 0 ? this.viewportHeight : undefined)
       }
-      .padding(this.boundedEditor ? 0 : {
-        start: LengthMetrics.resource($r('sys.float.margin_left')),
-        end: LengthMetrics.resource($r('sys.float.margin_right'))
+      // faqs-arkui-725: bounded Scroll centers short content unless aligned to the top.
+      .align(Alignment.Top)
+      .scrollable(ScrollDirection.Vertical)
+      .attributeModifier(documentScroll)
+      .scrollBar(BarState.Off)
+      .onDidScroll(() => {
+        this.parentOffset = this.scroller.currentOffset().yOffset;
+        this.updateViewport();
       })
       .width('100%')
-      .height(this.boundedEditor && this.viewportHeight > 0 ? this.viewportHeight : undefined)
+      .height('100%')
     }
-    // faqs-arkui-725: bounded Scroll centers short content unless aligned to the top.
-    .align(Alignment.Top)
-    .scrollable(ScrollDirection.Vertical)
-    .attributeModifier(this.boundedEditor ? pageScroll :
-      new PageScrollPolicy(false, documentTabClearance(this.tabBarBottomMargin)))
-    // The bounded Web scrolls the source. This outer Scroll only coordinates its native safe area.
-    .scrollBar(this.boundedEditor ? BarState.Off : BarState.Auto)
-    .onDidScroll(() => {
-      this.onViewportChange(this.scroller.currentOffset().yOffset, this.viewportHeight);
-    })
-    .onAreaChange((_oldArea: Area, newArea: Area) => {
-      this.viewportHeight = Number(newArea.height);
-      this.onViewportChange(this.scroller.currentOffset().yOffset, this.viewportHeight);
-    })
     .width('100%')
-    .height('100%')
+    // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-universal-attributes-expand-safe-area
+    .height(LayoutPolicy.matchParent)
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.VERTICAL])
+    .onAreaChange((_oldArea: Area, area: Area): void => {
+      this.viewportTop = Number(area.globalPosition.y);
+      this.viewportHeight = Number(area.height);
+      this.updateViewport();
+    })
   }
 }

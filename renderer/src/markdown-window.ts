@@ -3,7 +3,7 @@ import type { MarkdownPages } from './renderers/markdown-pages';
 import { bindMermaid } from './renderers/mermaid';
 import { isolateSvg } from './renderers/svg';
 
-/** ArkWeb fits its content. The native Scroll supplies the viewport in CSS pixels. */
+/** Mounts Markdown blocks around the bounded ArkWeb viewport. */
 export class MarkdownWindow {
   private readonly before = document.createElement('div');
   private readonly after = document.createElement('div');

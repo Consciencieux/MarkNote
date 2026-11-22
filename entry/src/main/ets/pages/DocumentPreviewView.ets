@@ -6,7 +6,7 @@ import { i18n } from '@kit.LocalizationKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { resourceLanguage } from '../i18n/AppLanguage';
 import { PreviewCommand, PreviewCopy, PreviewDispatch } from './PreviewDispatch';
-import { DocumentScrollLayer } from './DocumentScrollLayer';
+import { DocumentWebViewport, documentWebScroll, emptyDocumentViewport } from './DocumentScrollLayer';
 
 interface ParsedHeading { level: number; text: string; offset: number }
 interface ParsedResult {
@@ -43,7 +43,7 @@ export struct DocumentPreviewView {
     (_documentId: number, _revision: number, _headings: Heading[]): void => {};
   /** 预览里点击已校验的网页链接。页面不打开这个地址。 */
   onOpenExternalLink: (link: string) => void = (_link: string): void => {};
-  scroller: Scroller = new Scroller();
+  @Prop @Watch('updateViewport') viewport: DocumentWebViewport = emptyDocumentViewport;
   private controller: webview.WebviewController = new webview.WebviewController();
   private ready: boolean = false;
   private hasPreviewContent: boolean = false;
@@ -56,8 +56,6 @@ export struct DocumentPreviewView {
   private viewportDirty: boolean = false;
   private imageRequests: Map<string, LocalImageRequest> = new Map();
   private imageQueue: Promise<void> = Promise.resolve();
-  private imageTop: number = 0;
-  private imageHeight: number = 0;
   private dispatch: PreviewDispatch = new PreviewDispatch((command: PreviewCommand): Promise<void> => this.deliver(command));
 
   aboutToDisappear(): void {
@@ -147,7 +145,8 @@ export struct DocumentPreviewView {
       svgRejected: AppText.text($r('app.string.preview_svg_rejected')),
       mathFailed: AppText.text($r('app.string.preview_math_failed')),
       imageName: AppText.text($r('app.string.preview_image_name')),
-      imageSlot: AppText.text($r('app.string.preview_image_slot'))
+      imageSlot: AppText.text($r('app.string.preview_image_slot')),
+      scrollbarLabel: AppText.text($r('app.string.tab_preview'))
     };
     const payload: PreviewCommand = {
       kind: this.kind,
@@ -183,10 +182,16 @@ export struct DocumentPreviewView {
     });
   }
 
-  /** The native Scroll moves outside ArkWeb. Even an unsaved document needs its visible Markdown blocks. */
+  private updateViewport(): void {
+    if (!this.ready) return;
+    this.controller.runJavaScript('window.MarknotePreview.setViewport(' + JSON.stringify(this.viewport) + ')')
+      .then((): void => this.scheduleViewport()).catch((): void => {});
+  }
+
+  /** Even an unsaved document needs its visible Markdown blocks. */
   private scheduleViewport(): void {
     if (!this.ready || this.renderedGeneration !== this.imageGeneration || this.workMode !== 'render' ||
-      this.kind !== 'markdown' || this.imageHeight <= 0) return;
+      this.kind !== 'markdown') return;
     this.viewportDirty = true;
     if (!this.viewportBusy) void this.refreshViewport();
   }
@@ -199,7 +204,7 @@ export struct DocumentPreviewView {
         this.viewportDirty = false;
         const generation = this.imageGeneration;
         const raw = await this.controller.runJavaScript('JSON.stringify(window.MarknotePreview.imageWindow(' +
-          JSON.stringify(this.imageTop) + ',' + JSON.stringify(this.imageHeight) + ',' + generation + '))');
+          generation + '))');
         if (generation !== this.imageGeneration || !this.ready) continue;
         const requests = this.documentUri ? sourcesFromPage(raw) : [];
         if (requests === null) continue;
@@ -266,9 +271,7 @@ export struct DocumentPreviewView {
 
   @Builder
   private PreviewWeb() {
-    // renderMode 是 Web 构造参数（web.d.ts 的 WebOptions，API 12 起），没有同名链式属性。
-    // SYNC_RENDER 让 Web 作为画布节点和 ArkUI 一起绘制，FIT_CONTENT 才能按内容撑高。
-    Web({ src: $rawfile('preview/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
+    Web({ src: $rawfile('preview/index.html'), controller: this.controller })
       .visibility(this.previewFailed ? Visibility.None : Visibility.Visible)
       // SDK documents null as pass-through for rawfile, although its callback type omits null.
       .onInterceptRequest((event) => this.imageResponse(event)!)
@@ -282,31 +285,28 @@ export struct DocumentPreviewView {
       // 预览正文的底色由 renderer 的样式表按主题决定。
       .backgroundColor($r('sys.color.ohos_id_color_background'))
       .textZoomRatio(Math.round(this.fontScale * 100))
+      .attributeModifier(documentWebScroll)
+      .onScroll((): void => this.scheduleViewport())
+      .onAreaChange((): void => this.scheduleViewport())
       .onPageEnd(() => {
         this.imageGeneration++;
         this.imageRequests.clear();
         this.ready = true;
         this.connectResultPort();
+        this.updateViewport();
         if (this.workMode !== 'off') this.publish();
       })
-      .width('100%')
-      // 《Web组件大小自适应页面内容布局》：Web 按内容撑高，滚动交给外层 Scroll；
-      // NEVER 关掉 Web 自己的过滚动，避免和 Scroll 抢边缘效果。
-      .layoutMode(WebLayoutMode.FIT_CONTENT)
-      .verticalScrollBarAccess(false)
-      .overScrollMode(OverScrollMode.NEVER)
   }
 
   build() {
-    DocumentScrollLayer({ scroller: this.scroller, onViewportChange: (top: number, height: number): void => {
-      this.imageTop = top;
-      this.imageHeight = height;
-      this.scheduleViewport();
-    } }) {
+    Stack({ alignContent: Alignment.TopStart }) {
       this.PreviewWeb()
       if (this.previewFailed) {
         Text($r('app.string.preview_failed'))
+          .padding({ top: this.viewport.top, left: this.viewport.start, right: this.viewport.end })
       }
     }
+    .width('100%')
+    .height('100%')
   }
 }
