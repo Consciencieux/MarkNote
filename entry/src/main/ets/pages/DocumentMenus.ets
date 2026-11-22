@@ -1,4 +1,5 @@
 import { SymbolGlyphModifier, UIContext } from '@kit.ArkUI';
+import { MOBILE_MENU_WIDTH } from './MenuMaterialOptions';
 import { AppText } from '../i18n/AppText';
 
 export async function chooseDocumentEncoding(context: UIContext): Promise<string> {
@@ -96,9 +97,7 @@ struct HomeMenuView {
           .onClick(() => menuBridge.openSettings())
       }
     }
-    // HarmonyOS 菜单设计指南规定泛手机菜单宽度为 224vp。
-    // https://developer.huawei.com/consumer/cn/doc/design-guides/menu-0000001957001877/
-    .width(224)
+    .width(MOBILE_MENU_WIDTH)
     .subMenuExpandingMode(SubMenuExpandingMode.EMBEDDED_EXPAND)
   }
 }
