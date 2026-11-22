@@ -1,54 +1,58 @@
-import { ComposeListItem, SymbolGlyphModifier } from '@kit.ArkUI';
+import { HdsListItemCard, SuffixArrow, SuffixRadio, SuffixText, SuffixTextAndArrow } from '@kit.UIDesignKit';
 
-/** CARD owns the row action. ComposeListItem lays out its title, status and accessory.
- * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ohos-arkui-advanced-composelistitem/
+/**
+ * 由原生 ListItem 承载列表项。HDS 处理行内标题、状态和箭头。
+ * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ui-design-hdslistitemcard
+ * 行卡片在组内使用零外边距和透明背景，沿用 EfficientList 的嵌入方式。
+ * https://gitcode.com/HarmonyOS_Samples/HarmonyOSComponentUXExamples/blob/dev/products/phone/src/main/ets/components/container/list/components/EfficientList.ets
  */
 @Component
 export struct SettingsListRow {
   @Prop title: ResourceStr = '';
   @Prop value: ResourceStr | undefined = undefined;
   @Prop showArrow: boolean = false;
-  @Prop selected: boolean = false;
+  @Prop selected: boolean | undefined = undefined;
+  onSelect?: () => void;
+
+  private suffix(): SuffixArrow | SuffixRadio | SuffixText | SuffixTextAndArrow | undefined {
+    if (this.selected === true) {
+      return new SuffixRadio({ isCheck: true, accessibilityOptions: { accessibilityLevel: 'no' } });
+    }
+    if (this.showArrow) {
+      return this.value === undefined ? new SuffixArrow({}) : new SuffixTextAndArrow({ text: this.value }, {});
+    }
+    return this.value === undefined ? undefined : new SuffixText({ text: this.value });
+  }
 
   build() {
-    ComposeListItem({
-      contentItem: { primaryText: this.title },
-      operateItem: {
-        text: this.value,
-        arrow: this.showArrow ? { value: $r('sys.symbol.chevron_right'),
-          symbolStyle: new SymbolGlyphModifier($r('sys.symbol.chevron_right')) } : undefined,
-        radio: this.selected ? { isCheck: true, accessibilityLevel: 'no' } : undefined
+    HdsListItemCard({
+      textItem: { primaryText: { text: this.title } },
+      suffixItem: this.suffix(),
+      cardPrefixMargin: 0,
+      cardSuffixMargin: 0,
+      cardBackgroundColor: Color.Transparent,
+      onClick: this.onSelect,
+      accessibilityOptions: this.selected === undefined ? undefined : {
+        accessibilityGroup: { isGroup: true },
+        accessibilityText: this.title,
+        accessibilityRole: AccessibilityRoleType.RADIO,
+        accessibilitySelected: this.selected
       }
     })
-    .hitTestBehavior(HitTestMode.None)
-  }
-}
-
-/** 设置里可点击的导航行。带右侧状态或单选标记的行仍由页面直接组合。 */
-@Component
-export struct SettingsActionRow {
-  @Prop title: ResourceStr = '';
-  onSelect: () => void = (): void => {};
-
-  build() {
-    ListItem({ style: ListItemStyle.CARD }) {
-      SettingsListRow({ title: this.title, showArrow: true })
-    }
-    .onClick(() => this.onSelect())
   }
 }
 
 /**
- * The official ListSingleSelection example uses a 1px system divider with 12vp insets.
- * https://gitcode.com/HarmonyOS_Samples/HarmonyOSComponentUXExamples/blob/dev/products/phone/src/main/ets/components/select/checkbox/components/ListSingleSelection.ets
+ * 分割线使用系统颜色，起止缩进对齐组内行的内容区。
+ * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-container-listitemgroup/
  */
 export class SettingsGroupStyle implements AttributeModifier<ListItemGroupAttribute> {
   applyNormalAttribute(group: ListItemGroupAttribute): void {
     group.divider({
       strokeWidth: '1px',
       color: $r('sys.color.comp_divider'),
-      startMargin: 12,
-      endMargin: 12
+      startMargin: $r('sys.float.padding_level4'),
+      endMargin: $r('sys.float.padding_level4')
     });
   }
 }
