@@ -57,6 +57,8 @@
 
 “关于”页显示应用名称、版本，提供 GitHub 项目主页和开源许可证入口；主页交给系统浏览器打开。开源许可证页分别提供本项目和第三方许可证全文。页面先打开，再读取并按段显示原文，不删减许可证内容。使用帮助可从设置页直接打开，支持离线查看。
 
+“隐私说明”可离线阅读数据处理摘要，并可通过系统浏览器打开完整隐私政策。发布地址见[隐私说明文档](PRIVACY.md)。
+
 文稿标题栏显示文件名，不显示行数、字符数或保存状态。菜单在高、中材质等级使用沉浸材质，在低材质等级或能力查询失败时关闭菜单材质并使用系统默认背板，以避免菜单内容与正文重叠。
 
 主要代码：[SettingsView.ets](../entry/src/main/ets/pages/SettingsView.ets)、[SettingsDetail.ets](../entry/src/main/ets/pages/SettingsDetail.ets)、[SettingsPage.ets](../entry/src/main/ets/pages/SettingsPage.ets)、[MenuMaterialOptions.ets](../entry/src/main/ets/pages/MenuMaterialOptions.ets)。

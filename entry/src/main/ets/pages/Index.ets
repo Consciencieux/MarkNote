@@ -465,13 +465,13 @@ struct Index {
   }
 
   /** 华为 FAQ faqs-ability-58：通过隐式 Want 打开默认浏览器。 */
-  private openProjectHome(): void {
+  private openWebPage(uri: string, failureMessage: Resource): void {
     if (!this.context) return;
     this.context.startAbility({
       action: 'ohos.want.action.viewData',
       entities: ['entity.system.browsable'],
-      uri: 'https://github.com/Consciencieux/MarkNote'
-    }).catch(() => this.toast($r('app.string.project_open_failed')));
+      uri
+    }).catch(() => this.toast(failureMessage));
   }
 
   /** 华为《拉起邮件类应用（mailto方式）》：由邮件应用处理发送。 */
@@ -998,7 +998,11 @@ struct Index {
         theme: $theme,
         version: this.version,
         onOpen: (section: string): void => this.openSetting(section),
-        onOpenProject: (): void => this.openProjectHome(),
+        onOpenProject: (): void => this.openWebPage(
+          'https://github.com/Consciencieux/MarkNote', $r('app.string.project_open_failed')),
+        onOpenPrivacyPolicy: (): void => this.openWebPage(
+          'https://agreement-drcn.hispace.dbankcloud.cn/index.html?lang=zh&agreementId=2079386824156960000',
+          $r('app.string.privacy_open_failed')),
         onFeedback: (): void => this.openFeedback(),
         onBack: (): void => { this.routes.pop(); },
         onChooseTheme: (choice: string): void => this.changeTheme(choice),
