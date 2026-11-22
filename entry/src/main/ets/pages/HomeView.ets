@@ -89,11 +89,13 @@ export struct HomeView {
 
       ListItem() {
         Row() {
-          Button($r('app.string.home_new'))
+          Button($r('app.string.home_new_button'))
+            .accessibilityText($r('app.string.home_new'))
             .bindMenu(this.newDocumentMenu(), menuMaterialOptions())
             .layoutWeight(1)
             .margin({ end: LengthMetrics.resource($r('sys.float.padding_level6')) })
           Button($r('app.string.home_open'))
+            .accessibilityText($r('app.string.menu_open'))
             // Button API (ts-basic-components-button)：打开文件采用普通操作的 NORMAL 样式。
             .buttonStyle(ButtonStyleMode.NORMAL)
             .layoutWeight(1)

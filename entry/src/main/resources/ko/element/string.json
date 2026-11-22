@@ -7,6 +7,7 @@
     { "name": "home_favorites", "value": "즐겨찾기" },
     { "name": "home_favorites_segment", "value": "즐겨찾기" },
     { "name": "home_new", "value": "새 문서" },
+    { "name": "home_new_button", "value": "$string:home_new" },
     { "name": "home_open", "value": "파일 열기" },
     { "name": "home_unfavorite", "value": "즐겨찾기 해제" },
     { "name": "home_remove_record", "value": "기록 제거" },

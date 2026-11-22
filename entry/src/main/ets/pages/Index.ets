@@ -1,6 +1,6 @@
 import { common, ConfigurationConstant, bundleManager } from '@kit.AbilityKit';
 import {
-  ColorMetrics, ComponentContent, LengthMetrics, SegmentButtonV2Items, TabSegmentButtonV2, TextModifier
+  ColorMetrics, ComponentContent, LengthMetrics, SegmentButtonV2Items, TabSegmentButtonV2
 } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationTitleMode,
@@ -43,16 +43,9 @@ struct Index {
   @State private documentOpen: boolean = false;
   /** 首页分段按钮：0 是全部，1 是收藏。 */
   @State private librarySegment: number = 0;
-  // Keep both segments centered with one line. ArkUI fits long translations within the available lane.
-  private readonly librarySegmentLabel = new TextModifier()
-    .maxLines(1)
-    .minFontSize($r('sys.float.Caption_M'))
-    .maxFontSize($r('sys.float.Body_M'))
-    .heightAdaptivePolicy(TextHeightAdaptivePolicy.MIN_FONT_SIZE_FIRST);
   private readonly librarySegmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
-    { text: $r('app.string.home_all'), textModifier: this.librarySegmentLabel },
-    { text: $r('app.string.home_favorites_segment'), accessibilityText: $r('app.string.home_favorites'),
-      textModifier: this.librarySegmentLabel }
+    { text: $r('app.string.home_all') },
+    { text: $r('app.string.home_favorites_segment'), accessibilityText: $r('app.string.home_favorites') }
   ]);
   /** 用户改过语言后，启动时尚未返回的读取不能把选择盖回去。 */
   private languageEpoch: number = 0;
