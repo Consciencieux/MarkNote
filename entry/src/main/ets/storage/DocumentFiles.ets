@@ -8,7 +8,9 @@ import { AppText } from '../i18n/AppText';
 import { userNotice } from '../document/UserNotice';
 import { fileDigest, inspectDocument, InspectedDocument, writeVerifiedText } from './DocumentStream';
 
-const READ_WRITE: number = fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE;
+const READ: number = fileShare.OperationMode.READ_MODE;
+const WRITE: number = fileShare.OperationMode.WRITE_MODE;
+const READ_WRITE: number = READ | WRITE;
 
 export class FileContents {
   info: DocumentInfo = new DocumentInfo();
@@ -67,35 +69,32 @@ async function canOpen(uri: string, mode: number): Promise<boolean> {
   }
 }
 
-async function persisted(uri: string, mode: number): Promise<boolean> {
-  const item = policy(uri, mode);
+async function persistedModes(uri: string): Promise<number | null> {
   try {
-    const states = await fileShare.checkPersistentPermission([item]);
-    if (states.length === 0 || !states[0]) return false;
-    try {
-      await fileShare.activatePermission([item]);
-    } catch {
-      // A grant can already be active in this process.
-    }
-    return true;
+    const states = await fileShare.checkPersistentPermission([policy(uri, READ), policy(uri, WRITE)]);
+    if (states.length !== 2) return null;
+    return (states[0] ? READ : 0) | (states[1] ? WRITE : 0);
   } catch {
-    return false;
+    return null;
+  }
+}
+
+async function activate(uri: string, mode: number): Promise<void> {
+  if (mode === 0) return;
+  try {
+    await fileShare.activatePermission([policy(uri, mode)]);
+  } catch {
+    // A grant can already be active in this process.
   }
 }
 
 async function retain(uri: string, mode: number): Promise<boolean> {
-  if (await persisted(uri, mode)) return true;
-  const item = policy(uri, mode);
   try {
-    await fileShare.persistPermission([item]);
+    await fileShare.persistPermission([policy(uri, mode)]);
   } catch {
     return false;
   }
-  try {
-    await fileShare.activatePermission([item]);
-  } catch {
-    // Persisted for the next launch even if this process can already open the file.
-  }
+  await activate(uri, mode);
   return true;
 }
 
@@ -105,7 +104,7 @@ export class DocumentFiles {
     try {
       // A URI may be readable through a current grant even without a persisted policy.
       // Activate any stored grant first, then let the file provider decide access.
-      await persisted(uri, READ_WRITE) || await persisted(uri, fileShare.OperationMode.READ_MODE);
+      await activate(uri, (await persistedModes(uri) ?? 0) & READ);
       const file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
       try {
         const info = await fileIo.stat(file.fd);
@@ -173,33 +172,31 @@ export class DocumentFiles {
   static async prepare(uri: string, writeRequested: boolean, persist: boolean = true): Promise<FileAccess> {
     const access = new FileAccess();
     if (uri.length === 0) return access;
-    // Must run before canOpen. A restart leaves the persisted grant inactive.
-    const persistedWrite = await persisted(uri, READ_WRITE);
-    const persistedRead = persistedWrite || await persisted(uri, fileShare.OperationMode.READ_MODE);
+    let stored = await persistedModes(uri);
+    if (stored === null) stored = await persistedModes(uri);
+    await activate(uri, stored ?? 0);
     const writable = writeRequested && await canOpen(uri, fileIo.OpenMode.READ_WRITE);
     const readable = writable || await canOpen(uri, fileIo.OpenMode.READ_ONLY);
     if (!readable) throw userNotice(AppText.text($r('app.string.auth_expired')));
-    const mode = writable ? READ_WRITE : fileShare.OperationMode.READ_MODE;
-    let persistent = writable ? persistedWrite : persistedRead;
-    if (persist && !persistent) {
-      persistent = await retain(uri, mode);
-      // Revoke only the newly added write grant when read access already existed.
-      if (persistent) {
-        access.newMode = persistedRead ? fileShare.OperationMode.WRITE_MODE : mode;
+    // A failed query leaves the old grants unknown. Use the current grant without persisting it.
+    if (persist && stored !== null) {
+      const missing = (writable ? READ_WRITE : READ) & ~stored;
+      if (missing !== 0 && await retain(uri, missing)) {
+        access.newMode = missing;
+        stored |= missing;
+      } else if (missing === READ_WRITE && await retain(uri, READ)) {
+        access.newMode = READ;
+        stored |= READ;
       }
     }
-    if (persist && !persistent && writable) {
-      persistent = await retain(uri, fileShare.OperationMode.READ_MODE);
-      if (persistent && !persistedRead) access.newMode = fileShare.OperationMode.READ_MODE;
-    }
     access.writable = writable;
-    access.persistent = persistent;
+    access.persistent = ((stored ?? 0) & READ) !== 0;
     return access;
   }
 
   static async release(uri: string): Promise<void> {
     if (uri.length === 0) return;
-    const modes: number[] = [READ_WRITE, fileShare.OperationMode.READ_MODE];
+    const modes: number[] = [READ_WRITE, READ];
     for (let index = 0; index < modes.length; index++) {
       try {
         await fileShare.revokePermission([policy(uri, modes[index])]);
