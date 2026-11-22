@@ -94,6 +94,7 @@ export struct SettingsDetail {
   private disposed: boolean = false;
   onOpen: (section: string) => void = (_section: string): void => {};
   onOpenProject: () => void = (): void => {};
+  onOpenPrivacyPolicy: () => void = (): void => {};
   onChooseTheme: (choice: string) => void = (_choice: string): void => {};
   onChooseLanguage: (choice: string) => void = (_choice: string): void => {};
 
@@ -205,8 +206,12 @@ export struct SettingsDetail {
             this.HelpSection($r('app.string.help_format_title'), $r('app.string.help_format_body'))
             this.HelpSection($r('app.string.help_draft_title'), $r('app.string.help_draft_body'))
             this.HelpSection($r('app.string.help_feedback_title'), $r('app.string.help_feedback_body'))
+            this.HelpSection($r('app.string.settings_privacy'), $r('app.string.help_privacy_body'))
           } else {
             this.Paragraph($r('app.string.privacy_body'))
+            Button($r('app.string.privacy_open_policy'))
+              .buttonStyle(ButtonStyleMode.TEXTUAL)
+              .onClick(() => this.onOpenPrivacyPolicy())
           }
         }
         .alignItems(HorizontalAlign.Start)

@@ -14,6 +14,7 @@ export struct SettingsPage {
   private scroller: Scroller = new Scroller();
   onOpen: (section: string) => void = (_section: string): void => {};
   onOpenProject: () => void = (): void => {};
+  onOpenPrivacyPolicy: () => void = (): void => {};
   onFeedback: () => void = (): void => {};
   onBack: () => void = (): void => {};
   onChooseTheme: (choice: string) => void = (_choice: string): void => {};
@@ -36,6 +37,7 @@ export struct SettingsPage {
           scroller: this.scroller, section: this.section, theme: $theme,
           version: this.version,
           onOpen: this.onOpen, onOpenProject: this.onOpenProject,
+          onOpenPrivacyPolicy: this.onOpenPrivacyPolicy,
           onChooseTheme: this.onChooseTheme, onChooseLanguage: this.onChooseLanguage
         })
       }
