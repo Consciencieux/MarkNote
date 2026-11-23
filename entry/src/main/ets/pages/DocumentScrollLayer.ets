@@ -7,12 +7,16 @@ export class DocumentWebScroll implements AttributeModifier<WebAttribute> {
 
   constructor(controller: webview.WebviewController) { this.controller = controller; }
 
+  // The Web nested-scroll example disables gestures from onPageEnd.
+  // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/web-nested-scrolling/
+  disableScrollGestures(): void {
+    this.controller.setScrollable(false, webview.ScrollType.EVENT);
+  }
+
   applyNormalAttribute(web: WebAttribute): void {
     web.width('100%').height('100%')
       .verticalScrollBarAccess(false)
       .overScrollMode(OverScrollMode.NEVER)
-      // Huawei's Web nested-scroll guide, "滚动偏移量由滚动父组件统一派发".
-      .onControllerAttached((): void => this.controller.setScrollable(false, webview.ScrollType.EVENT))
       .onGestureRecognizerJudgeBegin((_event: BaseGestureEvent, recognizer: GestureRecognizer): GestureJudgeResult =>
         recognizer.isBuiltIn() && recognizer.getType() === GestureControl.GestureType.PAN_GESTURE ?
           GestureJudgeResult.REJECT : GestureJudgeResult.CONTINUE);
@@ -29,6 +33,7 @@ export const emptyDocumentViewport: DocumentWebViewport = { top: 0, bottom: 0 };
 export interface DocumentScrollLayout {
   extent: number;
   offset?: number;
+  previousOffset?: number;
 }
 
 export function documentTabClearance(tabBarBottomMargin: number): number {
@@ -62,9 +67,12 @@ export struct DocumentScrollLayer {
   @State private viewportHeight: number = 0;
   @State private viewport: DocumentWebViewport = emptyDocumentViewport;
   @State private extent: number = 0;
-  @State private pageOffset: number = 0;
+  @State private edgeOffset: number = 0;
+  private pageOffset: number = 0;
   private viewportTop: number = 0;
   private pendingOffset: number | undefined;
+  private pendingPreviousOffset: number | undefined;
+  private scrolling: boolean = false;
   private layoutScheduled: boolean = false;
   private active: boolean = true;
   @BuilderParam content: () => void = this.EmptyContent;
@@ -79,7 +87,10 @@ export struct DocumentScrollLayer {
     const offset = this.scrollLayout.offset;
     if (!Number.isFinite(extent) || extent < 0) return;
     this.extent = extent;
-    if (typeof offset === 'number' && Number.isFinite(offset)) this.pendingOffset = offset;
+    if (typeof offset === 'number' && Number.isFinite(offset)) {
+      this.pendingOffset = offset;
+      this.pendingPreviousOffset = this.scrollLayout.previousOffset;
+    }
     this.scheduleLayout();
   }
 
@@ -91,8 +102,15 @@ export struct DocumentScrollLayer {
       if (!this.active || this.viewportHeight <= 0) return;
       if (this.pendingOffset !== undefined) {
         const offset = this.pendingOffset;
+        const previous = this.pendingPreviousOffset;
         this.pendingOffset = undefined;
-        this.scroller.scrollTo({ xOffset: 0, yOffset: this.documentOffset(offset) });
+        this.pendingPreviousOffset = undefined;
+        // A layout correction must respect input that arrived while ArkWeb was measuring.
+        // Web reports a CSS-pixel position, while the native offset can be fractional.
+        const current = this.scroller.currentOffset().yOffset;
+        if (previous === undefined || (!this.scrolling && Math.abs(current - this.documentOffset(previous)) < 1)) {
+          this.scroller.scrollTo({ xOffset: 0, yOffset: this.documentOffset(offset) });
+        }
       }
       this.updateWebPosition(true);
     }));
@@ -103,10 +121,20 @@ export struct DocumentScrollLayer {
   }
 
   private updateWebPosition(layoutChanged: boolean = false): void {
-    const offset = this.documentOffset(this.scroller.currentOffset().yOffset);
+    const scrollOffset = this.scroller.currentOffset().yOffset;
+    const offset = this.documentOffset(scrollOffset);
+    const edgeOffset = offset - scrollOffset;
+    if (this.edgeOffset !== edgeOffset) this.edgeOffset = edgeOffset;
     if (!layoutChanged && this.pageOffset === offset) return;
-    this.pageOffset = offset;
-    try { this.web.scrollTo(0, offset); } catch { /* Web may not be attached yet. */ }
+    try {
+      if (layoutChanged) {
+        this.web.scrollTo(0, offset);
+      } else {
+        // Dispatch the frame's movement as in Huawei's parent-driven Web scroll example.
+        this.web.scrollBy(0, offset - this.pageOffset);
+      }
+      this.pageOffset = offset;
+    } catch { /* Web may not be attached yet. */ }
   }
 
   private updateViewport(): void {
@@ -122,22 +150,24 @@ export struct DocumentScrollLayer {
   }
 
   build() {
-    Column() {
-      Scroll(this.scroller) {
-        Stack({ alignContent: Alignment.TopStart }) {
-          Column() {
-            this.content()
-          }
-          .width('100%')
-          .height(this.viewportHeight > 0 ? this.viewportHeight : undefined)
-          // Give the native scrollbar a gutter outside the Web surface's mouse selection area.
-          .padding({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
-          // Cancel in-range movement of the surface. At either edge, only the native spring moves it.
-          .translate({ y: this.pageOffset })
-        }
-        .width('100%')
-        .height(this.viewportHeight > 0 ? this.viewportHeight + this.extent : undefined)
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column() {
+        this.content()
       }
+      .width('100%')
+      .height('100%')
+      // The Web surface stays fixed in range and follows the native spring beyond the edge.
+      .padding({ left: $r('sys.float.margin_left'), right: $r('sys.float.margin_right') })
+      .translate({ y: this.edgeOffset })
+
+      Scroll(this.scroller) {
+        Column()
+          .width('100%')
+          .height(this.viewportHeight + this.extent)
+      }
+      // The scroll layer can handle drags and wheel input while taps reach the Web below.
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-universal-attributes-hit-test-behavior/
+      .hitTestBehavior(HitTestMode.Transparent)
       // faqs-arkui-725: bounded Scroll centers short content unless aligned to the top.
       .align(Alignment.Top)
       .scrollable(ScrollDirection.Vertical)
@@ -145,10 +175,13 @@ export struct DocumentScrollLayer {
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Auto)
       .scrollBarMargin({ start: LengthMetrics.vp(this.viewport.top), end: LengthMetrics.vp(this.viewport.bottom) })
+      .onScrollStart((): void => { this.scrolling = true; })
+      .onScrollStop((): void => { this.scrolling = false; })
       .onDidScroll((): void => this.updateWebPosition())
       .width('100%')
       .height('100%')
     }
+    .clip(true)
     .width('100%')
     // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-universal-attributes-expand-safe-area
     .height(LayoutPolicy.matchParent)

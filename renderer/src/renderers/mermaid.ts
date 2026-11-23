@@ -54,8 +54,8 @@ function showFailure(block: HTMLElement): void {
 }
 
 /** Draw each placeholder from the sources captured by the latest Markdown render. */
-export async function paintMermaid(root: ParentNode, theme: PreviewTheme, ticket: number): Promise<void> {
-  const blocks = [...root.querySelectorAll<HTMLElement>('.mermaid-block')];
+export async function paintMermaid(visible: Iterable<HTMLElement>, theme: PreviewTheme, ticket: number): Promise<void> {
+  const blocks = [...visible];
   if (blocks.length === 0) return;
   const palette = diagramTheme(theme);
   configure(palette);

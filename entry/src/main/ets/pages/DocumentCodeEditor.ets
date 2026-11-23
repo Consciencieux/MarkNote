@@ -305,7 +305,10 @@ export struct DocumentCodeEditor {
       .backgroundColor($r('sys.color.ohos_id_color_background'))
       .textZoomRatio(Math.round(this.fontScale * 100))
       .attributeModifier(this.scrollOptions)
-      .onPageEnd(() => this.connect())
+      .onPageEnd(() => {
+        this.scrollOptions.disableScrollGestures();
+        this.connect();
+      })
   }
 
   build() {

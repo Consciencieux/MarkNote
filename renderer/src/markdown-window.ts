@@ -3,106 +3,86 @@ import type { MarkdownPages } from './renderers/markdown-pages';
 import { bindMermaid } from './renderers/mermaid';
 import { isolateSvg } from './renderers/svg';
 
-/** Mounts Markdown blocks around the bounded ArkWeb viewport. */
+type DeferredContent = 'code' | 'images' | 'diagrams';
+
+/** Lay out the text once. Only activate expensive content near the viewport. */
 export class MarkdownWindow {
-  private readonly before = document.createElement('div');
-  private readonly after = document.createElement('div');
-  private readonly sample = document.createElement('span');
-  private readonly mounted = new Map<number, { element: HTMLElement; jobs: CodeJob[] }>();
-  private readonly heights: number[] = [];
-  private readonly offsets: number[] = [0];
-  private width = -1;
-  private charWidth = -1;
-  private lineHeight = -1;
+  private readonly codeLanguages = new Map<number, string>();
+  private readonly targets = new Map<HTMLElement, DeferredContent>();
+  private readonly nearby = {
+    code: new Set<HTMLElement>(),
+    images: new Set<HTMLElement>(),
+    diagrams: new Set<HTMLElement>(),
+  };
+  private observer?: IntersectionObserver;
+  private viewportHeight = -1;
 
-  constructor(private readonly root: HTMLElement, private readonly markdown: MarkdownPages,
-    private readonly sanitize: (html: string) => DocumentFragment) {
-    this.before.className = 'markdown-spacer-before';
-    this.sample.className = 'markdown-metrics';
-    this.sample.setAttribute('aria-hidden', 'true');
-    this.sample.textContent = markdown.source.slice(0, 128).replace(/\s/g, ' ') || 'M';
-    this.before.append(this.sample);
-    root.replaceChildren(this.before, this.after);
+  constructor(root: HTMLElement, markdown: MarkdownPages, sanitize: (html: string) => DocumentFragment,
+    private readonly onChange: (changed: ReadonlySet<DeferredContent>) => void) {
+    const content = document.createDocumentFragment();
+    for (const [index, page] of markdown.pages.entries()) {
+      const rendered = renderMarkdownPage(markdown, page);
+      const element = document.createElement('section');
+      element.className = 'markdown-page';
+      if (index === markdown.pages.length - 1) element.classList.add('markdown-page-last');
+      element.append(sanitize(rendered.html));
+      for (const { id, language } of rendered.jobs) this.codeLanguages.set(id, language);
+      bindMermaid(element, rendered.diagrams);
+      content.append(element);
+    }
+    root.replaceChildren(content);
+    isolateSvg(root, '.svg-canvas svg');
+    this.track(root, 'code[data-mn-code]', 'code');
+    this.track(root, '.image-slot', 'images');
+    this.track(root, '.mermaid-block', 'diagrams');
+    this.resize();
   }
 
-  private locate(y: number): number {
-    let low = 0;
-    let high = this.heights.length;
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2);
-      if (this.offsets[middle + 1] <= y) low = middle + 1;
-      else high = middle;
-    }
-    return Math.min(low, this.heights.length - 1);
+  private track(root: HTMLElement, selector: string, kind: DeferredContent): void {
+    for (const element of root.querySelectorAll<HTMLElement>(selector)) this.targets.set(element, kind);
   }
 
-  private measure(): void {
-    let dirty = this.heights.length;
-    const sample = this.sample.getBoundingClientRect();
-    const charWidth = sample.width / this.sample.textContent!.length;
-    if (this.width !== this.root.clientWidth || this.charWidth !== charWidth || this.lineHeight !== sample.height) {
-      this.width = this.root.clientWidth;
-      this.charWidth = charWidth;
-      this.lineHeight = sample.height || parseFloat(getComputedStyle(this.root).lineHeight);
-      const columns = Math.max(1, this.width / (charWidth || 1));
-      for (const [index, page] of this.markdown.pages.entries()) {
-        this.heights[index] = this.lineHeight * Math.max(1, page.lines, (page.to - page.from) / columns);
+  resize(): void {
+    const height = window.innerHeight;
+    if (height === this.viewportHeight || this.targets.size === 0) return;
+    this.viewportHeight = height;
+    this.observer?.disconnect();
+    // Keep one viewport of lookahead on each side, including after a window resize.
+    const observer = new IntersectionObserver(entries => {
+      if (this.observer !== observer) return;
+      const changed = new Set<DeferredContent>();
+      for (const entry of entries) {
+        const element = entry.target as HTMLElement;
+        const kind = this.targets.get(element)!;
+        const items = this.nearby[kind];
+        if (entry.isIntersecting && !items.has(element)) {
+          items.add(element);
+          changed.add(kind);
+        } else if (!entry.isIntersecting && items.delete(element)) {
+          changed.add(kind);
+        }
       }
-      dirty = 0;
-    }
-    for (const [index, { element }] of this.mounted) {
-      const height = element.getBoundingClientRect().height;
-      if (this.heights[index] !== height) {
-        this.heights[index] = height;
-        dirty = Math.min(dirty, index);
-      }
-    }
-    for (let i = dirty; i < this.heights.length; i++) {
-      this.offsets[i + 1] = this.offsets[i] + this.heights[i];
-    }
+      if (changed.size) this.onChange(changed);
+    }, { rootMargin: `${height}px 0px` });
+    this.observer = observer;
+    for (const element of this.targets.keys()) observer.observe(element);
   }
 
-  /** Only rebuild pages entering the reading area. Retained diagrams and images keep their DOM. */
-  update(top: number, height: number): boolean {
-    this.measure();
-    if (!this.heights.length) return false;
-    const first = this.locate(Math.max(0, top - height));
-    const last = this.locate(top + height * 2);
-    let changed = false;
-    for (const [index, { element }] of this.mounted) {
-      if (index < first || index > last) {
-        element.remove();
-        this.mounted.delete(index);
-        changed = true;
-      }
-    }
-    let next: HTMLElement = this.after;
-    for (let index = last; index >= first; index--) {
-      let page = this.mounted.get(index);
-      if (!page) {
-        const rendered = renderMarkdownPage(this.markdown, this.markdown.pages[index]);
-        const element = document.createElement('section');
-        element.className = 'markdown-page';
-        if (index === this.heights.length - 1) element.classList.add('markdown-page-last');
-        element.append(this.sanitize(rendered.html));
-        this.root.insertBefore(element, next);
-        isolateSvg(element, '.svg-canvas svg');
-        bindMermaid(element, rendered.diagrams);
-        page = { element, jobs: rendered.jobs };
-        this.mounted.set(index, page);
-        changed = true;
-      }
-      next = page.element;
-    }
-    if (changed) this.measure();
-    this.before.style.height = `${this.offsets[first]}px`;
-    this.after.style.height = `${this.offsets.at(-1)! - this.offsets[last + 1]}px`;
-    return changed;
+  dispose(): void {
+    this.observer?.disconnect();
+    this.observer = undefined;
   }
+
+  get imageSlots(): ReadonlySet<HTMLElement> { return this.nearby.images; }
+  get diagrams(): ReadonlySet<HTMLElement> { return this.nearby.diagrams; }
 
   pendingCode(): CodeJob[] {
-    const pending = new Set([...this.root.querySelectorAll<HTMLElement>('code[data-mn-code]')]
-      .map(code => Number(code.dataset.mnCode)));
-    return [...this.mounted.values()].flatMap(page => page.jobs.filter(job => pending.has(job.id)));
+    const jobs: CodeJob[] = [];
+    for (const element of this.nearby.code) {
+      const id = Number(element.dataset.mnCode);
+      const language = this.codeLanguages.get(id);
+      if (language) jobs.push({ id, language, source: element.textContent ?? '' });
+    }
+    return jobs;
   }
 }

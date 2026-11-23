@@ -19,6 +19,7 @@ interface ParsedResult {
   url?: string;
   extent?: number;
   offset?: number;
+  previousOffset?: number;
 }
 
 const IMAGE_ORIGIN = 'https://images.marknote.invalid/';
@@ -85,11 +86,16 @@ export struct DocumentPreviewView {
         if (typeof message !== 'string') return;
         try {
           const result = JSON.parse(message) as ParsedResult;
-          if (result.kind === 'preview-layout') {
+          if (result.kind === 'preview-layout' || result.kind === 'preview-images') {
             if (result.revision === this.parseRevision && result.documentId === this.documentId &&
-              this.workMode === 'render' && typeof result.extent === 'number') {
-              this.scrollLayout = { extent: result.extent, offset: result.offset };
-              this.scheduleViewport();
+              this.workMode === 'render') {
+              if (result.kind === 'preview-images') {
+                this.scheduleViewport();
+              } else if (typeof result.extent === 'number') {
+                this.scrollLayout = {
+                  extent: result.extent, offset: result.offset, previousOffset: result.previousOffset
+                };
+              }
             }
             return;
           }
@@ -198,7 +204,7 @@ export struct DocumentPreviewView {
       .then((): void => this.scheduleViewport()).catch((): void => {});
   }
 
-  /** Even an unsaved document needs its visible Markdown blocks. */
+  /** Reconcile requests when the Web viewport or its nearby images change. */
   private scheduleViewport(): void {
     if (!this.ready || this.renderedGeneration !== this.imageGeneration || this.workMode !== 'render' ||
       this.kind !== 'markdown') return;
@@ -256,6 +262,11 @@ export struct DocumentPreviewView {
         let transferred = false;
         try {
           if (!current()) { missing(); return; }
+          if (resource.intrinsicWidth > 0) {
+            await this.controller.runJavaScript('window.MarknotePreview.sizeImage(' +
+              request.id + ',' + resource.intrinsicWidth + ',' + resource.intrinsicHeight + ')').catch((): void => {});
+            if (!current()) { missing(); return; }
+          }
           response.setResponseMimeType(resource.mime);
           response.setResponseCode(200);
           response.setReasonMessage('OK');
@@ -266,10 +277,6 @@ export struct DocumentPreviewView {
           ]);
           response.setResponseData(resource.file.fd);
           transferred = true;
-          if (resource.intrinsicWidth > 0) {
-            this.controller.runJavaScript('window.MarknotePreview.sizeImage(' +
-              request.id + ',' + resource.intrinsicWidth + ',' + resource.intrinsicHeight + ')').catch((): void => {});
-          }
         } finally {
           if (!transferred) await fileIo.close(resource.file);
         }
@@ -296,9 +303,9 @@ export struct DocumentPreviewView {
       .backgroundColor($r('sys.color.ohos_id_color_background'))
       .textZoomRatio(Math.round(this.fontScale * 100))
       .attributeModifier(this.scrollOptions)
-      .onScroll((): void => this.scheduleViewport())
       .onAreaChange((): void => this.scheduleViewport())
       .onPageEnd(() => {
+        this.scrollOptions.disableScrollGestures();
         this.imageGeneration++;
         this.imageRequests.clear();
         this.ready = true;

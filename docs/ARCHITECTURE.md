@@ -27,7 +27,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 `HdsMaterialStyles` 配置滚动标题栏。首页和各级设置页通过 `bindToScrollable` 绑定本页列表，文稿页绑定当前页签的控制器，分栏时同时绑定预览和编辑两侧。首页、设置和大纲通过 `PageScrollPolicy` 共用边缘回弹、安全区裁切与滚动条避让设置。
 
-预览和编辑共用 `DocumentScrollLayer`，每栏的 ArkUI `Scroll` 管理滚动范围、系统滑块及两端回弹。ArkWeb 保持视口大小，经消息端口报告正文的滚动范围，由 `WebviewController.scrollTo` 显示 `Scroller` 当前指向的位置。CodeMirror 在测量阶段计算光标和查找目标的位置，经同一端口交给对应栏的 `Scroller`。大纲使用有界 `List`、`Repeat.virtualScroll` 和原生滚动条。[华为滚动条设计指南](https://developer.huawei.com/consumer/cn/doc/design-guides/scrollbar-0000001956815473/) · [ArkWeb 嵌套滚动](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/web-nested-scrolling/)
+预览和编辑共用 `DocumentScrollLayer`。每栏的原生 `Scroll` 管理滚动范围、系统滑块及两端回弹。ArkWeb 使用固定视口，加载完成后关闭手势滚动，连续滚动由原生层通过 `scrollBy` 派发每帧增量。布局更新和跳转使用 `scrollTo` 同步位置。预览重排时，浏览器为保持阅读位置给出的偏移与新范围一同回传，原生层只在位置未被用户移动时采用。CodeMirror 在测量阶段计算光标和查找目标的位置，经消息端口交给对应栏的 `Scroller`。大纲使用有界 `List`、`Repeat.virtualScroll` 和原生滚动条。[ArkWeb 嵌套滚动](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/web-nested-scrolling/) · [获取网页内容高度](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/web-getpage-height)
 
 `ContainerReader` 读取文稿区域的宽度断点，从系统大宽度档起显示分栏页签。预览和编辑位于悬浮页签下方的同一个 `Row`，正文可延伸到标题栏和底部页签的渐变区。单栏由当前可见的一侧填满文稿区域，分栏由同两个 Web 实例平分分隔线以外的空间。[华为容器断点指南](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-layout-development-container-reader/)
 
@@ -37,7 +37,7 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 ## 离线预览
 
-`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号、工作模式，以及当前界面语言的预览提示。工作模式为关闭时不发送；LaTeX 大纲模式只解析并回传标题，不生成页面。隐藏的预览释放页面节点并停止着色，保留正文高度以维持页内滚动位置。预览按 ArkWeb 的实际视口挂载附近的 Markdown 内容，用 markdown-it 解析块、引用、列表和围栏。每个挂载区的 HTML 经 DOMPurify 清理后插入。文内公式定义了跨公式复用的全局宏时，整篇按源码顺序排版，以保留定义和重定义的语义。
+`renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号、工作模式，以及当前界面语言的预览提示。工作模式为关闭时不发送；LaTeX 大纲模式只解析并回传标题，不生成页面。隐藏的预览释放页面节点并停止着色，保留正文高度以维持页内滚动位置。Markdown 各段经 DOMPurify 清理后参与网页排版，原生滚动范围取自实际布局。浏览器的 `IntersectionObserver` 按阅读位置触发本地图片读取、代码着色和 Mermaid 绘图。文内公式定义了跨公式复用的全局宏时，整篇按源码顺序排版，以保留定义和重定义的语义。
 
 应用根据当前文稿的 URI 和已有授权，逐张读取阅读位置附近的本地图片。ArkWeb 提供栏宽、视口高度和像素密度，原生用 Image Kit 读取图像格式和尺寸。需要缩小的静态位图通过 ImagePacker 编码到私有临时文件，多帧 GIF 和 WebP 保留原图。ArkWeb 只为当前阅读范围内的图片分配临时地址。应用在 onInterceptRequest 中核对文稿和图片身份，用 WebResourceResponse 交付文件描述符，交付后由 ArkWeb 关闭。文稿 URI、路径校验和文件授权由原生侧处理，本地 SVG 仅在隔离的图片上下文显示。网页不注册文件或导航接口，也不加载网络图片。
 
