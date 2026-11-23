@@ -1,6 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
-import { SubHeader } from '@kit.ArkUI';
+import { LengthMetrics, SubHeader } from '@kit.ArkUI';
 import { pageScroll, pageScrollWithSectionHeader } from './PageScrollPolicy';
 import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { SettingsReadingFrame } from './SettingsReadingFrame';
@@ -143,8 +143,16 @@ export struct SettingsDetail {
 
   @Builder
   private ThemeHeader() {
-    // 卡片栅格已处理页面外边距，标题内边距和排版由 SubHeader 提供。
-    SubHeader({ secondaryTitle: $r('app.string.settings_theme_group'), contentMargin: {} })
+    // 外层卡片组已应用列表栅格，标题对齐下方选项文字。
+    // https://developer.huawei.com/consumer/cn/doc/design-guides/subheader-0000001929816012/
+    SubHeader({
+      secondaryTitle: $r('app.string.settings_theme_group'),
+      contentMargin: {},
+      contentPadding: {
+        start: LengthMetrics.resource($r('sys.float.padding_level4')),
+        end: LengthMetrics.resource($r('sys.float.padding_level4'))
+      }
+    })
   }
 
   /**
@@ -216,9 +224,10 @@ export struct SettingsDetail {
           }, (choice: string) => choice)
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'code-theme') {
+        // 标题单独显示，与选项组共用卡片栅格及其宽度适配。
+        // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-container-listitemgroup/
         ListItemGroup({ style: ListItemGroupStyle.CARD, header: this.ThemeHeader() }) {}
           .backgroundColor(Color.Transparent)
-          .padding($r('sys.float.padding_level0'))
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           ForEach(CODE_THEME_VALUES, (choice: string) => {
             SettingsListRow({ title: codeThemeLabel(choice), selected: this.codeTheme === choice,

@@ -1,5 +1,5 @@
 import { SymbolGlyphModifier, UIContext } from '@kit.ArkUI';
-import { MOBILE_MENU_WIDTH } from './MenuMaterialOptions';
+import { homeMenuWidth } from './MenuMaterialOptions';
 import { AppText } from '../i18n/AppText';
 
 export async function chooseDocumentEncoding(context: UIContext): Promise<string> {
@@ -97,7 +97,7 @@ struct HomeMenuView {
           .onClick(() => menuBridge.openSettings())
       }
     }
-    .width(MOBILE_MENU_WIDTH)
+    .width(homeMenuWidth)
     .subMenuExpandingMode(SubMenuExpandingMode.EMBEDDED_EXPAND)
   }
 }
