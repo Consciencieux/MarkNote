@@ -1,6 +1,8 @@
 import { common, OpenLinkOptions } from '@kit.AbilityKit';
 import { url } from '@kit.ArkTS';
-import { FrameCallback, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
+import {
+  ContainerReader, ContainerReaderAttribute, FrameCallback, LengthMetrics, Size, SymbolGlyphModifier, window
+} from '@kit.ArkUI';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitle,
   HdsNavigationMenuItemOptions, HdsNavigationMenuContentOptions,
@@ -16,7 +18,6 @@ import { FormatBarView } from './FormatBarView';
 import { DocumentFindBar } from './DocumentFindBar';
 import { DocumentOutlineView } from './DocumentOutlineView';
 import { DocumentPreviewView } from './DocumentPreviewView';
-import { DocumentScrollLayer, DocumentWebViewport, emptyDocumentViewport } from './DocumentScrollLayer';
 import { DocumentCodeEditor, DocumentCodeEditorController } from './DocumentCodeEditor';
 import { PageTabContentPolicy, PageTabsPolicy } from './PageScrollPolicy';
 import { chooseDocumentEncoding, menuBridge } from './DocumentMenus';
@@ -61,13 +62,10 @@ export struct DocumentView {
   /** 文稿页在导航栈里，不跟随首页 @Link。语言从 AppStorage 取，查找栏和预览才会重取。 */
   @StorageLink('marknote_language') language: string = 'default';
   @StorageLink('marknote_code_theme') codeTheme: string = 'github';
-  @State private wide: boolean = false;
+  @State private workspaceSize: Size = { width: 0, height: 0 };
+  @State @Watch('onWorkspaceBreakpointChange') private workspaceBreakpoint: WidthBreakpoint = WidthBreakpoint.WIDTH_XS;
   @Provide('documentWorkspaceTop') private workspaceTop: number = 0;
   @Provide('documentWorkspaceBottom') private workspaceBottom: number = 0;
-  @State private previewViewport: DocumentWebViewport = emptyDocumentViewport;
-  @State private splitPreviewViewport: DocumentWebViewport = emptyDocumentViewport;
-  @State private editViewport: DocumentWebViewport = emptyDocumentViewport;
-  @State private splitEditorWidth: number = 0;
   @Prop canExpand: boolean = false;
   @Prop expanded: boolean = false;
   @Prop favorite: boolean = false;
@@ -85,11 +83,10 @@ export struct DocumentView {
   private previewScroller: Scroller = new Scroller();
   private editScroller: Scroller = new Scroller();
   private outlineScroller: Scroller = new Scroller();
-  private splitPreviewScroller: Scroller = new Scroller();
   @State private title: string = AppText.text($r('app.string.file_untitled_md'));
   @State private source: string = '';
   @State private dirty: boolean = false;
-  @State private selectedTab: number = TAB_PREVIEW;
+  @State @Watch('rememberEditorVisibility') private selectedTab: number = TAB_PREVIEW;
   /** 页签数量、分栏索引、编辑器和预览都跟随当前文稿的格式。 */
   @State private formatId: string = '';
   @State private headings: Heading[] = [];
@@ -97,9 +94,7 @@ export struct DocumentView {
   @State private documentSessionId: number = 0;
   @State private headingRevision: number = -1;
   @State private pageVisible: boolean = false;
-  @State private previewShown: boolean = true;
   @State private outlineShown: boolean = false;
-  @State private splitShown: boolean = false;
   @State private saving: boolean = false;
   @State private deleting: boolean = false;
   private leaveConfirming: boolean = false;
@@ -115,6 +110,7 @@ export struct DocumentView {
   @State private undoAvailable: boolean = false;
   @State private redoAvailable: boolean = false;
   private editor: DocumentCodeEditorController = new DocumentCodeEditorController();
+  private editorWasShown: boolean = false;
   @State private editorSessionKey: number = 0;
   private context: common.UIAbilityContext | null = null;
   private info: DocumentInfo = new DocumentInfo();
@@ -218,12 +214,11 @@ export struct DocumentView {
   }
 
 
-  /** 窄屏收起分栏时回到预览，和之前媒体查询监听里的行为一致。 */
-  private onWideChange(): void {
-    if (!this.wide && this.selectedTab === this.splitTab()) {
+  /** 窄屏收起分栏时回到预览。 */
+  private onWorkspaceBreakpointChange(): void {
+    if (this.canSplit()) return;
+    if (this.selectedTab === this.splitTab()) {
       this.selectedTab = TAB_PREVIEW;
-      this.splitShown = false;
-      this.previewShown = true;
     }
   }
 
@@ -244,11 +239,10 @@ export struct DocumentView {
     this.selectionStart = 0;
     this.selectionEnd = 0;
     this.selectedTab = TAB_PREVIEW;
-    this.previewShown = true;
     this.outlineShown = false;
-    this.splitShown = false;
     // 新文档从预览开始，编辑区不应带着上一篇的光标或编辑态。
     this.stopEditing();
+    this.editorWasShown = false;
     this.searchVisible = false;
     this.editorSessionKey++;
   }
@@ -310,7 +304,7 @@ export struct DocumentView {
 
   private async shareDocument(): Promise<void> {
     if (!this.context) return;
-    if (!await this.editor.flush()) return;
+    if (!await this.flushEditor()) return;
     try {
       await DocumentShare.show(this.context, this.info.name, this.source);
     } catch {
@@ -434,11 +428,11 @@ export struct DocumentView {
     if (this.saving || this.deleting || !uri || !current()) return false;
     this.deleting = true;
     try {
-      if (!await this.editor.flush() || !current()) return false;
+      if (!await this.flushEditor() || !current()) return false;
       while (current()) {
         const revision = session.revision;
         if (!await this.askDelete(count, session.isDirty() || session.writeUncertain) || !current()) return false;
-        if (!await this.editor.flush(true) || !current()) return false;
+        if (!await this.flushEditor(true) || !current()) return false;
         if (session.revision === revision) break;
         this.editor.command({ action: 'resume' });
       }
@@ -470,8 +464,8 @@ export struct DocumentView {
 
   /** Bind HDS navigation effects to the shared Scroll surface(s) in the active tab. */
   private activeScrollers(): Scroller[] {
-    if (this.wide && this.selectedTab === this.splitTab()) {
-      return [this.splitPreviewScroller, this.editScroller];
+    if (this.inSplitTab()) {
+      return [this.previewScroller, this.editScroller];
     }
     if (this.currentFormat().outline && this.selectedTab === TAB_OUTLINE) return [this.outlineScroller];
     if (this.selectedTab === TAB_EDIT) return [this.editScroller];
@@ -480,6 +474,16 @@ export struct DocumentView {
 
   private isDirty(): boolean {
     return this.dirty;
+  }
+
+  private rememberEditorVisibility(): void {
+    if (this.inEditTab()) this.editorWasShown = true;
+  }
+
+  private flushEditor(suspend: boolean = false): Promise<boolean> {
+    // A hidden Web editor may still be starting. A preview-only session has no Web edits to flush.
+    if (!this.editorWasShown && !this.inEditTab()) return Promise.resolve(true);
+    return this.editor.flush(suspend);
   }
 
   /**
@@ -493,7 +497,7 @@ export struct DocumentView {
     this.leaveConfirming = true;
     let accepted = false;
     try {
-      if (!await this.editor.flush(true) || DocumentService.current() !== owner ||
+      if (!await this.flushEditor(true) || DocumentService.current() !== owner ||
         this.sessionOwner !== owner || !owner.editing) return false;
       const revision = owner.revision;
       if (!this.isDirty() && !owner.writeUncertain) accepted = true;
@@ -567,7 +571,7 @@ export struct DocumentView {
   }
 
   private syncFromService(): void {
-    const wasSplit = this.wide && this.selectedTab === this.splitTab();
+    const wasSplit = this.inSplitTab();
     const wasOutline = this.currentFormat().outline && this.selectedTab === TAB_OUTLINE;
     const session = DocumentService.current();
     const sameText = this.sessionOwner === session && this.source === session.source;
@@ -604,7 +608,7 @@ export struct DocumentView {
     const owner = DocumentService.current();
     this.saving = true;
     try {
-      if (!await this.editor.flush() || DocumentService.current() !== owner || !owner.editing) return false;
+      if (!await this.flushEditor() || DocumentService.current() !== owner || !owner.editing) return false;
       const result = await DocumentService.save(this.context, asNewFile);
       if (DocumentService.current() !== owner || !owner.editing) return false;
       this.syncFromService();
@@ -633,7 +637,7 @@ export struct DocumentView {
     if (this.saving || this.deleting || !owner.editing || !owner.info.uri) return;
     this.saving = true;
     try {
-      if (!await this.editor.flush(true) || DocumentService.current() !== owner) return;
+      if (!await this.flushEditor(true) || DocumentService.current() !== owner) return;
       if (owner.isDirty() || owner.writeUncertain) {
         this.toast($r('app.string.reopen_encoding_dirty'));
         return;
@@ -749,15 +753,14 @@ export struct DocumentView {
     return this.currentFormat().outline && this.selectedTab === TAB_OUTLINE;
   }
 
-  private mainWorkMode(): string {
-    if (!this.pageVisible || this.splitWorkMode() === 'render') return 'off';
-    if (this.selectedTab === TAB_PREVIEW && this.previewShown) return 'render';
-    if (this.outlineTabVisible() && this.outlineShown && this.formatId === 'tex-math') return 'outline';
-    return 'off';
+  private inPreviewTab(): boolean {
+    return this.selectedTab === TAB_PREVIEW || this.inSplitTab();
   }
 
-  private splitWorkMode(): string {
-    if (this.pageVisible && this.wide && this.selectedTab === this.splitTab() && this.splitShown) return 'render';
+  private previewWorkMode(): string {
+    if (!this.pageVisible) return 'off';
+    if (this.inPreviewTab()) return 'render';
+    if (this.outlineTabVisible() && this.outlineShown && this.formatId === 'tex-math') return 'outline';
     return 'off';
   }
 
@@ -863,6 +866,14 @@ export struct DocumentView {
     return this.currentFormat().outline ? TAB_SPLIT : TAB_OUTLINE;
   }
 
+  private canSplit(): boolean {
+    return this.workspaceBreakpoint >= WidthBreakpoint.WIDTH_LG;
+  }
+
+  private inSplitTab(): boolean {
+    return this.canSplit() && this.selectedTab === this.splitTab();
+  }
+
   @Builder
   private TopFormatBar() {
     FormatBarView({
@@ -887,72 +898,75 @@ export struct DocumentView {
       .labelStyle({ selectedColor: $r('sys.color.brand'), unselectedColor: $r('sys.color.font_primary') });
   }
 
-  @Builder
-  private SplitPage() {
+  @LocalBuilder
+  private WebWorkspace() {
     Row() {
       Column() {
-        DocumentScrollLayer({ scroller: this.splitPreviewScroller,
-          onViewportChange: (viewport: DocumentWebViewport): void => { this.splitPreviewViewport = viewport; } }) {
-          DocumentPreviewView({
-            viewport: this.splitPreviewViewport,
-            theme: this.theme, source: this.source,
-            kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
-            documentId: this.documentSessionId, workMode: this.splitWorkMode(),
-            onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
-              this.acceptTexOutline(documentId, revision, headings),
-            onOpenExternalLink: (link: string): void => { void this.openExternalLink(link); }
-          })
-        }
-      }
-        .layoutWeight(1)
-        .height('100%')
-      Divider().vertical(true).height('100%')
-      Column() { Blank() }
-        .layoutWeight(1)
-        .height('100%')
-        .onAreaChange((_old: Area, pane: Area): void => {
-          this.splitEditorWidth = Number(pane.width);
+        DocumentPreviewView({
+          scroller: this.previewScroller,
+          theme: this.theme, source: this.source,
+          kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
+          documentId: this.documentSessionId, workMode: this.previewWorkMode(),
+          onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
+            this.acceptTexOutline(documentId, revision, headings),
+          onOpenExternalLink: (link: string): void => { void this.openExternalLink(link); }
         })
+      }
+      .layoutWeight(1)
+      .height('100%')
+      .visibility(this.selectedTab === TAB_EDIT ? Visibility.None : Visibility.Visible)
+
+      if (this.inSplitTab()) {
+        Divider().vertical(true).height('100%')
+      }
+      // One Web instance remains mounted while editing and split tabs change.
+      Column() {
+        ForEach([this.editorSessionKey], (key: number) => {
+          DocumentCodeEditor({
+            scroller: this.editScroller,
+            sessionId: `document-${key}`, source: this.source, formatId: this.formatId,
+            initialEndings: this.info.newline === 'mixed' ? DocumentService.current().lineEndings : undefined,
+            webTheme: this.theme, appearance: this.theme, theme: this.codeTheme,
+            language: resourceLanguage(this.language),
+            textDirection: isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr',
+            controller: this.editor,
+            onChange: (expected: string, source: string, anchor: number, head: number, endings?: string): boolean => {
+              return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head, endings);
+            },
+            onRecover: (expected: string, source: string, anchor: number, head: number, endings?: string): boolean => {
+              return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head, endings);
+            },
+            onFind: (): void => { if (key === this.editorSessionKey) this.openFind(); },
+            onState: (anchor: number, head: number, canUndo: boolean, canRedo: boolean): void => {
+              if (key !== this.editorSessionKey) return;
+              this.selectionStart = anchor;
+              this.selectionEnd = head;
+              this.undoAvailable = canUndo;
+              this.redoAvailable = canRedo;
+            },
+            onConflict: (): void => { this.toast($r('app.string.editor_sync_failed')); }
+          })
+        }, (key: number): string => key.toString())
+      }
+      .layoutWeight(1)
+      .height('100%')
+      .visibility(this.inEditTab() ? Visibility.Visible : Visibility.None)
     }
-    // RowSplit fixes divider positions after initialization; Row weights adapt to window resizing.
-    // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-container-rowsplit
-    // Permit both scroll surfaces to paint into the titlebar safe area.
-    .clip(false)
-    .height('100%')
     .width('100%')
+    .height('100%')
+    .clip(false)
+    .visibility(this.outlineTabVisible() ? Visibility.Hidden : Visibility.Visible)
   }
 
-  /**
-   * @LocalBuilder, not @Builder: this subtree contains an if branch for the outline tab,
-   * and a plain nested @Builder does not keep the state parent-child relationship, so that
-   * branch would not rebuild when the state changes.
-   *
-   * 正文铺到标题栏和底部页签下面；两层控件悬浮在正文之上，且都不随键盘移动。
-   */
   @LocalBuilder
-  private WorkspacePage() {
+  private WorkspaceLayers() {
     Stack({ alignContent: Alignment.TopEnd }) {
       HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
         // Preview is first so a newly opened document lands on its rendered content.
-        TabContent() {
-          DocumentScrollLayer({ scroller: this.previewScroller,
-            onViewportChange: (viewport: DocumentWebViewport): void => { this.previewViewport = viewport; } }) {
-            DocumentPreviewView({
-              viewport: this.previewViewport,
-              theme: this.theme, source: this.source,
-              kind: this.currentFormat().id, parseRevision: this.parseRevision, documentUri: this.info.uri,
-              documentId: this.documentSessionId, workMode: this.mainWorkMode(),
-              onOutline: (documentId: number, revision: number, headings: Heading[]): void =>
-                this.acceptTexOutline(documentId, revision, headings),
-              onOpenExternalLink: (link: string): void => { void this.openExternalLink(link); }
-            })
-          }
-        }
-          .onWillShow((): void => { this.previewShown = true; })
-          .onWillHide((): void => { this.previewShown = false; })
+        TabContent() {}
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.eye'), $r('app.string.tab_preview')))
-        TabContent() { Column() { Blank() } }
+        TabContent() {}
           .onWillShow(() => this.jumpToPendingHeading())
           .attributeModifier(this.tabContentPolicy)
           .tabBar(this.bottomTab($r('sys.symbol.square_and_pencil'), $r('app.string.tab_edit')))
@@ -972,10 +986,8 @@ export struct DocumentView {
             .attributeModifier(this.tabContentPolicy)
             .tabBar(this.bottomTab($r('sys.symbol.list_bullet'), $r('app.string.tab_outline')))
         }
-        if (this.wide) {
-          TabContent() { this.SplitPage() }
-            .onWillShow((): void => { this.splitShown = true; })
-            .onWillHide((): void => { this.splitShown = false; })
+        if (this.canSplit()) {
+          TabContent() {}
             .attributeModifier(this.tabContentPolicy)
             .tabBar(this.bottomTab($r('sys.symbol.rectangle_split_2x1'), $r('app.string.tab_split')))
         }
@@ -983,11 +995,9 @@ export struct DocumentView {
       // HdsTabs (ui-design-hdstabs)：存在 BottomTabBarStyle 时，未设置动画时长即使用官方默认值。
       .onChange((index: number) => {
         this.selectedTab = index;
-        // 离开编辑页签就退出编辑态：键盘跟着收起，焦点不再挂在隐藏的 TextArea 上，
-        // 回来时也不会把光标和键盘一起带回来。
-        if (index !== TAB_EDIT && index !== this.splitTab()) this.stopEditing();
+        if (!this.inEditTab()) this.stopEditing();
         if (this.outlineTabVisible()) void this.flushAnalysis();
-          })
+      })
       .barMode(BarMode.Fixed)
       // 按华为《沉浸光感》(ui-design-hds-component-material) 推荐值启用系统自适应材质。
       .barOverlap(true)
@@ -998,59 +1008,32 @@ export struct DocumentView {
         },
         barBottomMargin: this.tabBarBottomMargin
       })
-      // HDS paints its floating bar above both panes. Empty tab content passes touches to the editor.
+      // The Web panes share the workspace beneath the floating bar in every tab.
       .zIndex(1)
       .hitTestBehavior(HitTestMode.Transparent)
       .attributeModifier(this.tabsPolicy)
       .width('100%')
       .height('100%')
-      // One Web instance remains mounted while editing and split tabs change.
-      Column() {
-        ForEach([this.editorSessionKey], (key: number) => {
-          DocumentScrollLayer({ scroller: this.editScroller,
-            onViewportChange: (viewport: DocumentWebViewport): void => { this.editViewport = viewport; } }) {
-            DocumentCodeEditor({
-              viewport: this.editViewport,
-              sessionId: `document-${key}`, source: this.source, formatId: this.formatId,
-              initialEndings: this.info.newline === 'mixed' ? DocumentService.current().lineEndings : undefined,
-              webTheme: this.theme, appearance: this.theme, theme: this.codeTheme,
-              language: resourceLanguage(this.language),
-              textDirection: isRightToLeftLanguage(this.language) ? 'rtl' : 'ltr',
-              controller: this.editor,
-              onChange: (expected: string, source: string, anchor: number, head: number, endings?: string): boolean => {
-                return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head, endings);
-              },
-              onRecover: (expected: string, source: string, anchor: number, head: number, endings?: string): boolean => {
-                return key === this.editorSessionKey && this.updateSource(expected, source, anchor, head, endings);
-              },
-              onFind: (): void => { if (key === this.editorSessionKey) this.openFind(); },
-              onState: (anchor: number, head: number, canUndo: boolean, canRedo: boolean): void => {
-                if (key !== this.editorSessionKey) return;
-                this.selectionStart = anchor;
-                this.selectionEnd = head;
-                this.undoAvailable = canUndo;
-                this.redoAvailable = canRedo;
-              },
-              onConflict: (): void => { this.toast($r('app.string.editor_sync_failed')); }
-            })
-          }
-        }, (key: number): string => key.toString())
-      }
-      .width(this.wide && this.selectedTab === this.splitTab() ? this.splitEditorWidth : '100%')
-      .height('100%')
-      .visibility(this.inEditTab() ? Visibility.Visible : Visibility.Hidden)
+      this.WebWorkspace()
     }
     .width('100%')
     .height('100%')
-    .onAreaChange((_oldArea: Area, newArea: Area): void => {
-      this.workspaceTop = Number(newArea.globalPosition.y);
-      this.workspaceBottom = this.workspaceTop + Number(newArea.height);
-      const wide = Number(newArea.width) >= 840;
-      if (wide !== this.wide) {
-        this.wide = wide;
-        this.onWideChange();
-      }
+    .onAreaChange((_oldArea: Area, area: Area): void => {
+      this.workspaceTop = Number(area.globalPosition.y);
+      this.workspaceBottom = this.workspaceTop + Number(area.height);
     })
+  }
+
+  @LocalBuilder
+  private WorkspacePage() {
+    // Use the system breakpoint for the document area inside the navigation layout.
+    // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-layout-development-container-reader/
+    ContainerReader({
+      size: this.workspaceSize!!,
+      widthBreakpoint: this.workspaceBreakpoint!!
+    }) {
+      this.WorkspaceLayers()
+    }
   }
 
   /** 退出编辑态：收起键盘并放开焦点，用于离开编辑页签和关闭文稿。 */
@@ -1066,7 +1049,7 @@ export struct DocumentView {
 
   /** 编辑页签和分栏页签都能写；格式栏只在能写的页签出现。 */
   private inEditTab(): boolean {
-    return this.selectedTab === TAB_EDIT || this.selectedTab === this.splitTab();
+    return this.selectedTab === TAB_EDIT || this.inSplitTab();
   }
 
   build() {
@@ -1085,10 +1068,6 @@ export struct DocumentView {
       this.pageVisible = false;
       documentBridge.markHidden();
     })
-    // Keep the same destination layout contract as SettingsPage. HDS ignoreLayoutSafeArea
-    // expands layout into the system avoid areas; it is not a paint-only transparency switch.
-    // Scroll content extends through clipContent(SAFE_AREA) + PageTabsPolicy + PageTabContentPolicy.
-    // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ui-design-hdsnavdestination
     .onBackPressed(() => {
       this.requestLeave();
       return true;

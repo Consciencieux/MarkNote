@@ -4,9 +4,9 @@
 :root[data-theme='dark'] { color-scheme: dark; --background:#000; --foreground:#fff; --secondary:#aaa; --line:#444; --code:#1c1c1c; --hljs-keyword:#d8b4fe; --hljs-string:#86efac; --hljs-number:#fdba74; --hljs-comment:#a3a3a3; --hljs-tag:#fca5a5; --hljs-attr:#f9a8d4; --hljs-function:#5eead4; }
 * { box-sizing: border-box; }
 html, body { width:100%; margin:0; padding:0; background:var(--background); color:var(--foreground); }
+html { overflow-anchor:none; }
 body { font: 16px/1.72 system-ui,-apple-system,'HarmonyOS Sans',sans-serif; -webkit-text-size-adjust:100%; overflow-x:hidden;
-  box-sizing:border-box; padding-block:var(--inset-top, 0px) var(--inset-bottom, 0px);
-  padding-inline:var(--inset-start, 0px) var(--inset-end, 0px); }
+  padding-block:var(--inset-top, 0px) var(--inset-bottom, 0px); }
 /* ArkWeb guide bpta-web-adaptation documents CSS px as visually equivalent to HarmonyOS vp. */
 .preview { display:flow-root; overflow-wrap:break-word; }
 .placeholder { color:var(--secondary); }

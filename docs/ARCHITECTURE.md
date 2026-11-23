@@ -25,11 +25,13 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 首页使用 `HdsNavigation`。文稿和设置页面使用 `HdsNavDestination`，并由同一个 `NavPathStack` 管理。`Index` 创建设置页路由，`SettingsPage` 构建各级页面；每个页面持有自己的滚动控制器。许可证页进入后再读取原文，并按段放进列表。`EntryAbility` 在加载页面前按已保存的语言偏好设置应用语言。跟随系统时解析为当前系统语言对应的资源，因此切换立即生效；下次冷启动会按当时的系统语言重新解析。
 
-`HdsMaterialStyles` 配置滚动标题栏。首页和各级设置页通过 `bindToScrollable` 绑定本页列表，文稿页绑定当前页签的控制器，分栏时同时绑定预览和编辑两侧。`PageScrollPolicy` 统一原生列表和滚动容器的边缘回弹、安全区裁切与滚动条避让。文稿页签及其父容器放开裁切，使正文能滚入标题栏和底部页签的渐变区。
+`HdsMaterialStyles` 配置滚动标题栏。首页和各级设置页通过 `bindToScrollable` 绑定本页列表，文稿页绑定当前页签的控制器，分栏时同时绑定预览和编辑两侧。首页、设置和大纲通过 `PageScrollPolicy` 共用边缘回弹、安全区裁切与滚动条避让设置。
 
-预览和编辑通过 `DocumentScrollLayer` 使用有界 ArkWeb，由 ArkWeb 负责正文滚动和纵向滚动条，外层 `Scroll` 负责标题栏联动和文稿两端的弹簧回弹。文稿的正文边距和编辑光标避让由 `DocumentScrollLayer` 提供。大纲使用有界 `List`、`Repeat.virtualScroll` 和原生滚动条。[ArkWeb 滚动条模式](https://developer.huawei.com/consumer/cn/doc/harmonyos-references/arkts-apis-webview-e/) · [ArkWeb 嵌套滚动](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/web-nested-scrolling/)
+预览和编辑共用 `DocumentScrollLayer`，每栏的 ArkUI `Scroll` 管理滚动范围、系统滑块及两端回弹。ArkWeb 保持视口大小，经消息端口报告正文的滚动范围，由 `WebviewController.scrollTo` 显示 `Scroller` 当前指向的位置。CodeMirror 在测量阶段计算光标和查找目标的位置，经同一端口交给对应栏的 `Scroller`。大纲使用有界 `List`、`Repeat.virtualScroll` 和原生滚动条。[华为滚动条设计指南](https://developer.huawei.com/consumer/cn/doc/design-guides/scrollbar-0000001956815473/) · [ArkWeb 嵌套滚动](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/web-nested-scrolling/)
 
-`DocumentView` 持有文稿编辑、查找和保存界面状态，并按页签是否可见决定预览工作方式；查找栏 `DocumentFindBar` 只绘制查询和替换控件。保存和删除后的文稿数据由 `DocumentService` 更新。`DocumentPreviewView` 管理各自的 Web 控制器，`PreviewDispatch` 保证每个实例最多一笔在途发送和一笔最新请求。`DocumentOutlineView` 管理大纲展示与展开状态。
+`ContainerReader` 读取文稿区域的宽度断点，从系统大宽度档起显示分栏页签。预览和编辑位于悬浮页签下方的同一个 `Row`，正文可延伸到标题栏和底部页签的渐变区。单栏由当前可见的一侧填满文稿区域，分栏由同两个 Web 实例平分分隔线以外的空间。[华为容器断点指南](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-layout-development-container-reader/)
+
+`DocumentView` 持有文稿编辑、查找和保存界面状态，并按页签是否可见决定预览工作方式；查找栏 `DocumentFindBar` 只绘制查询和替换控件。保存和删除后的文稿数据由 `DocumentService` 更新。`DocumentPreviewView` 持有预览 Web 控制器，`PreviewDispatch` 保留至多一笔在途发送和一笔最新请求。`DocumentOutlineView` 管理大纲展示与展开状态。
 
 首页和文稿页的标题栏菜单使用系统菜单组件；`DocumentMenus` 和 `DocumentBridge` 负责跨页面的菜单动作与离开确认。
 

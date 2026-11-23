@@ -5,7 +5,7 @@ import { insertEditorAction } from './editor-actions.ts';
 import type { EditorAck, EditorChangeRange, EditorConflict } from '../../shared/editor-protocol.ts';
 import { changedEndings, mixedEndings } from './mixed-endings.ts';
 import { EditorChangeQueue } from './bridge.ts';
-import { applyDocumentViewport } from '../../shared/document-viewport.ts';
+import { applyDocumentViewport, documentScrollExtent } from '../../shared/document-viewport.ts';
 
 interface InitMessage {
   type: 'init'; sessionId: string; epoch: number; revision: number; source: string;
@@ -25,6 +25,7 @@ export class EditorSession {
   private suspended: boolean = false;
   private suspendGeneration: number = 0;
   private activeFlushes = new Map<string, AbortController>();
+  private reportedExtent: number = -1;
 
   constructor(view: EditorView, editable: Compartment, makeState: (message: InitMessage) => EditorState,
     setTheme?: (theme: string, appearance: string) => void) {
@@ -35,6 +36,21 @@ export class EditorSession {
   }
 
   isBlocked(): boolean { return this.blocked || this.suspended; }
+
+  reportScrollLayout(offset?: number): void {
+    if (!this.current || !this.port) return;
+    const extent = documentScrollExtent();
+    if (extent === this.reportedExtent && offset === undefined) return;
+    this.reportedExtent = extent;
+    this.trySend({ type: 'scroll-layout', sessionId: this.current.sessionId, epoch: this.current.epoch, extent, offset });
+  }
+
+  viewportResized(): void {
+    this.reportScrollLayout();
+    if (this.view.hasFocus) {
+      this.view.dispatch({ effects: EditorView.scrollIntoView(this.view.state.selection.main.head) });
+    } else this.view.requestMeasure();
+  }
 
   requestFind(): boolean {
     if (!this.current || !this.port) return false;
@@ -82,6 +98,8 @@ export class EditorSession {
         init.anchor < 0 || init.head < 0 || init.anchor > init.source.length || init.head > init.source.length) return;
       if (this.current?.sessionId === init.sessionId && this.current.epoch === init.epoch) {
         this.send({ type: 'initialized', sessionId: init.sessionId, epoch: init.epoch });
+        this.reportedExtent = -1;
+        this.reportScrollLayout();
         return;
       }
       if (this.queue && (this.queue.pendingCount() > 0 || this.blocked || this.view.compositionStarted || this.activeFlushes.size > 0)) {
@@ -98,11 +116,12 @@ export class EditorSession {
       document.documentElement.dir = init.direction;
       this.view.setState(this.makeState(init));
       this.send({ type: 'initialized', sessionId: init.sessionId, epoch: init.epoch });
+      this.reportScrollLayout(0);
       return;
     }
     if (message.type === 'viewport' && this.current && message.sessionId === this.current.sessionId &&
       message.epoch === this.current.epoch) {
-      if (applyDocumentViewport(message)) this.view.requestMeasure();
+      if (applyDocumentViewport(message)) this.viewportResized();
       return;
     }
     if (message.type === 'ack') this.queue?.acknowledge(message as unknown as EditorAck);

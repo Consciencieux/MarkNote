@@ -6,7 +6,9 @@ import { i18n } from '@kit.LocalizationKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { resourceLanguage } from '../i18n/AppLanguage';
 import { PreviewCommand, PreviewCopy, PreviewDispatch } from './PreviewDispatch';
-import { DocumentWebViewport, documentWebScroll, emptyDocumentViewport } from './DocumentScrollLayer';
+import {
+  DocumentScrollLayer, DocumentScrollLayout, DocumentWebScroll, DocumentWebViewport, emptyDocumentViewport
+} from './DocumentScrollLayer';
 
 interface ParsedHeading { level: number; text: string; offset: number }
 interface ParsedResult {
@@ -15,6 +17,8 @@ interface ParsedResult {
   documentId?: number;
   headings: ParsedHeading[];
   url?: string;
+  extent?: number;
+  offset?: number;
 }
 
 const IMAGE_ORIGIN = 'https://images.marknote.invalid/';
@@ -43,8 +47,11 @@ export struct DocumentPreviewView {
     (_documentId: number, _revision: number, _headings: Heading[]): void => {};
   /** 预览里点击已校验的网页链接。页面不打开这个地址。 */
   onOpenExternalLink: (link: string) => void = (_link: string): void => {};
-  @Prop @Watch('updateViewport') viewport: DocumentWebViewport = emptyDocumentViewport;
+  scroller: Scroller = new Scroller();
   private controller: webview.WebviewController = new webview.WebviewController();
+  private scrollOptions: DocumentWebScroll = new DocumentWebScroll(this.controller);
+  @State private viewport: DocumentWebViewport = emptyDocumentViewport;
+  @State private scrollLayout: DocumentScrollLayout = { extent: 0 };
   private ready: boolean = false;
   private hasPreviewContent: boolean = false;
   @State private previewFailed: boolean = false;
@@ -79,7 +86,11 @@ export struct DocumentPreviewView {
         try {
           const result = JSON.parse(message) as ParsedResult;
           if (result.kind === 'preview-layout') {
-            if (result.revision === this.parseRevision && result.documentId === this.documentId) this.scheduleViewport();
+            if (result.revision === this.parseRevision && result.documentId === this.documentId &&
+              this.workMode === 'render' && typeof result.extent === 'number') {
+              this.scrollLayout = { extent: result.extent, offset: result.offset };
+              this.scheduleViewport();
+            }
             return;
           }
           if (result.kind === 'open-link') {
@@ -268,7 +279,7 @@ export struct DocumentPreviewView {
     return response;
   }
 
-  @Builder
+  @LocalBuilder
   private PreviewWeb() {
     Web({ src: $rawfile('preview/index.html'), controller: this.controller })
       .visibility(this.previewFailed ? Visibility.None : Visibility.Visible)
@@ -284,7 +295,7 @@ export struct DocumentPreviewView {
       // 预览正文的底色由 renderer 的样式表按主题决定。
       .backgroundColor($r('sys.color.ohos_id_color_background'))
       .textZoomRatio(Math.round(this.fontScale * 100))
-      .attributeModifier(documentWebScroll)
+      .attributeModifier(this.scrollOptions)
       .onScroll((): void => this.scheduleViewport())
       .onAreaChange((): void => this.scheduleViewport())
       .onPageEnd(() => {
@@ -297,15 +308,26 @@ export struct DocumentPreviewView {
       })
   }
 
-  build() {
+  @LocalBuilder
+  private PreviewContent() {
     Stack({ alignContent: Alignment.TopStart }) {
       this.PreviewWeb()
       if (this.previewFailed) {
         Text($r('app.string.preview_failed'))
-          .padding({ top: this.viewport.top, left: this.viewport.start, right: this.viewport.end })
+          .padding({ top: this.viewport.top })
       }
     }
     .width('100%')
     .height('100%')
+  }
+
+  build() {
+    DocumentScrollLayer({ scroller: this.scroller, web: this.controller, scrollLayout: this.scrollLayout,
+      onViewportChange: (viewport: DocumentWebViewport): void => {
+        this.viewport = viewport;
+        this.updateViewport();
+      } }) {
+      this.PreviewContent()
+    }
   }
 }
