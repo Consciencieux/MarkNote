@@ -49,7 +49,6 @@ export function languageLabel(choice: string): Resource {
 
 /**
  * 设置首页。这一层只放导航条目，正文在各自的二级页。
- * 分组直接承载 ListItem，HdsListItemCard 负责行内布局和交互。
  */
 @Component
 export struct SettingsView {
@@ -68,51 +67,37 @@ export struct SettingsView {
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
         // 外观行直接绑定当前主题。键若跟着主题变化，ForEach 会拆掉原行再新建。
         // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-rendering-control-foreach
-        ListItem() {
-          SettingsListRow({
-            title: $r('app.string.settings_appearance'),
-            value: themeLabel(this.theme),
-            showArrow: true,
-            onSelect: (): void => this.onOpen('appearance')
-          })
-        }
+        SettingsListRow({
+          title: $r('app.string.settings_appearance'),
+          value: themeLabel(this.theme),
+          showArrow: true,
+          onSelect: (): void => this.onOpen('appearance')
+        })
         // 切换界面语言时重新读取语言行的资源。
         ForEach([this.language], (choice: string) => {
-          ListItem() {
-            SettingsListRow({
-              title: $r('app.string.settings_language'),
-              value: languageLabel(choice),
-              showArrow: true,
-              onSelect: (): void => this.onOpen('language')
-            })
-          }
+          SettingsListRow({
+            title: $r('app.string.settings_language'),
+            value: languageLabel(choice),
+            showArrow: true,
+            onSelect: (): void => this.onOpen('language')
+          })
         }, (choice: string) => choice)
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        ListItem() {
-          SettingsListRow({ title: $r('app.string.settings_code_theme'), value: codeThemeLabel(this.codeTheme),
-            showArrow: true, onSelect: (): void => this.onOpen('code-theme') })
-        }
+        SettingsListRow({ title: $r('app.string.settings_code_theme'), value: codeThemeLabel(this.codeTheme),
+          showArrow: true, onSelect: (): void => this.onOpen('code-theme') })
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        ListItem() {
-          SettingsListRow({ title: $r('app.string.settings_help'), showArrow: true,
-            onSelect: (): void => this.onOpen('help') })
-        }
-        ListItem() {
-          SettingsListRow({ title: $r('app.string.settings_feedback'), showArrow: true,
-            onSelect: this.onFeedback })
-        }
+        SettingsListRow({ title: $r('app.string.settings_help'), showArrow: true,
+          onSelect: (): void => this.onOpen('help') })
+        SettingsListRow({ title: $r('app.string.settings_feedback'), showArrow: true,
+          onSelect: this.onFeedback })
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        ListItem() {
-          SettingsListRow({ title: $r('app.string.settings_privacy'), showArrow: true,
-            onSelect: (): void => this.onOpen('privacy') })
-        }
-        ListItem() {
-          SettingsListRow({ title: $r('app.string.settings_about'), showArrow: true,
-            onSelect: (): void => this.onOpen('about') })
-        }
+        SettingsListRow({ title: $r('app.string.settings_privacy'), showArrow: true,
+          onSelect: (): void => this.onOpen('privacy') })
+        SettingsListRow({ title: $r('app.string.settings_about'), showArrow: true,
+          onSelect: (): void => this.onOpen('about') })
       }.attributeModifier(this.groupStyle)
     }
     .attributeModifier(pageScroll)

@@ -147,13 +147,6 @@ export struct SettingsDetail {
     SubHeader({ secondaryTitle: $r('app.string.settings_theme_group'), contentMargin: {} })
   }
 
-  @Builder
-  private InfoRow(title: ResourceStr, status: ResourceStr) {
-    ListItem() {
-      SettingsListRow({ title: title, value: status })
-    }
-  }
-
   /**
    * 每一段许可证单独占一个 ListItem，避免整篇原文挂在同一项里。
    * 版心与帮助、隐私相同，见 SettingsReadingFrame。
@@ -218,10 +211,8 @@ export struct SettingsDetail {
           // 键固定为选项本身。主题变化时只更新选中状态，不重建这三行。
           // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-rendering-control-foreach
           ForEach(THEME_VALUES, (choice: string) => {
-            ListItem() {
-              SettingsListRow({ title: themeLabel(choice), selected: this.theme === choice,
-                onSelect: (): void => this.onChooseTheme(choice) })
-            }
+            SettingsListRow({ title: themeLabel(choice), selected: this.theme === choice,
+              onSelect: (): void => this.onChooseTheme(choice) })
           }, (choice: string) => choice)
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'code-theme') {
@@ -230,44 +221,32 @@ export struct SettingsDetail {
           .padding($r('sys.float.padding_level0'))
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           ForEach(CODE_THEME_VALUES, (choice: string) => {
-            ListItem() {
-              SettingsListRow({ title: codeThemeLabel(choice), selected: this.codeTheme === choice,
-                onSelect: (): void => this.chooseCodeTheme(choice) })
-            }
+            SettingsListRow({ title: codeThemeLabel(choice), selected: this.codeTheme === choice,
+              onSelect: (): void => this.chooseCodeTheme(choice) })
           }, (choice: string) => choice)
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'language') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
           ForEach(LANGUAGE_VALUES, (choice: string) => {
-            ListItem() {
-              SettingsListRow({ title: languageLabel(choice), selected: this.language === choice,
-                onSelect: (): void => this.onChooseLanguage(choice) })
-            }
+            SettingsListRow({ title: languageLabel(choice), selected: this.language === choice,
+              onSelect: (): void => this.onChooseLanguage(choice) })
           }, (choice: string) => `${this.language}:${choice}`)
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'license-list') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-          ListItem() {
-            SettingsListRow({ title: $r('app.string.settings_project_license'), showArrow: true,
-              onSelect: (): void => this.onOpen('project-license') })
-          }
-          ListItem() {
-            SettingsListRow({ title: $r('app.string.settings_third_party'), showArrow: true,
-              onSelect: (): void => this.onOpen('licenses') })
-          }
+          SettingsListRow({ title: $r('app.string.settings_project_license'), showArrow: true,
+            onSelect: (): void => this.onOpen('project-license') })
+          SettingsListRow({ title: $r('app.string.settings_third_party'), showArrow: true,
+            onSelect: (): void => this.onOpen('licenses') })
         }.attributeModifier(this.groupStyle)
       } else if (this.section === 'about') {
         ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-          this.InfoRow($r('app.string.about_name'), $r('app.string.EntryAbility_label'))
-          this.InfoRow($r('app.string.about_version'),
-            this.version.length > 0 ? this.version : $r('app.string.about_version_unavailable'))
-          ListItem() {
-            SettingsListRow({ title: $r('app.string.about_github'), showArrow: true, onSelect: this.onOpenProject })
-          }
-          ListItem() {
-            SettingsListRow({ title: $r('app.string.settings_licenses'), showArrow: true,
-              onSelect: (): void => this.onOpen('license-list') })
-          }
+          SettingsListRow({ title: $r('app.string.about_name'), value: $r('app.string.EntryAbility_label') })
+          SettingsListRow({ title: $r('app.string.about_version'),
+            value: this.version.length > 0 ? this.version : $r('app.string.about_version_unavailable') })
+          SettingsListRow({ title: $r('app.string.about_github'), showArrow: true, onSelect: this.onOpenProject })
+          SettingsListRow({ title: $r('app.string.settings_licenses'), showArrow: true,
+            onSelect: (): void => this.onOpen('license-list') })
         }.attributeModifier(this.groupStyle)
       } else if (this.isLicenseSection()) {
         if (this.licenseLoading) {

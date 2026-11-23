@@ -1,7 +1,9 @@
 import { HdsListItemCard, SuffixArrow, SuffixRadio, SuffixText, SuffixTextAndArrow } from '@kit.UIDesignKit';
 
 /**
- * 由原生 ListItem 承载列表项。HDS 处理行内标题、状态和箭头。
+ * 可点击行和外层分组使用同一套 ArkUI 卡片样式，由系统按组内缩进确定按压圆角。
+ * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-container-listitem/
+ * HdsListItemCard 只负责标题、状态和箭头的布局。
  * https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ui-design-hdslistitemcard
  * 行卡片在组内使用零外边距和透明背景，沿用 EfficientList 的嵌入方式。
  * https://gitcode.com/HarmonyOS_Samples/HarmonyOSComponentUXExamples/blob/dev/products/phone/src/main/ets/components/container/list/components/EfficientList.ets
@@ -25,20 +27,23 @@ export struct SettingsListRow {
   }
 
   build() {
-    HdsListItemCard({
-      textItem: { primaryText: { text: this.title } },
-      suffixItem: this.suffix(),
-      cardPrefixMargin: 0,
-      cardSuffixMargin: 0,
-      cardBackgroundColor: Color.Transparent,
-      onClick: this.onSelect,
-      accessibilityOptions: this.selected === undefined ? undefined : {
-        accessibilityGroup: { isGroup: true },
-        accessibilityText: this.title,
-        accessibilityRole: AccessibilityRoleType.RADIO,
-        accessibilitySelected: this.selected
-      }
-    })
+    ListItem({ style: this.onSelect === undefined ? ListItemStyle.NONE : ListItemStyle.CARD }) {
+      HdsListItemCard({
+        textItem: { primaryText: { text: this.title } },
+        suffixItem: this.suffix(),
+        cardPrefixMargin: 0,
+        cardSuffixMargin: 0,
+        cardBackgroundColor: Color.Transparent
+      })
+      .hitTestBehavior(HitTestMode.BLOCK_DESCENDANTS)
+    }
+    // 组内保留系统按压样式，行高和内容内边距交给 HDS 测量。
+    .height(undefined)
+    .padding(0)
+    .onClick(this.onSelect)
+    .accessibilityGroup(this.onSelect !== undefined)
+    .accessibilityRole(this.selected === undefined ? undefined : AccessibilityRoleType.RADIO)
+    .accessibilitySelected(this.selected)
   }
 }
 
