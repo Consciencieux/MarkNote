@@ -14,11 +14,13 @@ import { encodePreviewLinkRequest } from './preview-link-message';
 import { previewText, usePreviewText } from './preview-text';
 import katex from 'katex';
 import { syntaxColors } from '../../shared/syntax-colors.ts';
+import { applyDocumentViewport, documentScrollExtent } from '../../shared/document-viewport.ts';
 
 type Kind = PreviewUpdate['kind'];
 let resultPort: MessagePort | undefined;
-let linkTarget: { kind: Kind; revision: number; documentId: number } | undefined;
+let renderTarget: { kind: Kind; revision: number; documentId: number } | undefined;
 let lastResult: string | undefined;
+let scrollLayout: { extent: number; offset: number } | undefined;
 let codeTheme = 'github';
 let appearance = 'system';
 function applyCodeColors(): void {
@@ -39,6 +41,7 @@ window.addEventListener('message', (event: MessageEvent) => {
   resultPort?.close();
   resultPort = event.ports[0];
   if (lastResult) resultPort.postMessage(lastResult);
+  reportScrollLayout(0);
 });
 
 const host = document.getElementById('preview');
@@ -47,16 +50,16 @@ if (!host) throw new Error('missing preview root');
 function notePreviewTarget(update: PreviewUpdate): void {
   const revision = update.revision;
   const documentId = update.documentId;
-  if (update.kind === 'markdown' && typeof revision === 'number' && Number.isInteger(revision) && revision >= 0 &&
+  if (typeof revision === 'number' && Number.isInteger(revision) && revision >= 0 &&
     typeof documentId === 'number' && Number.isInteger(documentId) && documentId >= 0) {
-    linkTarget = { kind: update.kind, revision, documentId };
+    renderTarget = { kind: update.kind, revision, documentId };
     return;
   }
-  linkTarget = undefined;
+  renderTarget = undefined;
 }
 
 host.addEventListener('click', (event: MouseEvent) => {
-  const target = linkTarget;
+  const target = renderTarget;
   const port = resultPort;
   if (!target || target.kind !== 'markdown' || !port) return;
   const origin = event.target instanceof Element ? event.target :
@@ -78,7 +81,7 @@ async function drawDiagrams(): Promise<void> {
     while (queuedDiagrams) {
       const { theme, ticket } = queuedDiagrams;
       queuedDiagrams = undefined;
-      await paintMermaid(host!, theme, ticket);
+      await paintMermaid(markdown?.diagrams ?? [], theme, ticket);
     }
   } finally {
     drawingDiagrams = false;
@@ -100,48 +103,60 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 const images = new PreviewImages();
 let markdown: MarkdownWindow | undefined;
-let viewport = { top: 0, height: window.screen.height || 800 };
+let renderedDocumentId: number | undefined;
 
 function clearRender(): void {
   cancelCodeHighlight();
   nextMermaidGeneration();
   queuedDiagrams = undefined;
   images.clear();
+  markdown?.dispose();
   markdown = undefined;
+  scrollLayout = undefined;
   lastRendered = undefined;
   lastResult = undefined;
   host!.replaceChildren();
 }
 
 function releasePreview(): void {
-  linkTarget = undefined;
-  // Retain the native Scroll offset while the hidden DOM is released.
+  renderTarget = undefined;
+  // Retain the page scroll offset while the hidden DOM is released.
   if (host!.firstChild) host!.style.minHeight = `${host!.offsetHeight}px`;
   clearRender();
 }
 
-function updateWindow(theme: PreviewTheme): void {
-  if (markdown?.update(viewport.top, viewport.height)) {
-    paintCodeHighlight(host!, markdown.pendingCode());
-    paintDiagrams(theme);
-  }
+function imageWindow(generation: number): ImageRequest[] | null {
+  if (!markdown || !lastRendered || window.innerHeight <= 0) return [];
+  return images.requests(host!, markdown.imageSlots, window.innerHeight, generation);
 }
 
-function imageWindow(top: number, height: number, generation: number): ImageRequest[] | null {
-  if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) return [];
-  viewport = { top, height };
-  if (!markdown || !lastRendered) return [];
-  updateWindow(lastRendered.theme);
-  return images.requests(host!, top, height, generation);
+function reportScrollLayout(offset?: number, force = false): void {
+  if (!renderTarget || !resultPort) return;
+  const extent = documentScrollExtent();
+  const webOffset = window.scrollY;
+  const previous = scrollLayout;
+  if (!force && offset === undefined && previous?.extent === extent) return;
+  // The browser can move the reading position when a real layout change resizes the page.
+  // Include its old position so ArkUI can discard a correction superseded by user input.
+  let previousOffset: number | undefined;
+  if (offset === undefined && previous && previous.extent !== extent && previous.offset !== webOffset) {
+    previousOffset = previous.offset;
+    offset = webOffset;
+  }
+  scrollLayout = { extent, offset: webOffset };
+  resultPort.postMessage(JSON.stringify({ ...renderTarget, kind: 'preview-layout', extent, offset, previousOffset }));
 }
 
-// Loading an image, drawing a diagram, or resizing a split pane can bring
-// different pages and image slots into view without a native scroll gesture.
-new ResizeObserver(() => {
-  if (markdown && linkTarget) {
-    resultPort?.postMessage(JSON.stringify({ ...linkTarget, kind: 'preview-layout' }));
-  }
-}).observe(host);
+// Huawei's "获取网页内容高度" guide recommends notifying the native side from the
+// web layout when dynamic content changes, after the Web lifecycle events.
+new ResizeObserver(() => reportScrollLayout()).observe(document.body, { box: 'border-box' });
+window.addEventListener('resize', () => {
+  markdown?.resize();
+  reportScrollLayout();
+});
+window.addEventListener('scroll', () => {
+  if (scrollLayout && scrollLayout.extent === documentScrollExtent()) scrollLayout.offset = window.scrollY;
+});
 
 function sanitizedFragment(html: string): DocumentFragment {
   const fragment = DOMPurify.sanitize(html, {
@@ -182,6 +197,7 @@ function render(update: PreviewUpdate): void {
     postTexOutline(update, renderTexDocument(update.source, false));
     return;
   }
+  renderedDocumentId = update.documentId;
   host!.style.minHeight = '';
   codeTheme = ['off', 'github', 'atom', 'vs'].includes(update.codeTheme || '') ? update.codeTheme! : 'github';
   appearance = update.theme;
@@ -203,7 +219,6 @@ function render(update: PreviewUpdate): void {
     }
     return;
   }
-  if (lastRendered && lastRendered.documentId !== update.documentId) viewport.top = 0;
   clearRender();
   if (!DOMPurify.isSupported) {
     host!.textContent = previewText().unsafe;
@@ -227,8 +242,14 @@ function render(update: PreviewUpdate): void {
   let tex: TexDocument | undefined;
   try {
     if (update.kind === 'markdown') {
-      markdown = new MarkdownWindow(host!, markdownPages(update.source), sanitizedFragment);
-      updateWindow(update.theme);
+      markdown = new MarkdownWindow(host!, markdownPages(update.source), sanitizedFragment, changed => {
+        if (!markdown || !lastRendered) return;
+        if (changed.has('code')) paintCodeHighlight(host!, markdown.pendingCode());
+        if (changed.has('diagrams')) paintDiagrams(lastRendered.theme);
+        if (changed.has('images') && renderTarget) {
+          resultPort?.postMessage(JSON.stringify({ ...renderTarget, kind: 'preview-images' }));
+        }
+      });
     } else {
       tex = update.kind === 'tex-math' ? renderTexDocument(update.source, true) : undefined;
       host!.append(sanitizedFragment(tex ? tex.html : renderBody(update.kind, update.source)));
@@ -236,7 +257,6 @@ function render(update: PreviewUpdate): void {
     }
   } catch {
     clearRender();
-    linkTarget = undefined;
     host!.textContent = previewText().failed;
     return;
   }
@@ -254,8 +274,17 @@ function render(update: PreviewUpdate): void {
 }
 
 const api = Object.freeze({
-  update: (data: PreviewUpdate) => render(data),
+  update: (data: PreviewUpdate) => {
+    const previous = renderedDocumentId;
+    render(data);
+    if (data.mode !== 'outline') reportScrollLayout(previous === renderedDocumentId ? undefined : 0, true);
+  },
   release: releasePreview,
+  setViewport: (viewport: Record<string, unknown>) => {
+    const applied = applyDocumentViewport(viewport);
+    if (applied) reportScrollLayout();
+    return applied;
+  },
   imageWindow,
   loadImages: (generation: number) => images.load(generation),
   sizeImage: (id: number, width: number, height: number) => images.size(id, width, height)

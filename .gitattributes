@@ -2,6 +2,7 @@
 *.ets linguist-language=ArkTS
 
 # Generated resources committed for offline builds
+entry/src/main/resources/rawfile/editor/index.html linguist-generated
 entry/src/main/resources/rawfile/preview/index.html linguist-generated whitespace=-blank-at-eol
 entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt linguist-generated
 

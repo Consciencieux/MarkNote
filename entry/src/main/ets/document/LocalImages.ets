@@ -142,7 +142,7 @@ async function openRaster(fd: number, source: image.ImageSource, info: image.Ima
   if (scale === 1 || ((mime === 'image/gif' || mime === 'image/webp') && await source.getFrameCount() > 1)) {
     // Let ArkWeb decode animation over time, without expanding every frame into PixelMaps.
     fileIo.lseek(fd, 0);
-    return { file: fileIo.dup(fd), mime, intrinsicWidth: 0, intrinsicHeight: 0 };
+    return { file: fileIo.dup(fd), mime, intrinsicWidth: width, intrinsicHeight: height };
   }
   const size: image.Size = {
     width: Math.max(1, Math.floor(info.size.width * scale)),

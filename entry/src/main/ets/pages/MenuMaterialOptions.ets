@@ -1,9 +1,12 @@
 import { uiMaterial } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 
-// 华为菜单设计指南规定的泛手机菜单宽度（vp）。
+// 泛手机菜单固定为 224vp。平板沿用 Menu 未设置宽度时的栅格与内容测量规则。
+// https://developer.huawei.com/consumer/cn/doc/guidebook/develop-once-deploy-everwhere-9-0000002594673012/
 // https://developer.huawei.com/consumer/cn/doc/design-guides/menu-0000001957001877/
-export const MOBILE_MENU_WIDTH: number = 224;
+// https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-basic-components-menu/
+export const homeMenuWidth: number | undefined = deviceInfo.deviceType === deviceInfo.DeviceTypes.TYPE_PHONE ?
+  224 : undefined;
 
 /**
  * 菜单在 SMOOTH 档位实测可能失去背板；仅对菜单关闭应用级材质，使用系统默认背板。

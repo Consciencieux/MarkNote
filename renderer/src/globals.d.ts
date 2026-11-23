@@ -34,7 +34,8 @@ declare global {
       readonly loadImages: (generation: number) => void;
       readonly sizeImage: (id: number, width: number, height: number) => void;
       readonly release: () => void;
-      readonly imageWindow: (top: number, height: number, generation: number) => ImageRequest[] | null;
+      readonly setViewport: (viewport: Record<string, unknown>) => boolean;
+      readonly imageWindow: (generation: number) => ImageRequest[] | null;
     };
   }
 }
