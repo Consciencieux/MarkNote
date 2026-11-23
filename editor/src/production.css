@@ -1,57 +1,11 @@
-:root { color-scheme: light dark; --editor-text: #171717; }
+:root { --editor-text: #171717; }
 @media (prefers-color-scheme: dark) { :root { --editor-text: #f1f1f1; } }
 html, body, #editor { width: 100%; height: 100%; margin: 0; }
 body { background: transparent; color: var(--editor-text); font: 16px system-ui, sans-serif; }
-#editor { box-sizing: border-box; width: 100vw; padding-inline: var(--inset-start, 0px) var(--inset-end, 0px); }
-html { overflow-x: clip; }
-/* Huawei Scrollbar design: the thumb is 4vp wide, 4vp from the pane edge, with a 32vp touch target. */
-#source-rail {
-  position: fixed;
-  z-index: 2;
-  top: var(--inset-track-top, 0px);
-  bottom: var(--inset-track-bottom, 0px);
-  right: 0;
-  width: 32px;
-  pointer-events: none;
-}
-#source-rail::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 4px;
-  width: 4px;
-  height: var(--thumb-height);
-  transform: translateY(var(--thumb-offset));
-  border-radius: 2px;
-  background: currentColor;
-  opacity: 0;
-}
-#source-rail[data-visible]::before, #source-rail:has(:focus-visible, :active)::before { opacity: .4; }
-#source-scrollbar {
-  appearance: none;
-  writing-mode: vertical-lr;
-  direction: ltr;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-#source-scrollbar::-webkit-slider-runnable-track { width: 100%; height: 100%; }
-#source-scrollbar::-webkit-slider-thumb {
-  appearance: none;
-  width: 32px;
-  height: var(--thumb-height);
-}
-#source-rail[data-visible] input::-webkit-slider-thumb { pointer-events: auto; }
-@media (hover: hover) {
-  #source-rail { width: min(32px, var(--inset-end)); }
-  #source-scrollbar { pointer-events: auto; }
-  #source-rail:hover::before { opacity: .4; }
-  #source-scrollbar::-webkit-slider-thumb { width: 100%; }
-}
-/* ArkWeb coordinates page scrolling with the native parent at either edge. */
+/* ArkUI supplies the canvas background. Apply the color scheme to editor controls only. */
+#editor { color-scheme: light dark; }
+html { overflow-x: clip; overflow-anchor: none; }
+/* The layout stays bounded so CodeMirror renders only the lines near the viewport. */
 .cm-editor { min-height: 100%; }
 .cm-editor .cm-scroller { height: auto; min-height: 100vh; overflow: visible; }
 #editor .cm-editor.cm-focused { outline: none; }

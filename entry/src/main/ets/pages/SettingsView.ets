@@ -1,5 +1,5 @@
 import { pageScroll } from './PageScrollPolicy';
-import { SettingsActionRow, SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
+import { SettingsGroupStyle, SettingsListRow } from './SettingsListRow';
 import { LANGUAGE_VALUES } from '../i18n/AppLanguage';
 
 export const THEME_VALUES: string[] = ['system', 'light', 'dark'];
@@ -49,9 +49,6 @@ export function languageLabel(choice: string): Resource {
 
 /**
  * 设置首页。这一层只放导航条目，正文在各自的二级页。
- *
- * ListItemGroup 和 ListItem 的 CARD 样式负责分组背板及行交互。
- * 参见官方 ts-container-listitemgroup 和 ts-container-listitem。
  */
 @Component
 export struct SettingsView {
@@ -70,52 +67,37 @@ export struct SettingsView {
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
         // 外观行直接绑定当前主题。键若跟着主题变化，ForEach 会拆掉原行再新建。
         // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-rendering-control-foreach
-        ListItem({ style: ListItemStyle.CARD }) {
-          SettingsListRow({
-            title: $r('app.string.settings_appearance'),
-            value: themeLabel(this.theme),
-            showArrow: true
-          })
-        }
-        .onClick(() => this.onOpen('appearance'))
-        // 语言行的右侧文字取决于当前语言。@Builder 默认按值传参，两个及以上参数时状态变化不会刷新函数内的 UI。
-        // 所以这一行直接写在 build 里，并用当前语言当键重建。
-        // https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-builder
+        SettingsListRow({
+          title: $r('app.string.settings_appearance'),
+          value: themeLabel(this.theme),
+          showArrow: true,
+          onSelect: (): void => this.onOpen('appearance')
+        })
+        // 切换界面语言时重新读取语言行的资源。
         ForEach([this.language], (choice: string) => {
-          ListItem({ style: ListItemStyle.CARD }) {
-            SettingsListRow({
-              title: $r('app.string.settings_language'),
-              value: languageLabel(choice),
-              showArrow: true
-            })
-          }
-          .onClick(() => this.onOpen('language'))
+          SettingsListRow({
+            title: $r('app.string.settings_language'),
+            value: languageLabel(choice),
+            showArrow: true,
+            onSelect: (): void => this.onOpen('language')
+          })
         }, (choice: string) => choice)
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        ListItem({ style: ListItemStyle.CARD }) {
-          SettingsListRow({ title: $r('app.string.settings_code_theme'), value: codeThemeLabel(this.codeTheme), showArrow: true })
-        }
-        .onClick(() => this.onOpen('code-theme'))
+        SettingsListRow({ title: $r('app.string.settings_code_theme'), value: codeThemeLabel(this.codeTheme),
+          showArrow: true, onSelect: (): void => this.onOpen('code-theme') })
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        SettingsActionRow({
-          title: $r('app.string.settings_help'),
-          onSelect: (): void => this.onOpen('help')
-        })
-        ListItem({ style: ListItemStyle.CARD }) {
-          SettingsListRow({ title: $r('app.string.settings_feedback'), showArrow: true })
-        }.onClick(() => this.onFeedback())
+        SettingsListRow({ title: $r('app.string.settings_help'), showArrow: true,
+          onSelect: (): void => this.onOpen('help') })
+        SettingsListRow({ title: $r('app.string.settings_feedback'), showArrow: true,
+          onSelect: this.onFeedback })
       }.attributeModifier(this.groupStyle)
       ListItemGroup({ style: ListItemGroupStyle.CARD }) {
-        SettingsActionRow({
-          title: $r('app.string.settings_privacy'),
-          onSelect: (): void => this.onOpen('privacy')
-        })
-        SettingsActionRow({
-          title: $r('app.string.settings_about'),
-          onSelect: (): void => this.onOpen('about')
-        })
+        SettingsListRow({ title: $r('app.string.settings_privacy'), showArrow: true,
+          onSelect: (): void => this.onOpen('privacy') })
+        SettingsListRow({ title: $r('app.string.settings_about'), showArrow: true,
+          onSelect: (): void => this.onOpen('about') })
       }.attributeModifier(this.groupStyle)
     }
     .attributeModifier(pageScroll)

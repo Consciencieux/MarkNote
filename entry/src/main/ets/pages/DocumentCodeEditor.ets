@@ -1,7 +1,7 @@
 import { webview } from '@kit.ArkWeb';
-import { LengthMetrics } from '@kit.ArkUI';
-import { pageContentTop } from './PageScrollPolicy';
-import { AppText } from '../i18n/AppText';
+import {
+  DocumentScrollLayer, DocumentScrollLayout, DocumentWebScroll, DocumentWebViewport, emptyDocumentViewport
+} from './DocumentScrollLayer';
 import { EditorBridge } from '../document/EditorBridge';
 import type { EditorChangeRange, EditorSelection } from '../../../../../shared/editor-protocol';
 
@@ -30,6 +30,8 @@ interface EditorPortMessage {
   canUndo?: boolean;
   canRedo?: boolean;
   source?: string;
+  extent?: number;
+  offset?: number;
 }
 
 /** Page-owned handle. Saving or leaving must wait for flush to succeed. */
@@ -65,9 +67,7 @@ export struct DocumentCodeEditor {
   @StorageLink('marknote_font_scale') fontScale: number = 1;
   @Prop @Watch('updateLocale') language: string = 'zh-CN';
   @Prop @Watch('updateLocale') textDirection: string = 'ltr';
-  @Prop @Watch('updateViewport') topInset: number = 0;
-  @Prop @Watch('updateViewport') parentOffset: number = 0;
-  @Prop @Watch('updateViewport') bottomInset: number = 0;
+  scroller: Scroller = new Scroller();
   controller: DocumentCodeEditorController = new DocumentCodeEditorController();
   onChange: (expected: string, source: string, anchor: number, head: number, endings?: string) => boolean =
     (_expected: string, _source: string, _anchor: number, _head: number): boolean => false;
@@ -78,6 +78,9 @@ export struct DocumentCodeEditor {
   onState: (anchor: number, head: number, canUndo: boolean, canRedo: boolean) => void =
     (_anchor: number, _head: number, _canUndo: boolean, _canRedo: boolean): void => {};
   private web: webview.WebviewController = new webview.WebviewController();
+  private scrollOptions: DocumentWebScroll = new DocumentWebScroll(this.web);
+  private viewport: DocumentWebViewport = emptyDocumentViewport;
+  @State private scrollLayout: DocumentScrollLayout = { extent: 0 };
   private ports: webview.WebMessagePort[] = [];
   private sourceBuffer: string = '';
   private endings?: string;
@@ -147,20 +150,15 @@ export struct DocumentCodeEditor {
 
   private updateViewport(): void {
     if (this.ready) {
-      const startGap = LengthMetrics.resource(pageContentTop).value;
       this.send(JSON.stringify({ type: 'viewport', sessionId: this.sessionId, epoch: this.activeEpoch,
-        top: this.topInset, bottom: this.bottomInset,
-        trackTop: Math.max(0, this.topInset + this.parentOffset),
-        trackBottom: Math.max(0, this.bottomInset + startGap - this.parentOffset),
-        start: LengthMetrics.resource($r('sys.float.margin_left')).value,
-        end: LengthMetrics.resource($r('sys.float.margin_right')).value }));
+        top: this.viewport.top, bottom: this.viewport.bottom }));
     }
   }
 
   private updateLocale(): void {
     if (!this.ready) return;
     this.send(JSON.stringify({ type: 'configure-locale', sessionId: this.sessionId, epoch: this.activeEpoch,
-      language: this.language, direction: this.textDirection, label: AppText.text($r('app.string.tab_edit')) }));
+      language: this.language, direction: this.textDirection }));
   }
 
   private connect(): void {
@@ -199,6 +197,12 @@ export struct DocumentCodeEditor {
       this.ready = true;
       this.updateLocale();
       this.updateViewport();
+      return;
+    }
+    if (message.type === 'scroll-layout') {
+      if (this.ready && typeof message.extent === 'number') {
+        this.scrollLayout = { extent: message.extent, offset: message.offset };
+      }
       return;
     }
     if (message.type === 'recovered') { this.recovering = false; return; }
@@ -291,7 +295,8 @@ export struct DocumentCodeEditor {
     });
   }
 
-  build() {
+  @LocalBuilder
+  private EditorWeb() {
     Web({ src: $rawfile('editor/index.html'), controller: this.web })
       .javaScriptAccess(true)
       .domStorageAccess(false)
@@ -299,9 +304,20 @@ export struct DocumentCodeEditor {
         (this.webTheme === 'dark' ? WebDarkMode.On : WebDarkMode.Off))
       .backgroundColor($r('sys.color.ohos_id_color_background'))
       .textZoomRatio(Math.round(this.fontScale * 100))
-      .verticalScrollBarAccess(false)
-      .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST })
-      .onPageEnd(() => this.connect())
-      .width('100%').height('100%')
+      .attributeModifier(this.scrollOptions)
+      .onPageEnd(() => {
+        this.scrollOptions.disableScrollGestures();
+        this.connect();
+      })
+  }
+
+  build() {
+    DocumentScrollLayer({ scroller: this.scroller, web: this.web, scrollLayout: this.scrollLayout,
+      onViewportChange: (viewport: DocumentWebViewport): void => {
+        this.viewport = viewport;
+        this.updateViewport();
+      } }) {
+      this.EditorWeb()
+    }
   }
 }

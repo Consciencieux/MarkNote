@@ -25,7 +25,7 @@
 | 查找与替换 | 文稿菜单中的查找栏固定在顶部；编辑器获得键盘焦点时也可按 Ctrl+F 打开。查找栏按字面文本统计匹配数。选择结果后显示当前位置，可在结果间前后跳转并替换单处。跳转和替换使用当时的正文。搜索词为空时隐藏结果导航；不支持正则表达式和全部替换 | [TextSearch.ets](../entry/src/main/ets/document/TextSearch.ets)、[DocumentAnalysis.ets](../entry/src/main/ets/document/DocumentAnalysis.ets)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
 | 文稿大纲 | Markdown 提取代码围栏以外的 ATX 标题，暂不解析 Setext 标题；LaTeX 大纲显示可识别的章节。点大纲箭头展开或收起子级，点标题跳到编辑位置。使用读屏时，两项操作可分别聚焦，末级标题只有跳转入口。标题位置与当前正文不一致时不跳转 | [Document.ets](../entry/src/main/ets/model/Document.ets)、[DocumentAnalysis.ets](../entry/src/main/ets/document/DocumentAnalysis.ets)、[tex.ts](../renderer/src/renderers/tex.ts)、[DocumentOutlineView.ets](../entry/src/main/ets/pages/DocumentOutlineView.ets) |
 | 撤销与重做 | CodeMirror 管理当前文稿的编辑历史；普通输入可撤销，每次工具栏插入或单处替换可单独撤销。编辑和分栏复用同一历史，切换文稿时重置 | [editor-session.ts](../editor/src/editor-session.ts)、[DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets) |
-| 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。文稿区域足够宽时可分栏显示，左侧实时预览，右侧编辑 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[DocumentPreviewView.ets](../entry/src/main/ets/pages/DocumentPreviewView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
+| 页面与分栏 | 文稿默认打开预览，底部页签提供预览、编辑和大纲；不支持大纲的格式不显示大纲页签。文稿区域足够宽时，左侧实时预览与右侧编辑等宽显示 | [DocumentView.ets](../entry/src/main/ets/pages/DocumentView.ets)、[DocumentPreviewView.ets](../entry/src/main/ets/pages/DocumentPreviewView.ets)、[Index.ets](../entry/src/main/ets/pages/Index.ets) |
 
 各格式均可离线预览。
 
@@ -66,7 +66,7 @@
 ## 公共滚动行为
 
 - **首页与设置。** 列表在起点时，首项位于标题栏下方。向上滚动后，内容可进入标题栏的渐变模糊区，滚到边缘时有回弹。切换首页“全部”和“收藏”会回到对应列表顶部。代码高亮设置页由“主题”分组标题提供首项间距。
-- **文稿页。** 预览、编辑和大纲也随滚动显示标题栏模糊。正文可滚入底部悬浮页签的渐变区，滚到末尾时最后一行可移到页签上方。编辑时键盘弹出或在文末连续换行，视口随光标滚动。
-- **分栏。** 左侧预览和右侧源码独立滚动，两侧的页首和文末按同一标题栏与页签留出空间。每侧按需显示自己的滚动条，滑块只在该侧可读区域内移动。拖动源码滑块可定位正文，行尾文字留在滑块内侧。
+- **文稿页。** 预览、编辑和大纲也随滚动显示标题栏模糊。正文可滚入底部悬浮页签的渐变区，滚到末尾时最后一行可移到页签上方。预览和编辑的系统纵向滑块支持鼠标拖动，滚到两端时随回弹压缩。编辑时键盘弹出或在文末连续换行，视口随光标滚动。
+- **分栏。** 左侧预览和右侧源码独立滚动，各自显示滑块。两侧的页首和文末按同一标题栏与页签留出空间，正文两侧留有边距。
 
 主要代码：[PageScrollPolicy.ets](../entry/src/main/ets/pages/PageScrollPolicy.ets)、[HdsMaterialStyles.ets](../entry/src/main/ets/pages/HdsMaterialStyles.ets)、[DocumentScrollLayer.ets](../entry/src/main/ets/pages/DocumentScrollLayer.ets)。

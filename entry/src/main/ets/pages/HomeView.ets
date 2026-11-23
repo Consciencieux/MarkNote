@@ -2,7 +2,7 @@ import { pageScroll } from './PageScrollPolicy';
 import { ComposeListItem, IconType, LengthMetrics, SymbolGlyphModifier } from '@kit.ArkUI';
 import { RecentDocument } from '../model/Document';
 import { FormatRegistry } from '../document/FormatRegistry';
-import { MOBILE_MENU_WIDTH, menuMaterialOptions } from './MenuMaterialOptions';
+import { homeMenuWidth, menuMaterialOptions } from './MenuMaterialOptions';
 import { pageTitle } from './TextRoles';
 
 /**
@@ -75,6 +75,9 @@ export struct HomeView {
     const material = menuMaterialOptions();
     return {
       preview: MenuPreviewMode.IMAGE,
+      // 列表行截图保留原尺寸，避免放大后与原行文字错位重叠。
+      // https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-universal-attributes-menu/
+      previewAnimationOptions: { scale: [1, 1] },
       hapticFeedbackMode: HapticFeedbackMode.ENABLED,
       backgroundBlurStyle: material.backgroundBlurStyle,
       systemMaterial: material.systemMaterial
@@ -110,7 +113,7 @@ export struct HomeView {
           .onClick(() => this.onDelete(item))
       }
     }
-    .width(MOBILE_MENU_WIDTH)
+    .width(homeMenuWidth)
   }
 
   @Builder
