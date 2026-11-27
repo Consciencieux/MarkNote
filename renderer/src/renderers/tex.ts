@@ -47,6 +47,19 @@ function textOf(node: Node): string {
   return (node.children ?? []).map(textOf).join('');
 }
 
+interface SourcePoint { offset?: unknown }
+interface SourceRange { start?: SourcePoint | null; end?: SourcePoint | null }
+
+/** Keep the picture only when both offsets select a span inside this source. */
+function tikzPictureSource(source: string, position: SourceRange | null | undefined): string | undefined {
+  if (position == null || position.start == null || position.end == null) return;
+  const from = position.start.offset;
+  const to = position.end.offset;
+  if (typeof from !== 'number' || typeof to !== 'number' || !Number.isInteger(from) || !Number.isInteger(to)) return;
+  if (from < 0 || from >= to || to > source.length) return;
+  return source.slice(from, to);
+}
+
 /** Convert once; outline positions come from the same MyST tree used for the preview. */
 export function renderTexDocument(source: string, renderHtml: boolean = true): TexDocument {
   const file = new VFile();
@@ -54,11 +67,12 @@ export function renderTexDocument(source: string, renderHtml: boolean = true): T
   const parser = new TexParser(source, file, { handlers: {
     ...DEFAULT_HANDLERS,
     env_tikzpicture(node, state) {
-      if (!renderHtml || !node.position) return;
-      const { start, end } = node.position;
+      if (!renderHtml) return;
+      const picture = tikzPictureSource(source, node.position);
+      if (picture === undefined) return;
       state.closeParagraph();
       state.addLeaf('tikzPicture', { index: tikzPictures.length });
-      tikzPictures.push(source.slice(start.offset, end.offset));
+      tikzPictures.push(picture);
     }
   } });
   // Unmarked content is text. Keep the legacy math path only when the parser identifies
