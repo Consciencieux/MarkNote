@@ -205,10 +205,14 @@ export struct DocumentPreviewView {
       .then((): void => this.scheduleViewport()).catch((): void => {});
   }
 
+  private canRefreshImages(): boolean {
+    return this.ready && this.renderedGeneration === this.imageGeneration && this.workMode === 'render' &&
+      (this.kind === 'markdown' || this.kind === 'tex-math');
+  }
+
   /** Reconcile requests when the Web viewport or its nearby images change. */
   private scheduleViewport(): void {
-    if (!this.ready || this.renderedGeneration !== this.imageGeneration || this.workMode !== 'render' ||
-      this.kind !== 'markdown') return;
+    if (!this.canRefreshImages()) return;
     this.viewportDirty = true;
     if (!this.viewportBusy) void this.refreshViewport();
   }
@@ -216,8 +220,7 @@ export struct DocumentPreviewView {
   private async refreshViewport(): Promise<void> {
     this.viewportBusy = true;
     try {
-      while (this.viewportDirty && this.ready && this.renderedGeneration === this.imageGeneration &&
-        this.workMode === 'render' && this.kind === 'markdown') {
+      while (this.viewportDirty && this.canRefreshImages()) {
         this.viewportDirty = false;
         const generation = this.imageGeneration;
         const raw = await this.controller.runJavaScript('JSON.stringify(window.MarknotePreview.imageWindow(' +

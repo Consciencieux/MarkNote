@@ -9,23 +9,64 @@ interface Slot {
 
 export class PreviewImages {
   private slots = new Map<HTMLElement, Slot>();
+  private readonly nearby = new Set<HTMLElement>();
+  private targets?: NodeListOf<HTMLElement>;
+  private observer?: IntersectionObserver;
+  private onChange?: () => void;
+  private viewportHeight = -1;
   private nextId = 0;
   private generation = -1;
 
+  observe(root: HTMLElement, onChange: () => void): void {
+    this.targets = root.querySelectorAll<HTMLElement>('.image-slot[data-mn-src]');
+    this.onChange = onChange;
+    this.resize();
+  }
+
+  resize(): void {
+    const height = window.innerHeight;
+    if (!this.targets?.length || height === this.viewportHeight) return;
+    this.viewportHeight = height;
+    this.observer?.disconnect();
+    const observer = new IntersectionObserver(entries => {
+      if (this.observer !== observer) return;
+      let changed = false;
+      for (const entry of entries) {
+        const element = entry.target as HTMLElement;
+        if (entry.isIntersecting && !this.nearby.has(element)) {
+          this.nearby.add(element);
+          changed = true;
+        } else if (!entry.isIntersecting && this.nearby.delete(element)) {
+          changed = true;
+        }
+      }
+      if (changed) this.onChange?.();
+    }, { rootMargin: `${height}px 0px` });
+    this.observer = observer;
+    for (const element of this.targets) observer.observe(element);
+  }
+
   clear(): void {
+    this.observer?.disconnect();
+    this.observer = undefined;
+    this.targets = undefined;
+    this.onChange = undefined;
+    this.viewportHeight = -1;
+    this.nearby.clear();
     this.slots.clear();
   }
 
-  requests(root: HTMLElement, nearby: ReadonlySet<HTMLElement>, height: number, generation: number): ImageRequest[] | null {
+  requests(root: HTMLElement, height: number, generation: number): ImageRequest[] | null {
     const next = new Map<HTMLElement, Slot>();
     const ratio = window.devicePixelRatio || 1;
-    for (const element of nearby) {
+    for (const element of this.nearby) {
       const key = element.dataset.mnSrc;
       if (!key) continue;
-      const container = element.closest<HTMLElement>('p,li,td,th,blockquote,h1,h2,h3,h4,h5,h6,section') ?? root;
+      const container = element.closest<HTMLElement>('p,li,td,th,blockquote,h1,h2,h3,h4,h5,h6,figure,section') ?? root;
       const style = getComputedStyle(container);
-      const widthPx = Math.max(1, Math.ceil((container.clientWidth - parseFloat(style.paddingLeft) -
-        parseFloat(style.paddingRight)) * ratio));
+      const columnWidth = container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const slotWidth = element.clientWidth || columnWidth;
+      const widthPx = Math.max(1, Math.ceil(Math.min(slotWidth, columnWidth) * ratio));
       const heightPx = Math.ceil(height * ratio);
       let slot = this.slots.get(element);
       if (!slot || this.generation !== generation || slot.request.widthPx < widthPx || slot.request.heightPx < heightPx) {
@@ -67,9 +108,9 @@ export class PreviewImages {
 
   size(id: number, width: number, height: number): void {
     for (const slot of this.slots.values()) {
-      const { request, image } = slot;
+      const { request, element, image } = slot;
       if (request.id === id) {
-        image.style.width = `${width}px`;
+        if (!element.style.width) image.style.width = width + 'px';
         image.style.aspectRatio = `${width} / ${height}`;
         this.show(slot);
         return;

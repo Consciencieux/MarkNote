@@ -36,18 +36,23 @@
 | `.txt` | 显示原文，保留换行和缩进 | 不解释 Markdown |
 | `.md`、`.markdown` | 表格、任务列表、本地图片、代码围栏、公式和图表 | 任务列表只读。原始 HTML 和网络图片不渲染 |
 | `.svg` | 使用 DOMPurify 清理后显示静态 SVG | 不执行脚本和动画，不加载外部资源；部分内部片段引用可用 |
-| `.tex` | MyST 转换常见 LaTeX 文稿，KaTeX 渲染公式，TikZ Editor Core 绘制简单的 TikZ 图；无标记内容按正文显示，公式可使用数学定界符或受支持的独立公式命令 | 不执行 TeX 引擎或编译 PDF；正文只显示转换器支持的宏包、命令和环境 |
+| `.tex` | MyST 转换常见 LaTeX 文稿，KaTeX 渲染公式，可显示本地图片和简单的 TikZ 图。无标记内容按正文显示，公式可使用数学定界符或受支持的独立公式命令 | 不执行 TeX 引擎或编译 PDF；正文只显示转换器支持的宏包、命令和环境 |
 
 预览入口是 [main.ts](../renderer/src/main.ts)，各格式的实现位于 [renderer/src/renderers](../renderer/src/renderers/)。
 
+### 本地图片
+
+Markdown 和 LaTeX 预览可显示文稿所在目录及子目录中已授权的 PNG、JPEG、GIF、WebP、BMP 和 SVG。图片随阅读位置加载，大图适应栏宽，原图保留。多帧 GIF 和 WebP 可播放。网络地址、绝对路径、越出文稿目录、无权读取或无法解码的图片显示占位文字。
+
 ### Markdown 预览
 
-- **本地图片。** 可显示文稿目录及子目录中已授权的 PNG、JPEG、GIF、WebP、BMP 和 SVG。图片随阅读位置加载，大图适应栏宽，原图保留。多帧 GIF 和 WebP 可播放。绝对路径、越出文稿目录、无权读取或无法解码的图片显示占位文字。
 - **网页链接。** 点击 HTTP 或 HTTPS 链接，系统会打开完整地址。带凭据的链接、其他协议和相对链接只显示文字。
 - **代码高亮。** 支持 LaTeX、Markdown、XML、JSON、JavaScript、TypeScript、Python、Bash、YAML、CSS、C、C++ 和 Java。ArkTS 按 TypeScript、Shell 按 Bash 着色。未指定语言、标为纯文本、语言未知或着色失败时，保留完整原文。所有可用标记见[语言别名表](../shared/code-languages.ts)。
 - **图形与公式。** `svg`、`math` 和 `mermaid` 围栏分别显示图形、公式和图表。Mermaid 使用 Dagre 布局，指定 ELK 等未注册布局时该图会报错。每幅图的源码上限为 50,000 个字符。图内不加载在线图标，不保留 HTML 标签、点击回调和跳转链接，数学公式的排版支持有限。
 
 ### LaTeX 预览
+
+用 `\includegraphics{figures/diagram.png}` 引用[本地图片](#本地图片)。路径相对于当前文稿所在目录，并须写明文件扩展名。用 `[width=.5\linewidth]` 设置为半栏宽，或用 `[width=4cm]` 指定宽度。图片保持长宽比并适应栏宽。在 `figure` 中用 `\centering` 居中。图和题注按源码顺序显示，完整排版以电脑端编译结果为准。
 
 打开 `.tex` 文件可预览正文中的 `tikzpicture`，包括放在 `figure` 等正文环境中的图。预览支持线段、箭头、圆、矩形及带文字的节点。请将图放在数学环境外，图中文字以普通文本显示。导言区的自定义定义和图中的外部文件不会加载。每幅图的源码上限为 50,000 个 UTF-16 代码单元。无法绘制的图显示提示和原始源码。完整编译可在电脑上进行。[TikZ 示例](../examples/tikz.tex)
 
