@@ -35,7 +35,10 @@ renderer/.cache/
 /examples/**/*.fls
 /examples/**/*.log
 /examples/**/*.pdf
+/examples/**/*.synctex
 /examples/**/*.synctex.gz
+/examples/**/*.synctex(busy)
+/examples/**/*.synctex.gz(busy)
 
 # Local configuration
 /local.properties
