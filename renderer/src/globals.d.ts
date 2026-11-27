@@ -22,6 +22,7 @@ export interface PreviewUpdate {
     svgInvalid?: string;
     svgRejected?: string;
     mathFailed?: string;
+    tikzFailed?: string;
     imageName?: string;
     imageSlot?: string;
   };

@@ -40,7 +40,7 @@ cd renderer
 npm ci
 ```
 
-安装过程会从固定的 GitHub 提交获取、校验并编译 `tex-to-myst` 的两处修复。首次安装需要访问 npm 镜像和 GitHub；依赖与修复缓存齐全时可以离线安装。修复来源和移除条件见[第三方组件与许可证](third_party/README.md)。
+安装过程会从固定的 GitHub 提交获取、校验并编译 `tex-to-myst` 修复和 TikZ 预览所用的模块。首次安装需要访问 npm 镜像和 GitHub，并安装 `tar`。依赖和源码缓存齐全时可以离线安装。来源见[第三方组件与许可证](third_party/README.md)。
 
 首次构建前还需在 `editor/` 执行 `npm ci`，供预览构建汇总两套离线资源的许可证。
 修改预览或依赖后，在 `renderer/` 执行：

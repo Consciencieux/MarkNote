@@ -9,6 +9,7 @@ import { PreviewImages } from './image-window';
 import { renderPlain } from './renderers/plain';
 import { installReferenceHook, isolateSvg, refreshIsolatedSvg, sanitizeSvg } from './renderers/svg';
 import { renderTexDocument, type TexDocument } from './renderers/tex';
+import { paintTikz } from './renderers/tikz-preview';
 import type { ImageRequest, PreviewUpdate } from './globals';
 import { encodePreviewLinkRequest } from './preview-link-message';
 import { previewText, usePreviewText } from './preview-text';
@@ -103,6 +104,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 const images = new PreviewImages();
 let markdown: MarkdownWindow | undefined;
+let disposeTikz: (() => void) | undefined;
 let renderedDocumentId: number | undefined;
 
 function clearRender(): void {
@@ -112,6 +114,8 @@ function clearRender(): void {
   images.clear();
   markdown?.dispose();
   markdown = undefined;
+  disposeTikz?.();
+  disposeTikz = undefined;
   scrollLayout = undefined;
   lastRendered = undefined;
   lastResult = undefined;
@@ -269,6 +273,7 @@ function render(update: PreviewUpdate): void {
         trust: false, strict: 'warn', maxSize: 100, maxExpand: 1000, output: 'htmlAndMathml'
       });
     }
+    disposeTikz = paintTikz(host!, tex.tikzPictures);
     postTexOutline(update, tex);
   }
 }
