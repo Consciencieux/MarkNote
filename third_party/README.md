@@ -6,9 +6,11 @@
 
 npm 发布包含修复的新版后，升级依赖并删除补丁脚本及其安装、构建钩子。
 
+TikZ 预览使用 [TikZ Editor 1.3.0](https://github.com/DominikPeters/tikz-editor/releases/tag/app-v1.3.0) 的核心模块和 Lezer 语法模块。[安装脚本](../renderer/scripts/setup-tikz-dependency.mjs) 下载固定提交的 GitHub 源码归档，核对归档和 MIT 许可证的 SHA-256，并编译预览所用的入口。脚本将文字资源分析的导入指向原函数所在的模块，预览以系统字体显示图中文字。项目的 Vite 构建将用到的模块打包到离线 Worker。首次安装需要 GitHub 和 `tar`，归档缓存位于 `renderer/.cache/`。
+
 ## 许可证材料与应用内声明
 
-预览构建调用 `tools/generate-notices.mjs`，从预览和编辑器已安装的生产依赖收集许可证与 NOTICE。对于发布包缺少许可证原文或需要补充声明的依赖，[upstream-licenses](upstream-licenses/) 保存核实过的上游原文、版本对应关系及来源；脚本验证版本和文件散列后使用这些材料。依赖的许可证类型未经允许、材料缺失或校验失败时，构建会中止。
+预览构建调用 `tools/generate-notices.mjs`，从离线预览和编辑器的生产依赖收集许可证与 NOTICE，包括从固定归档安装的 TikZ Editor 模块。对于发布包缺少许可证原文或需要补充声明的依赖，[upstream-licenses](upstream-licenses/) 保存核实过的上游原文、版本对应关系及来源；脚本验证版本和文件散列后使用这些材料。依赖的许可证类型未经允许、材料缺失或校验失败时，构建会中止。
 
 按[构建与贡献](../CONTRIBUTING.md)中的步骤构建后，脚本统一生成 `entry/src/main/resources/rawfile/licenses/THIRD_PARTY_NOTICES.txt`，供应用的“设置 → 开源许可证 → 第三方开源许可证”显示。本项目的 GPL-3.0 许可证单独由根目录 `LICENSE` 复制到应用资源中。两个应用资源均是生成文件，不应手工维护。
 

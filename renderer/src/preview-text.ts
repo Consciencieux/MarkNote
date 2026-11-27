@@ -9,6 +9,7 @@ export interface PreviewText {
   svgInvalid: string;
   svgRejected: string;
   mathFailed: string;
+  tikzFailed: string;
   imageName: string;
   imageSlot: string;
 }
@@ -23,6 +24,7 @@ const FALLBACK: PreviewText = {
   svgInvalid: 'SVG 文档格式错误',
   svgRejected: 'SVG 内容未通过安全检查',
   mathFailed: '公式渲染失败，请检查数学语法。',
+  tikzFailed: '这幅 TikZ 图无法预览，已显示源码。',
   imageName: '图片',
   imageSlot: '[图片：%s]'
 };
@@ -52,6 +54,7 @@ export function usePreviewText(input: unknown): string {
     svgInvalid: textOf(source.svgInvalid, FALLBACK.svgInvalid),
     svgRejected: textOf(source.svgRejected, FALLBACK.svgRejected),
     mathFailed: textOf(source.mathFailed, FALLBACK.mathFailed),
+    tikzFailed: textOf(source.tikzFailed, FALLBACK.tikzFailed),
     imageName: textOf(source.imageName, FALLBACK.imageName),
     imageSlot: textOf(source.imageSlot, FALLBACK.imageSlot)
   };

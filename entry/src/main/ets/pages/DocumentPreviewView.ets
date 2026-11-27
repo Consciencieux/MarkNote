@@ -161,6 +161,7 @@ export struct DocumentPreviewView {
       svgInvalid: AppText.text($r('app.string.preview_svg_invalid')),
       svgRejected: AppText.text($r('app.string.preview_svg_rejected')),
       mathFailed: AppText.text($r('app.string.preview_math_failed')),
+      tikzFailed: AppText.text($r('app.string.preview_tikz_failed')),
       imageName: AppText.text($r('app.string.preview_image_name')),
       imageSlot: AppText.text($r('app.string.preview_image_slot'))
     };

@@ -4,16 +4,18 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/setup-tex-dependency.mjs",
-    "prebuild": "node scripts/setup-tex-dependency.mjs --verify",
+    "postinstall": "node scripts/setup-tex-dependency.mjs && node scripts/setup-tikz-dependency.mjs",
+    "prebuild": "node scripts/setup-tex-dependency.mjs --verify && node scripts/setup-tikz-dependency.mjs --verify",
     "build": "vite build && node scripts/package-assets.mjs",
-    "predev": "node scripts/setup-tex-dependency.mjs --verify",
+    "predev": "node scripts/setup-tex-dependency.mjs --verify && node scripts/setup-tikz-dependency.mjs --verify",
     "dev": "vite --host 127.0.0.1",
     "check": "tsc --noEmit",
     "check:licenses": "node ../tools/generate-notices.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {
+    "@lezer/common": "1.5.3",
+    "@lezer/lr": "1.4.11",
     "@mdit/plugin-katex": "1.1.4",
     "@mdit/plugin-tasklist": "1.1.3",
     "dompurify": "3.4.17",
@@ -33,7 +35,8 @@
   "devDependencies": {
     "typescript": "7.0.2",
     "vite": "8.3.5",
-    "vite-plugin-singlefile": "2.3.4"
+    "vite-plugin-singlefile": "2.3.4",
+    "xml-formatter": "3.6.7"
   },
   "engines": {
     "node": ">=22.13"

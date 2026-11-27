@@ -48,6 +48,10 @@ li.task-list-item { list-style:none; }
 .svg-canvas > svg, .svg-canvas > .isolated-svg { display:block;max-width:100%;height:auto;margin:auto; }
 .mermaid-block { width:100%; overflow:auto; margin:1em 0; }
 .mermaid-block > svg, .mermaid-block > .isolated-svg { display:block; max-width:100%; height:auto; margin:0 auto; }
+.tikz-block { min-height:2em; margin:1em 0; }
+/* Preserve TikZ's authored colors, including default black strokes in a dark preview. */
+.tikz-block > .isolated-svg { margin:0 auto; background:#fff; }
+.tikz-block pre code { white-space:pre-wrap; overflow-wrap:anywhere; }
 .math-canvas { width:100%; overflow-x:auto; }
 .katex-display { overflow:auto hidden; padding:5px 0; }
 .error { color:#c43d3d; white-space:pre-wrap; }

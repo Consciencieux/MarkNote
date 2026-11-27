@@ -10,6 +10,7 @@ export interface PreviewCopy {
   svgInvalid: string;
   svgRejected: string;
   mathFailed: string;
+  tikzFailed: string;
   imageName: string;
   imageSlot: string;
 }

@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
+import { tikzDependencyNotices } from '../renderer/scripts/setup-tikz-dependency.mjs';
 
 // Produce the notices shipped inside the HAP from *installed production packages*.
 // Unknown / missing licenses abort the build instead of silently omitting a grant.
@@ -93,6 +94,7 @@ function visit(from, name) {
   for (const child of Object.keys(pkg.dependencies || {})) visit(dir, child);
 }
 for (const name of Object.keys(manifest.dependencies)) visit(root, name);
+for (const notice of tikzDependencyNotices()) packages.set(notice.name, { ...notice, text: shippedText(notice.text) });
 if (existsSync(join(editorRoot, 'package.json'))) {
   const editorManifest = JSON.parse(readFileSync(join(editorRoot, 'package.json'), 'utf8'));
   for (const name of Object.keys(editorManifest.dependencies || {})) visit(editorRoot, name);

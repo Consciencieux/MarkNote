@@ -43,6 +43,8 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 Markdown 的 mermaid 代码围栏在页面清理之后画成 SVG。用户 SVG 和 Mermaid 的清理结果以 SVG 图片上下文显示，隔离样式与片段 ID；KaTeX 自身的布局 SVG 不走这一转换。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过已有的 `WebMessagePort` 回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲。Markdown 预览中的 http、https 链接不带可导航的 `href`；用户点击后，网页经同一端口发送 `open-link`，ArkTS 再校验协议、主机、凭据以及当前文稿和修订，然后调用 `openLink` 交给系统打开。预览页面不导航、不加载这些地址。
 
+MyST 解析 `.tex` 时保留 `tikzpicture` 的源码位置并生成图形占位。阅读位置附近的图块由单个离线 Worker 顺序处理，使用 TikZ Editor Core 的解析、绘图和 SVG 输出模块。返回的 SVG 经清理后在隔离的图片上下文中显示。更新或隐藏预览时结束旧任务，绘制超时后重新启动 Worker 处理后续图块，大纲模式只解析标题。[功能与限制](FEATURES.md#latex-预览)
+
 Markdown 代码围栏先显示转义后的原文，再由离线打包的 Worker 顺序运行 highlight.js；更新文稿会终止旧 Worker。着色结果仅允许 `span` 和 `class`，经 DOMPurify 清理后写回对应代码节点。Worker 不可用或解析失败时保留原文。预览和编辑器共用 `shared/code-languages.ts` 的语言别名以及 `shared/syntax-colors.ts` 的前景色，具体语言引擎各自配置。
 
 ## 源码编辑器
