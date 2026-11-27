@@ -1,10 +1,11 @@
-import { TexParser } from 'tex-to-myst';
+import { DEFAULT_HANDLERS, TexParser } from 'tex-to-myst';
 import { mystToHtml } from 'myst-to-html';
 import { VFile } from 'vfile';
+import { imageLabel } from '../preview-text.ts';
 import { renderTexMath } from './tex-math.ts';
 
 export interface TexHeading { level: number; text: string; offset: number }
-export interface TexDocument { html: string; headings: TexHeading[]; diagnostics: string[] }
+export interface TexDocument { html: string; headings: TexHeading[]; diagnostics: string[]; tikzPictures: string[] }
 interface Node {
   type: string;
   value?: unknown;
@@ -47,10 +48,64 @@ function textOf(node: Node): string {
   return (node.children ?? []).map(textOf).join('');
 }
 
+interface SourcePoint { offset?: unknown }
+interface SourceRange { start?: SourcePoint | null; end?: SourcePoint | null }
+interface GraphicOption { type: string; content?: unknown; position?: SourceRange | null }
+interface GraphicArgument { openMark: string; content: GraphicOption[] }
+
+/** Slice only nonempty spans inside the original source. */
+function sourceInRange(source: string, position: SourceRange | null | undefined): string | undefined {
+  if (position == null || position.start == null || position.end == null) return;
+  const from = position.start.offset;
+  const to = position.end.offset;
+  if (typeof from !== 'number' || typeof to !== 'number' || !Number.isInteger(from) || !Number.isInteger(to)) return;
+  if (from < 0 || from >= to || to > source.length) return;
+  return source.slice(from, to);
+}
+
+function graphicWidth(source: string, args: GraphicArgument[] | undefined): string | undefined {
+  const argument = args?.find(item => item.openMark === '[');
+  if (!argument) return;
+  // The LaTeX AST keeps braced values together, so only top-level commas split options.
+  const options = [''];
+  for (const token of argument.content) {
+    if (token.type === 'comment') continue;
+    if (token.type === 'string' && token.content === ',') options.push('');
+    else options[options.length - 1] += sourceInRange(source, token.position) ?? '';
+  }
+  const assignment = options.reverse().find(option => /^\s*width\s*=/.test(option));
+  const length = assignment?.replace(/^\s*width\s*=\s*/, '').trim().replace(/^\{(.*)\}$/s, '$1').trim();
+  if (!length) return;
+  const match = /^(\d+(?:\.\d*)?|\.\d+)?\s*(\\(?:linewidth|textwidth|columnwidth)|cm|mm|in|pt|bp)$/.exec(length);
+  if (!match) return;
+  const [, magnitude, unit] = match;
+  const amount = Number(magnitude ?? 1);
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  if (unit.startsWith('\\')) return String(Math.min(amount, 1) * 100) + '%';
+  if (magnitude !== undefined) return String(amount) + (unit === 'bp' ? 'pt' : unit);
+}
+
 /** Convert once; outline positions come from the same MyST tree used for the preview. */
 export function renderTexDocument(source: string, renderHtml: boolean = true): TexDocument {
   const file = new VFile();
-  const parser = new TexParser(source, file);
+  const tikzPictures: string[] = [];
+  const parser = new TexParser(source, file, { handlers: {
+    ...DEFAULT_HANDLERS,
+    macro_includegraphics(node, state, parent) {
+      DEFAULT_HANDLERS.macro_includegraphics(node, state, parent);
+      if (!renderHtml) return;
+      const image = state.top().children?.at(-1);
+      if (image?.type === 'image') image.previewWidth = graphicWidth(source, node.args);
+    },
+    env_tikzpicture(node, state) {
+      if (!renderHtml) return;
+      const picture = sourceInRange(source, node.position);
+      if (picture === undefined) return;
+      state.closeParagraph();
+      state.addLeaf('tikzPicture', { index: tikzPictures.length });
+      tikzPictures.push(picture);
+    }
+  } });
   // Unmarked content is text. Keep the legacy math path only when the parser identifies
   // at least one math-mode command or environment and no document-specific nodes.
   const raw = parser.raw.content as Array<{ type: string; _renderInfo?: { inMathMode?: boolean } }>;
@@ -58,7 +113,7 @@ export function renderTexDocument(source: string, renderHtml: boolean = true): T
     (node.type === 'macro' || node.type === 'environment') && node._renderInfo?.inMathMode === true;
   const bareFormula = raw.some(mathNode) && raw.every(node => node.type === 'string' || node.type === 'whitespace' ||
     node.type === 'parbreak' || mathNode(node));
-  if (bareFormula) return { html: renderHtml ? renderTexMath(source) : '', headings: [], diagnostics: [] };
+  if (bareFormula) return { html: renderHtml ? renderTexMath(source) : '', headings: [], diagnostics: [], tikzPictures };
   const headings: TexHeading[] = [];
   function visit(node: Node): void {
     if (node.type === 'heading') {
@@ -89,9 +144,33 @@ export function renderTexDocument(source: string, renderHtml: boolean = true): T
             properties: { id: node.identifier }, children };
           state.patch(heading, element);
           return state.applyData(heading, element);
+        },
+        image(_state, node, parent) {
+          const { url, alt, align, previewWidth } = node as unknown as {
+            url: string; alt?: string; align?: string; previewWidth?: string;
+          };
+          const label = alt || url.split('/').pop() || '';
+          const className = ['missing-image', 'image-slot', 'tex-image-slot'];
+          if (previewWidth) className.push('tex-image-sized');
+          if (align === 'center' || (parent as { align?: string } | undefined)?.align === 'center') {
+            className.push('tex-image-centered');
+          }
+          return {
+            type: 'element', tagName: 'span',
+            properties: {
+              className, dataMnSrc: url, dataMnAlt: label,
+              style: previewWidth ? 'width:' + previewWidth : undefined
+            },
+            children: [{ type: 'text', value: imageLabel(label) }]
+          };
+        },
+        tikzPicture(_state, picture) {
+          const { index } = picture as unknown as { index: number };
+          return { type: 'element', tagName: 'div', properties: { className: ['tikz-block'], dataMnTikz: index },
+            children: [] };
         }
       } }
     }) : '';
   visit(parser.ast as Node);
-  return { html: renderHtml ? titleHtml + body : '', headings, diagnostics: file.messages.map(message => message.message) };
+  return { html: titleHtml + body, headings, diagnostics: file.messages.map(message => message.message), tikzPictures };
 }

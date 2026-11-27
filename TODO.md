@@ -1,5 +1,5 @@
 # 待办
 
-## 界面布局
+## LaTeX 预览
 
-- [x] **平板首页菜单宽度验收**。在 MatePad 11.5″S 上核对了简体中文、俄语的首页更多、排序子菜单及文稿长按菜单。俄语长文案换行后可以完整显示。[菜单宽度](entry/src/main/ets/pages/MenuMaterialOptions.ets)
+- [ ] **保留部分 TikZ 图形时标明不完整。** 线段后的未知命令目前只产生 `unsupported-statement` 警告，继续输出仍能得到线段，Worker 却在求值后返回空，整幅改为显示源码。这是首版遇到不支持内容就显示源码的策略。若改为留下已画出的部分，预览必须同时提示图不完整，避免漏画被当成原图。解析和求值诊断有 `severity`，`emitSvg` 的诊断没有，不能对三个阶段用同一套级别过滤。[Worker](renderer/src/renderers/tikz.worker.ts)

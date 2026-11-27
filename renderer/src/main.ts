@@ -9,6 +9,7 @@ import { PreviewImages } from './image-window';
 import { renderPlain } from './renderers/plain';
 import { installReferenceHook, isolateSvg, refreshIsolatedSvg, sanitizeSvg } from './renderers/svg';
 import { renderTexDocument, type TexDocument } from './renderers/tex';
+import { paintTikz } from './renderers/tikz-preview';
 import type { ImageRequest, PreviewUpdate } from './globals';
 import { encodePreviewLinkRequest } from './preview-link-message';
 import { previewText, usePreviewText } from './preview-text';
@@ -103,6 +104,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 const images = new PreviewImages();
 let markdown: MarkdownWindow | undefined;
+let disposeTikz: (() => void) | undefined;
 let renderedDocumentId: number | undefined;
 
 function clearRender(): void {
@@ -112,6 +114,8 @@ function clearRender(): void {
   images.clear();
   markdown?.dispose();
   markdown = undefined;
+  disposeTikz?.();
+  disposeTikz = undefined;
   scrollLayout = undefined;
   lastRendered = undefined;
   lastResult = undefined;
@@ -126,8 +130,8 @@ function releasePreview(): void {
 }
 
 function imageWindow(generation: number): ImageRequest[] | null {
-  if (!markdown || !lastRendered || window.innerHeight <= 0) return [];
-  return images.requests(host!, markdown.imageSlots, window.innerHeight, generation);
+  if (!lastRendered || window.innerHeight <= 0) return [];
+  return images.requests(host!, window.innerHeight, generation);
 }
 
 function reportScrollLayout(offset?: number, force = false): void {
@@ -152,6 +156,7 @@ function reportScrollLayout(offset?: number, force = false): void {
 new ResizeObserver(() => reportScrollLayout()).observe(document.body, { box: 'border-box' });
 window.addEventListener('resize', () => {
   markdown?.resize();
+  images.resize();
   reportScrollLayout();
 });
 window.addEventListener('scroll', () => {
@@ -246,9 +251,6 @@ function render(update: PreviewUpdate): void {
         if (!markdown || !lastRendered) return;
         if (changed.has('code')) paintCodeHighlight(host!, markdown.pendingCode());
         if (changed.has('diagrams')) paintDiagrams(lastRendered.theme);
-        if (changed.has('images') && renderTarget) {
-          resultPort?.postMessage(JSON.stringify({ ...renderTarget, kind: 'preview-images' }));
-        }
       });
     } else {
       tex = update.kind === 'tex-math' ? renderTexDocument(update.source, true) : undefined;
@@ -269,7 +271,13 @@ function render(update: PreviewUpdate): void {
         trust: false, strict: 'warn', maxSize: 100, maxExpand: 1000, output: 'htmlAndMathml'
       });
     }
+    disposeTikz = paintTikz(host!, tex.tikzPictures);
     postTexOutline(update, tex);
+  }
+  if (tex || markdown) {
+    images.observe(host!, () => {
+      if (renderTarget) resultPort?.postMessage(JSON.stringify({ ...renderTarget, kind: 'preview-images' }));
+    });
   }
 }
 

@@ -54,11 +54,12 @@ marknote/
 | 界面语言 | `i18n/AppText.ets`、`i18n/AppLanguage.ets`，以及 `entry/src/main/resources/` 下 `base`（简体中文）、`zh_Hant`、`bo`、`en_US`、`ja`、`ko`、`ru`、`ar`、`ug` 的 `element/string.json` |
 | 菜单及跨页面操作 | `pages/DocumentMenus.ets`、`pages/DocumentBridge.ets`、`pages/MenuMaterialOptions.ets` |
 | 文稿打开、保存、最近文稿排序和草稿恢复 | `document/DocumentService.ets`、`document/DraftCoordinator.ets`、`document/StartupRecovery.ts`、`document/DocumentAnalysis.ets`、`document/RecentOrder.ts`、`storage/DocumentFiles.ets`、`storage/DocumentStream.ets`、`storage/DraftFile.ets`、`storage/LocalState.ets` |
-| Markdown 本地图片 | `document/LocalImages.ets`、`pages/DocumentPreviewView.ets`，以及仓库根目录下的 `renderer/src/renderers/markdown.ts` |
+| Markdown 和 LaTeX 本地图片 | `document/LocalImages.ets`、`pages/DocumentPreviewView.ets`，以及仓库根目录下的 `renderer/src/image-window.ts`、`renderer/src/renderers/markdown.ts` 和 `renderer/src/renderers/tex.ts` |
 | Markdown 网页链接 | `pages/DocumentPreviewView.ets`、`pages/DocumentView.ets`，以及仓库根目录下的 `renderer/src/renderers/external-link.ts`、`renderer/src/preview-link-message.ts` |
 | 文稿分享 | `document/DocumentShare.ets`、`pages/DocumentMenus.ets` |
 | 文件编码与换行 | `document/TextEncoding.ets` |
 | 格式注册与文件关联 | `document/FormatRegistry.ets`，仓库根目录下的 `entry/src/main/module.json5` 和 `renderer/src/renderers/` |
+| LaTeX 图形预览 | 仓库根目录 `renderer/src/renderers/` 下的 `tex.ts`、`tikz-preview.ts` 和 `tikz.worker.ts` |
 | 预览行为与样式 | 仓库根目录下的 `renderer/src/main.ts`、`renderer/src/renderers/` 和 `renderer/src/styles.css` |
 
 `entry/src/main/resources/rawfile/preview/index.html` 和 `rawfile/licenses/` 中的许可证文件由预览构建生成并纳入版本库，供应用直接打包；修改预览或依赖后，按[构建与贡献](../CONTRIBUTING.md)中的步骤重新生成。依赖和许可证材料的管理方式见[第三方组件与许可证](../third_party/README.md)。

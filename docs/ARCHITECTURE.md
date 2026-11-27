@@ -39,9 +39,11 @@ MarkNote 使用 ArkUI 实现应用界面和文稿操作，使用独立的 ArkWeb
 
 `renderer/` 将预览页面、依赖和字体打包为单个 HTML 文件。ArkUI 通过 `MarknotePreview.update` 向页面传入格式、正文、主题、修订号、工作模式，以及当前界面语言的预览提示。工作模式为关闭时不发送；LaTeX 大纲模式只解析并回传标题，不生成页面。隐藏的预览释放页面节点并停止着色，保留正文高度以维持页内滚动位置。Markdown 各段经 DOMPurify 清理后参与网页排版，原生滚动范围取自实际布局。浏览器的 `IntersectionObserver` 按阅读位置触发本地图片读取、代码着色和 Mermaid 绘图。文内公式定义了跨公式复用的全局宏时，整篇按源码顺序排版，以保留定义和重定义的语义。
 
-应用根据当前文稿的 URI 和已有授权，逐张读取阅读位置附近的本地图片。ArkWeb 提供栏宽、视口高度和像素密度，原生用 Image Kit 读取图像格式和尺寸。需要缩小的静态位图通过 ImagePacker 编码到私有临时文件，多帧 GIF 和 WebP 保留原图。ArkWeb 只为当前阅读范围内的图片分配临时地址。应用在 onInterceptRequest 中核对文稿和图片身份，用 WebResourceResponse 交付文件描述符，交付后由 ArkWeb 关闭。文稿 URI、路径校验和文件授权由原生侧处理，本地 SVG 仅在隔离的图片上下文显示。网页不注册文件或导航接口，也不加载网络图片。
+Markdown 的图片链接和 MyST 转换的 LaTeX `\includegraphics` 都生成图片占位。共用的 `PreviewImages` 按阅读位置发出请求，应用根据当前文稿的 URI 和已有授权逐张读取。ArkWeb 提供栏宽、视口高度和像素密度，原生用 Image Kit 读取图像格式和尺寸。需要缩小的静态位图通过 ImagePacker 编码到私有临时文件，多帧 GIF 和 WebP 保留原图。ArkWeb 只为当前阅读范围内的图片分配临时地址。应用在 onInterceptRequest 中核对文稿和图片身份，用 WebResourceResponse 交付文件描述符，交付后由 ArkWeb 关闭。文稿 URI、路径校验和文件授权由原生侧处理，本地 SVG 仅在隔离的图片上下文显示。网页不注册文件或导航接口，也不加载网络图片。
 
 Markdown 的 mermaid 代码围栏在页面清理之后画成 SVG。用户 SVG 和 Mermaid 的清理结果以 SVG 图片上下文显示，隔离样式与片段 ID；KaTeX 自身的布局 SVG 不走这一转换。LaTeX 使用 MyST 解析文稿并转换为 HTML，KaTeX 渲染公式；网页通过已有的 `WebMessagePort` 回传同一次解析得到的标题、位置、诊断和修订号。ArkUI 校验修订号与位置后显示原生大纲。Markdown 预览中的 http、https 链接不带可导航的 `href`；用户点击后，网页经同一端口发送 `open-link`，ArkTS 再校验协议、主机、凭据以及当前文稿和修订，然后调用 `openLink` 交给系统打开。预览页面不导航、不加载这些地址。
+
+MyST 解析 `.tex` 时保留 `tikzpicture` 的源码位置。仅当起止偏移均为整数且在源码内界定非空区间时，才生成图形占位。阅读位置附近的图块由单个离线 Worker 顺序处理，使用 TikZ Editor Core 的解析、绘图和 SVG 输出模块。返回的 SVG 经清理后在隔离的图片上下文中显示。更新或隐藏预览时结束旧任务，绘制超时后重新启动 Worker 处理后续图块，大纲模式只解析标题。[功能与限制](FEATURES.md#latex-预览)
 
 Markdown 代码围栏先显示转义后的原文，再由离线打包的 Worker 顺序运行 highlight.js；更新文稿会终止旧 Worker。着色结果仅允许 `span` 和 `class`，经 DOMPurify 清理后写回对应代码节点。Worker 不可用或解析失败时保留原文。预览和编辑器共用 `shared/code-languages.ts` 的语言别名以及 `shared/syntax-colors.ts` 的前景色，具体语言引擎各自配置。
 
