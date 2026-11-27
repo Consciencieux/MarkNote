@@ -3,7 +3,7 @@ import type { MarkdownPages } from './renderers/markdown-pages';
 import { bindMermaid } from './renderers/mermaid';
 import { isolateSvg } from './renderers/svg';
 
-type DeferredContent = 'code' | 'images' | 'diagrams';
+type DeferredContent = 'code' | 'diagrams';
 
 /** Lay out the text once. Only activate expensive content near the viewport. */
 export class MarkdownWindow {
@@ -11,7 +11,6 @@ export class MarkdownWindow {
   private readonly targets = new Map<HTMLElement, DeferredContent>();
   private readonly nearby = {
     code: new Set<HTMLElement>(),
-    images: new Set<HTMLElement>(),
     diagrams: new Set<HTMLElement>(),
   };
   private observer?: IntersectionObserver;
@@ -33,7 +32,6 @@ export class MarkdownWindow {
     root.replaceChildren(content);
     isolateSvg(root, '.svg-canvas svg');
     this.track(root, 'code[data-mn-code]', 'code');
-    this.track(root, '.image-slot', 'images');
     this.track(root, '.mermaid-block', 'diagrams');
     this.resize();
   }
@@ -73,7 +71,6 @@ export class MarkdownWindow {
     this.observer = undefined;
   }
 
-  get imageSlots(): ReadonlySet<HTMLElement> { return this.nearby.images; }
   get diagrams(): ReadonlySet<HTMLElement> { return this.nearby.diagrams; }
 
   pendingCode(): CodeJob[] {

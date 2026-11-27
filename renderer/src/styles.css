@@ -44,6 +44,10 @@ li.task-list-item { list-style:none; }
 .preview img { display:block; max-width:100%; height:auto; margin:1em 0; }
 .missing-image { color:var(--secondary); }
 .image-slot-loaded { display:block; }
+.tex-image-slot { display:block; max-width:100%; }
+.tex-image-sized > img { width:100%; }
+.tex-image-centered { margin-inline:auto; text-align:center; }
+.tex-image-centered > img { margin-inline:auto; }
 .svg-canvas { width:100%; overflow:auto; min-height:140px; }
 .svg-canvas > svg, .svg-canvas > .isolated-svg { display:block;max-width:100%;height:auto;margin:auto; }
 .mermaid-block { width:100%; overflow:auto; margin:1em 0; }
